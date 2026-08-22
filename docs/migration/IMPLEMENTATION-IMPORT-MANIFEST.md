@@ -64,7 +64,9 @@ Frozen contract/accepted errata takes precedence over narrative examples.
 
 The reconstructed source was independently assembled in an isolated test workspace and run against `jsonschema.Draft202012Validator` plus the repository-native pytest suite.
 
-Result at reconstruction close: **11 tests passed**.
+Isolated reconstruction result: **11 tests passed**.
+
+The repository CI workflow at `.github/workflows/reconstructed-baseline.yml` also executed successfully on the reconstruction branch. GitHub Actions run `32604371116` completed with the `test` job and the `Run reconstructed baseline tests` step both reporting `success`.
 
 Validated controls include:
 
@@ -79,8 +81,6 @@ Validated controls include:
 - Notes lifecycle matching uses the leading marker and passes collision cases;
 - SPARK-to-HORIZON does not fabricate an affect field when none was reported;
 - ASSESS output contains typed claims, provenance references, and exactly three micro-actions.
-
-A GitHub Actions workflow is included at `.github/workflows/reconstructed-baseline.yml` to reproduce the suite in repository CI. At close of this reconstruction pass, a connector-visible Actions run had not yet appeared, so CI execution is not claimed here; the isolated validation result above is the confirmed test result.
 
 ## Reconstruction note
 
