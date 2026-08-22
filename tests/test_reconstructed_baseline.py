@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
-from kinetic_v2 import KineticEngine
+from kinetic_v2 import KineticEngine, normalize_date, parse_targets_from_text
 from spark_v2 import SparkEngine, EvidenceItem
 from spark_v2.source_adapters.notes import classify_note_entry
 from assess_v2 import AssessEngine
@@ -47,6 +47,13 @@ def test_kinetic_trend_bounded():
     tr=e.build_trend("2026-08-22",rows,cfg())
     assert tr["days_logged"]==2 and tr["provenance"]["total_rows_evaluated"]==2
     validate("schemas/kinetic/kinetic-trend-v2.schema.json",tr)
+
+def test_kinetic_date_and_configuration_parsing():
+    assert normalize_date("8/22/2026")=="2026-08-22"
+    assert normalize_date("08/22/2026")=="2026-08-22"
+    cfg2=parse_targets_from_text("Caloric Intake Target: 2,000 - 2,300 kcal/day\nProtein Target: ~200 g/day","CONFIG_DOC")
+    assert cfg2["calorie_target"]["min"]==2000
+    assert cfg2["protein_target"]["target"]==200
 
 def test_spark_boundaries_stale_and_pattern():
     eng=SparkEngine()
