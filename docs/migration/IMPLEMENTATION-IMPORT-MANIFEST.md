@@ -1,17 +1,26 @@
-# GPOS Implementation Import Manifest
+# GPOS V2.1–V2.4 Repository-Native Baseline Reconstruction
 
-Status: OPEN
-Purpose: controlled migration of already-tested V2.1–V2.4 implementation artifacts into `Cokkles/GEMINI-POS`.
+Status: APPROVED / READY FOR EXECUTION
+Purpose: establish `Cokkles/GEMINI-POS` as the durable engineering authority by reconstructing the accepted V2.1–V2.4 implementation from the frozen architecture and validated phase records, then revalidating the complete baseline before V2.5.
 
-## Important finding
+## Authority clarification
 
-A GitHub code search across repositories accessible under `Cokkles` did not locate the validated local implementation files by names such as `spark_engine.py` or `kinetic_engine.py`. The implementation reports indicate those artifacts exist in the working environment used for the V2 phases, but they are not currently recoverable from an existing GitHub repository through the connected GitHub index.
+There is no separate local SPARK/KINETIC/ASSESS implementation tree to import. The accepted implementation history exists in the Gemini/Workspace workstream and its validated phase reports. The Obsidian Project Notebook is documentation and is not an implementation authority.
 
-Therefore this repository must **not reconstruct production code from prose reports**. The tested local artifacts should be imported from their real source by Codex/local tooling.
+This work is therefore a **controlled repository-native reconstruction**, not a parity import from a hidden local codebase.
 
-## Artifacts to import unchanged first
+## Reconstruction source hierarchy
 
-### Schemas
+1. Frozen architecture authority: `v2.0.1-frozen`.
+2. Canonical contract definitions: schema version `2.0.1`.
+3. Accepted V2.0–V2.4 phase reports and recorded errata/hardening decisions.
+4. Existing GPOS architecture, boundary, epistemic, roadmap, and phase-history documentation.
+
+When a report and frozen contract disagree, the frozen contract/accepted errata wins. No new semantics may be invented merely to make tests pass.
+
+## Repository-native artifacts to reconstruct
+
+### Schemas — V2.1
 
 - `schemas/registry.json`
 - `schemas/consumer_registry.json`
@@ -22,15 +31,18 @@ Therefore this repository must **not reconstruct production code from prose repo
 - `schemas/kinetic/kinetic-to-horizon-v2.schema.json`
 - `schemas/assess/assess-input-v2.schema.json`
 - `schemas/assess/assess-output-v2.schema.json`
-- synthetic fixtures and schema tests from V2.1
+- synthetic fixtures and positive/negative/cross-contract tests
 
-### KINETIC V2
+### KINETIC V2 — V2.2
 
 - `kinetic_v2/kinetic_engine.py`
-- existing V2.2 test suite
-- read-only production-validation harness where safe to version-control
+- null-vs-zero handling
+- dynamic target configuration parsing
+- bounded 7-day trend aggregation
+- schema-bound producer validation
+- unit/adversarial tests using synthetic data only
 
-### SPARK V2
+### SPARK V2 — V2.3 / V2.3A
 
 - `spark_v2/evidence.py`
 - `spark_v2/provenance.py`
@@ -38,35 +50,50 @@ Therefore this repository must **not reconstruct production code from prose repo
 - `spark_v2/projections.py`
 - `spark_v2/spark_engine.py`
 - `spark_v2/source_adapters/`
-- V2.3 and V2.3A tests
+- freshness, provenance, self-report/hypothesis isolation, ACTIVE_NOTE_FILTER, repeated-pattern safeguards
+- unit/adversarial tests using synthetic evidence only
 
-### ASSESS V2
+### ASSESS V2 — V2.4
 
 - `assess_v2/claims.py`
 - `assess_v2/coordinator.py`
 - `assess_v2/assess_engine.py`
 - `assess_v2/render.py`
-- V2.4 tests
+- ASSESS_INPUT_V2 -> ASSESS_OUTPUT_V2 typed-claim pipeline
+- evidence-reference and epistemic-tag validation
+- unit/adversarial tests using synthetic data only
 
-## Migration procedure
+## Reconstruction procedure
 
-1. Locate the original local working tree containing the validated artifacts.
-2. Copy artifacts without semantic modification into the matching GPOS directories.
-3. Exclude credentials, production exports, journal text, finance records, and sensitive fixtures.
-4. Run the original schema/unit/adversarial tests from the GPOS repository.
-5. Fix only environment/path assumptions required to make the same tests run; document every such change.
-6. Compare test counts/results to the phase reports.
-7. Only after parity is demonstrated should GPOS become the working repository for V2.5.
+1. Reconstruct the seven schemas exactly from the frozen 2.0.1 contracts.
+2. Recreate registries and synthetic fixtures.
+3. Recreate KINETIC V2 behavior from the accepted V2.2 specification/report.
+4. Recreate SPARK V2 behavior from V2.3 plus accepted V2.3A hardening decisions.
+5. Recreate ASSESS V2 behavior from the accepted V2.4 specification/report.
+6. Run Draft 2020-12 schema validation and the complete synthetic positive/negative/adversarial suite.
+7. Compare behavior and test outcomes with recorded phase acceptance criteria.
+8. Record any unavoidable ambiguity as an explicit reconstruction note; do not silently invent behavior.
+9. Commit only after the reconstructed baseline passes its repository-native validation gates.
+10. Mark the baseline `GPOS_V2_4_RECONSTRUCTED_BASELINE` (or equivalent repository tag/checkpoint) before beginning V2.5.
 
-## Required parity gates
+## Required validation gates
 
-- Seven schemas validate under Draft 2020-12.
-- V2.1 positive/negative contract fixtures pass.
-- KINETIC V2.2 tests pass.
-- SPARK V2.3 + V2.3A tests pass.
-- ASSESS V2.4 tests pass.
-- no secrets or raw personal source data are committed.
+- Seven schemas validate under JSON Schema Draft 2020-12.
+- Producer/consumer boundaries match the frozen registry.
+- Self-reported state admits only `SELF_REPORTED` and `EXPLICIT_USER_INTERPRETATION` bases.
+- `SYSTEM_HYPOTHESIS` cannot enter SPARK self-reported state.
+- SPARK stale/empty/insufficient states remain null-safe.
+- ACTIVE_NOTE_FILTER uses leading-prefix semantics and passes collision tests.
+- KINETIC distinguishes absent observation (`null`) from verified numeric zero (`0`).
+- KINETIC trend window remains bounded to seven days.
+- ASSESS emits structurally typed claims and exactly three immediate micro-actions.
+- No raw journal prose leaks into HORIZON-facing contracts.
+- No secrets, API keys, raw journal data, financial records, production exports, or sensitive production fixtures are committed.
 
-## Authority rule
+## Production safety
 
-Phase-history documents describe validated checkpoints. They are not substitutes for source code. The imported source and tests become repository authority only after parity validation succeeds.
+Reconstruction is repository-only. It must not mutate Google Workspace production documents, ledgers, AEGIS runtime behavior, HORIZON output, calendar data, or live shortcut routing. Production wiring remains deferred to the approved V2.5+ sequence.
+
+## Completion condition
+
+When all reconstruction gates pass, `Cokkles/GEMINI-POS` becomes the version-controlled engineering authority for the reconstructed V2.1–V2.4 baseline. V2.5 HORIZON integration then proceeds from this repository-native baseline rather than from narrative reports alone.
