@@ -8,9 +8,12 @@
 - [x] V2.3 — SPARK Epistemic Engine & Provenance Pipeline
 - [x] V2.3A — Epistemic Hardening
 - [x] V2.4 — `:assess` Cross-Domain Typed-Claim Engine
+- [ ] Repository Migration Checkpoint — import original validated V2.1–V2.4 implementation artifacts and reproduce test parity inside `Cokkles/GEMINI-POS`
 - [ ] V2.5 — HORIZON Integration Migration
 - [ ] V2.6 — AEGIS Command/UI Alignment
 - [ ] V2.7 — End-to-End Validation & Runtime Lock
+
+The repository migration checkpoint is packaging/version-control work, not a new architecture phase. It exists to prevent V2.5 from being implemented against reconstructed or report-derived code.
 
 ## High-priority post-stabilization AEGIS work
 
@@ -30,11 +33,16 @@
    - Assess, Pulse, Triage, Focus, Reset, Debrief, Review
    - Horizon, Status, Why?
 
+See `AEGIS-HIGH-PRIORITY.md` for the detailed requirements.
+
 ## Planned domain expansions
 
 - **SENTINEL-ATLAS** — investment, portfolio, assets, market intelligence, opportunity research, and long-term wealth planning.
 - **COMPASS** — career strategy, opportunity tracking, mentorship, skills, accomplishments, and growth planning.
 
-## Guiding principle
+## Guiding principles
 
-Stabilize domain authority and contracts before adding new intelligence modules or write-capable user interfaces.
+- Stabilize domain authority and contracts before adding new intelligence modules or write-capable user interfaces.
+- Preserve source-vs-derived-state boundaries.
+- Do not reconstruct validated implementation code from narrative reports when the original tested artifacts can be imported.
+- Keep AEGIS independently deployable and free of private canonical GPOS state.
