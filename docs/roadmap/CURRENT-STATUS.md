@@ -8,6 +8,7 @@
 - Architecture documentation: synchronized through accepted V2.4.
 - Repository-native V2.1–V2.4 implementation baseline: **RECONSTRUCTED / VALIDATED**.
 - Confirmed isolated reconstruction suite: **11 tests passed**.
+- GitHub Actions reconstructed-baseline validation: **PASS** (run `32604371116`, job `test`).
 
 ## Architecture
 
@@ -31,8 +32,8 @@ Detailed checkpoint summaries are retained under `docs/phase-history/` and the r
 ## Repository-native baseline now includes
 
 - seven JSON Schema Draft 2020-12 contracts plus producer/consumer registries;
-- KINETIC state, trend, configuration parsing, null-safe handling, and HORIZON projection;
-- SPARK evidence/state/provenance logic, ACTIVE_NOTE_FILTER, pattern calibration, strategy applicability, and HORIZON projection;
+- KINETIC state, trend, configuration parsing, date normalization, null-safe handling, and HORIZON projection;
+- SPARK evidence/state/provenance logic, ACTIVE_NOTE_FILTER, pattern calibration, strategy applicability, structured source adapters, and HORIZON projection;
 - ASSESS typed-claim engine, coordinator, renderer, and exact-three-action invariant;
 - synthetic/adversarial repository tests;
 - GitHub Actions workflow for reproducible baseline testing.
