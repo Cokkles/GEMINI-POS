@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Mapping
 
 ALLOWED_SELF_BASES={"SELF_REPORTED","EXPLICIT_USER_INTERPRETATION"}
@@ -37,7 +37,10 @@ class SparkEngine:
         elif not current:
             status="STALE" if stale_relevant else "INSUFFICIENT_EVIDENCE"; state=None
         else:
-            merged={}; basis_map={}; conf_map={}; affect=None
+            merged={}
+            basis_map={}
+            conf_map={}
+            affect=None
             for e in sorted(current,key=lambda x:x.timestamp):
                 frag=e.metadata["state_fragment"]
                 if "energy" in frag:
@@ -46,7 +49,6 @@ class SparkEngine:
                     merged["sensory_load"]=frag["sensory_load"]; basis_map["sensory_load"]=e.basis; conf_map["sensory_load"]=1.0
                 if "affect" in frag:
                     affect=(frag["affect"],e.basis)
-            # Frozen 2.0.1 schema requires both fields when self_reported_state is non-null.
             if "energy" not in merged or "sensory_load" not in merged:
                 status="INSUFFICIENT_EVIDENCE"; state=None
             else:
@@ -57,6 +59,8 @@ class SparkEngine:
                 }
                 if affect:
                     state["affect"]={"description":affect[0],"basis":affect[1]}
+        pats=list(patterns or [])
+        strats=list(strategies or [])
         prov=[{"doc_id":e.source_id,"timestamp":e.timestamp,"basis":e.basis} for e in evidence]
         start=(now-timedelta(days=7)).isoformat().replace("+00:00","Z")
         return {
@@ -64,8 +68,8 @@ class SparkEngine:
             "state_status":status,
             "source_window":{"start":start,"end":now.isoformat().replace("+00:00","Z")},
             "self_reported_state":state,
-            "supported_patterns":list(patterns or []),
-            "strategy_observations":list(strategies or []),
+            "supported_patterns":pats,
+            "strategy_observations":strats,
             "provenance":prov
         }
 
@@ -75,13 +79,11 @@ class SparkEngine:
         if len(supporting_evidence)<2 or len(unique_dates)<2:
             return None
         n=len(unique_dates)
-        # V2.3A: 2 observations remain tentative at 0.50; additional independent dates increase conservatively.
         confidence=min(0.50 + 0.10*(n-2),0.85)
         return {"pattern_id":pattern_id,"description":description,"basis":"REPEATED_PATTERN","confidence":confidence}
 
     @staticmethod
     def strategy(strategy_id:str, observation:str, basis:str, applicability_refs:list[str]|None=None)->dict|None:
-        # Reference availability is not evidence of applicability.
         if basis=="REFERENCE_FRAMEWORK" and not applicability_refs:
             return None
         if basis not in {"EXPLICIT_PREFERENCE","REFERENCE_FRAMEWORK"}:
@@ -90,14 +92,16 @@ class SparkEngine:
 
     def project_to_horizon(self,state:Mapping[str,Any],action_candidates=None,material=True)->dict:
         ss=state["state_status"]
-        if ss=="AVAILABLE" and material:
+        if ss=="AVAILABLE" and material and state["self_reported_state"] and "affect" in state["self_reported_state"]:
             hs="AVAILABLE"
             src=state["self_reported_state"]
             cur={
                 "energy_level":src["energy"],
                 "sensory_load":src["sensory_load"],
-                "affect":src.get("affect",{"description":"","basis":"SELF_REPORTED"})
+                "affect":src["affect"]
             }
+        elif ss=="AVAILABLE":
+            hs="NOT_MATERIAL"; cur=None
         elif ss=="STALE":
             hs="STALE"; cur=None
         else:
