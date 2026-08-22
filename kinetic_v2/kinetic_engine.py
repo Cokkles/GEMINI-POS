@@ -1,9 +1,35 @@
 from __future__ import annotations
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from statistics import mean
 from typing import Iterable, Mapping, Any
+import re
 
 NUTRIENTS = ("calories", "protein_g", "carbs_g", "fat_g", "sodium_mg")
+_DATE_PATTERNS = ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y")
+
+def normalize_date(value: Any) -> str:
+    if isinstance(value, date):
+        return value.isoformat()
+    text=str(value).strip()
+    for fmt in _DATE_PATTERNS:
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            pass
+    m=re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+    if m:
+        return date(int(m.group(3)),int(m.group(1)),int(m.group(2))).isoformat()
+    raise ValueError(f"unsupported date format: {value!r}")
+
+def parse_targets_from_text(text: str, configuration_source: str) -> dict:
+    out={}
+    cal=re.search(r"Caloric\s+Intake\s+Target\s*:\s*([\d,]+)\s*[-–]\s*([\d,]+)\s*kcal", text, re.I)
+    prot=re.search(r"Protein\s+Target\s*:\s*~?\s*([\d,]+)\s*g", text, re.I)
+    if cal:
+        out["calorie_target"]={"min":float(cal.group(1).replace(",","")),"max":float(cal.group(2).replace(",","")),"unit":"kcal","configuration_source":configuration_source}
+    if prot:
+        out["protein_target"]={"target":float(prot.group(1).replace(",","")),"unit":"g","configuration_source":configuration_source}
+    return out
 
 def _num(v):
     if v is None or v == "":
@@ -18,7 +44,8 @@ class KineticEngine:
 
     def build_state(self, day: str, rows: Iterable[Mapping[str, Any]], config: Mapping[str, Any] | None = None,
                     source_freshness: str | None = None, complete: bool = False) -> dict:
-        rows = [r for r in rows if r.get("date") == day]
+        day = normalize_date(day)
+        rows = [r for r in rows if normalize_date(r.get("date")) == day]
         if not rows:
             totals = {k: None for k in NUTRIENTS}
             logging_state = "EMPTY"
@@ -81,13 +108,13 @@ class KineticEngine:
 
     def build_trend(self, end_date: str, rows: Iterable[Mapping[str, Any]], config: Mapping[str, Any] | None = None,
                     source_freshness: str | None = None) -> dict:
-        end = date.fromisoformat(end_date)
+        end = date.fromisoformat(normalize_date(end_date))
         start = end - timedelta(days=6)
         by_day = {}
         total_rows = 0
         for r in rows:
             try:
-                d = date.fromisoformat(str(r.get("date")))
+                d = date.fromisoformat(normalize_date(r.get("date")))
             except Exception:
                 continue
             if not (start <= d <= end):
