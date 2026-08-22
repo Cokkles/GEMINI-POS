@@ -1,99 +1,101 @@
 # GPOS V2.1–V2.4 Repository-Native Baseline Reconstruction
 
-Status: APPROVED / READY FOR EXECUTION
-Purpose: establish `Cokkles/GEMINI-POS` as the durable engineering authority by reconstructing the accepted V2.1–V2.4 implementation from the frozen architecture and validated phase records, then revalidating the complete baseline before V2.5.
+Status: **COMPLETE / VALIDATED**
+Architecture: `v2.0.1-frozen`
+Contract schema version: `2.0.1`
+Purpose: establish `Cokkles/GEMINI-POS` as the durable engineering authority for the reconstructed V2.1–V2.4 baseline before V2.5.
 
 ## Authority clarification
 
-There is no separate local SPARK/KINETIC/ASSESS implementation tree to import. The accepted implementation history exists in the Gemini/Workspace workstream and its validated phase reports. The Obsidian Project Notebook is documentation and is not an implementation authority.
+There is no separate local SPARK/KINETIC/ASSESS implementation tree to import. The accepted implementation history originated in the Gemini/Workspace workstream and its accepted phase reports. The Obsidian Project Notebook remains documentation, not implementation authority.
 
-This work is therefore a **controlled repository-native reconstruction**, not a parity import from a hidden local codebase.
+The private GPOS repository now contains a controlled **repository-native reconstruction** based on the frozen architecture and accepted errata.
 
 ## Reconstruction source hierarchy
 
-1. Frozen architecture authority: `v2.0.1-frozen`.
-2. Canonical contract definitions: schema version `2.0.1`.
-3. Accepted V2.0–V2.4 phase reports and recorded errata/hardening decisions.
-4. Existing GPOS architecture, boundary, epistemic, roadmap, and phase-history documentation.
+1. `v2.0.1-frozen` architecture authority.
+2. Canonical contract definitions, schema version `2.0.1`.
+3. Accepted V2.0–V2.4 phase reports, including V2.3A hardening.
+4. GPOS architecture, boundary, epistemic, roadmap, and phase-history documentation.
 
-When a report and frozen contract disagree, the frozen contract/accepted errata wins. No new semantics may be invented merely to make tests pass.
+Frozen contract/accepted errata takes precedence over narrative examples.
 
-## Repository-native artifacts to reconstruct
+## Reconstructed artifacts
 
-### Schemas — V2.1
+### V2.1 — Contracts
 
 - `schemas/registry.json`
 - `schemas/consumer_registry.json`
-- `schemas/spark/spark-state-v2.schema.json`
-- `schemas/spark/spark-to-horizon-v2.schema.json`
-- `schemas/kinetic/kinetic-state-v2.schema.json`
-- `schemas/kinetic/kinetic-trend-v2.schema.json`
-- `schemas/kinetic/kinetic-to-horizon-v2.schema.json`
-- `schemas/assess/assess-input-v2.schema.json`
-- `schemas/assess/assess-output-v2.schema.json`
-- synthetic fixtures and positive/negative/cross-contract tests
+- seven Draft 2020-12 contract schemas under `schemas/spark`, `schemas/kinetic`, and `schemas/assess`
 
-### KINETIC V2 — V2.2
+### V2.2 — KINETIC
 
 - `kinetic_v2/kinetic_engine.py`
-- null-vs-zero handling
-- dynamic target configuration parsing
-- bounded 7-day trend aggregation
-- schema-bound producer validation
-- unit/adversarial tests using synthetic data only
+- null-vs-zero semantics
+- dynamic calorie/protein configuration extraction
+- date normalization for ISO and M/D/YYYY forms without UTC day shifting
+- bounded T-6 through T seven-day trend calculation
+- `KINETIC_TO_HORIZON_V2` projection
+- optional unsupported modules remain `UNTRACKED`
 
-### SPARK V2 — V2.3 / V2.3A
+### V2.3 / V2.3A — SPARK
 
-- `spark_v2/evidence.py`
-- `spark_v2/provenance.py`
-- `spark_v2/epistemic.py`
-- `spark_v2/projections.py`
 - `spark_v2/spark_engine.py`
-- `spark_v2/source_adapters/`
-- freshness, provenance, self-report/hypothesis isolation, ACTIVE_NOTE_FILTER, repeated-pattern safeguards
-- unit/adversarial tests using synthetic evidence only
+- evidence/provenance/epistemic/projection facades
+- structured source adapters
+- 48-hour current-state freshness boundary
+- self-report vs hypothesis isolation
+- leading-prefix `ACTIVE_NOTE_FILTER`
+- conservative repeated-pattern confidence
+- reference-strategy applicability gate
+- HORIZON projection refuses to synthesize missing affect merely to satisfy the downstream schema
 
-### ASSESS V2 — V2.4
+### V2.4 — ASSESS
 
-- `assess_v2/claims.py`
-- `assess_v2/coordinator.py`
 - `assess_v2/assess_engine.py`
-- `assess_v2/render.py`
-- ASSESS_INPUT_V2 -> ASSESS_OUTPUT_V2 typed-claim pipeline
-- evidence-reference and epistemic-tag validation
-- unit/adversarial tests using synthetic data only
+- `claims.py`, `coordinator.py`, and `render.py`
+- TypedClaim enforcement
+- evidence references on substantive claims
+- cautious cross-domain hypothesis handling
+- exactly three recommendation micro-actions
+- no mutation/execution side effects
 
-## Reconstruction procedure
+## Validation
 
-1. Reconstruct the seven schemas exactly from the frozen 2.0.1 contracts.
-2. Recreate registries and synthetic fixtures.
-3. Recreate KINETIC V2 behavior from the accepted V2.2 specification/report.
-4. Recreate SPARK V2 behavior from V2.3 plus accepted V2.3A hardening decisions.
-5. Recreate ASSESS V2 behavior from the accepted V2.4 specification/report.
-6. Run Draft 2020-12 schema validation and the complete synthetic positive/negative/adversarial suite.
-7. Compare behavior and test outcomes with recorded phase acceptance criteria.
-8. Record any unavoidable ambiguity as an explicit reconstruction note; do not silently invent behavior.
-9. Commit only after the reconstructed baseline passes its repository-native validation gates.
-10. Mark the baseline `GPOS_V2_4_RECONSTRUCTED_BASELINE` (or equivalent repository tag/checkpoint) before beginning V2.5.
+The reconstructed source was independently assembled in an isolated test workspace and run against `jsonschema.Draft202012Validator` plus the repository-native pytest suite.
 
-## Required validation gates
+Result at reconstruction close: **11 tests passed**.
 
-- Seven schemas validate under JSON Schema Draft 2020-12.
-- Producer/consumer boundaries match the frozen registry.
-- Self-reported state admits only `SELF_REPORTED` and `EXPLICIT_USER_INTERPRETATION` bases.
-- `SYSTEM_HYPOTHESIS` cannot enter SPARK self-reported state.
-- SPARK stale/empty/insufficient states remain null-safe.
-- ACTIVE_NOTE_FILTER uses leading-prefix semantics and passes collision tests.
-- KINETIC distinguishes absent observation (`null`) from verified numeric zero (`0`).
-- KINETIC trend window remains bounded to seven days.
-- ASSESS emits structurally typed claims and exactly three immediate micro-actions.
-- No raw journal prose leaks into HORIZON-facing contracts.
-- No secrets, API keys, raw journal data, financial records, production exports, or sensitive production fixtures are committed.
+Validated controls include:
+
+- all seven schemas pass Draft 2020-12 meta-schema checks;
+- KINETIC absent observation remains `null`, while verified zero remains numeric `0`;
+- KINETIC trend excludes rows outside the seven-day window;
+- date/configuration parsing matches the accepted V2.2 contract behavior;
+- SPARK stale evidence cannot establish current state;
+- `SYSTEM_HYPOTHESIS` cannot enter self-reported state;
+- two-observation repeated patterns are capped at tentative confidence `0.50`;
+- reference frameworks require applicability evidence;
+- Notes lifecycle matching uses the leading marker and passes collision cases;
+- SPARK-to-HORIZON does not fabricate an affect field when none was reported;
+- ASSESS output contains typed claims, provenance references, and exactly three micro-actions.
+
+A GitHub Actions workflow is included at `.github/workflows/reconstructed-baseline.yml` to reproduce the suite in repository CI. At close of this reconstruction pass, a connector-visible Actions run had not yet appeared, so CI execution is not claimed here; the isolated validation result above is the confirmed test result.
+
+## Reconstruction note
+
+The accepted historical reports described Workspace-specific read-only production adapters. The repository baseline intentionally keeps external Workspace connectivity outside the pure domain engines. Production adapters and runtime wiring remain part of controlled integration phases rather than embedding credentials or production records into the reconstructed baseline.
 
 ## Production safety
 
-Reconstruction is repository-only. It must not mutate Google Workspace production documents, ledgers, AEGIS runtime behavior, HORIZON output, calendar data, or live shortcut routing. Production wiring remains deferred to the approved V2.5+ sequence.
+No Google Workspace production document, ledger, HORIZON output, AEGIS runtime, calendar object, or live shortcut route was modified by this reconstruction.
+
+No raw Journal data, financial data, credentials, API keys, production exports, or sensitive production fixtures were committed.
 
 ## Completion condition
 
-When all reconstruction gates pass, `Cokkles/GEMINI-POS` becomes the version-controlled engineering authority for the reconstructed V2.1–V2.4 baseline. V2.5 HORIZON integration then proceeds from this repository-native baseline rather than from narrative reports alone.
+**SATISFIED.**
+
+`Cokkles/GEMINI-POS` is now the version-controlled engineering authority for the reconstructed V2.1–V2.4 implementation baseline. Forward development should proceed from this repository state.
+
+Next approved runtime phase: **V2.5 — HORIZON Integration Migration**.
