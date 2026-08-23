@@ -9,6 +9,7 @@
 - AEGIS AUTH-1: **COMPLETE / PRODUCTION VALIDATED** in `Cokkles/aegis-itinerary-project`.
 - AEGIS visual identity + HORIZON Actions parser refresh: **IMPLEMENTED / MERGED**.
 - AEGIS AQ-1 Conversational Query Gateway: **DEPLOYED / VALIDATED / MERGED**.
+- AEGIS AQ-2 Conversational Calendar Controls: **IMPLEMENTATION / STABILIZATION IN PROGRESS** on `agent/aq2-calendar-conversational-controls`.
 - GitHub Actions reconstructed-baseline validation: PASS.
 
 ## Architecture
@@ -82,6 +83,23 @@ Validated production state:
 - AEGIS frontend PR merged after production backend validation;
 - AUTH/login, main navigation, favicon and AQ-1 surfaces now share the restrained AEGIS v3 identity.
 
+## AEGIS AQ-2 current state
+
+AQ-2 introduces conversational Google Calendar control while keeping mutations behind an explicit confirmation boundary.
+
+Current implementation/stabilization state:
+
+- `AEGIS_CALENDAR_ACTION_V2` contract implemented;
+- Calendar READ validated with `mutation_performed=false` and `confirmation_required=false`;
+- CREATE / UPDATE / DELETE produce preview only before confirmation;
+- confirmation tokens are one-shot, expire after 10 minutes and are bound to the authenticated Google account;
+- `calendar_ai` uses `calendar.read`; `calendar_confirm` uses `calendar.write`;
+- ambiguous UPDATE / DELETE targets fail closed;
+- Calendar Gemini calls use bounded retry/backoff for transient HTTP 429/503 responses;
+- production use exposed a legacy dispatcher authentication/cache-coherency defect; AUTH-1 remains enforced and the client is being repaired rather than weakening the backend;
+- AEGIS 2.6.2 stabilization normalizes frontend runtime assets to one PWA cache generation and adds explicit authenticated dispatcher transport for legacy console commands;
+- production cutover remains gated on final Apps Script 2.6.2 deployment and regression validation.
+
 ## Remaining stabilization sequence
 
 - [x] V2.5 — HORIZON Integration Migration
@@ -93,10 +111,11 @@ Validated production state:
 1. [x] Visual identity refresh: restrained flat AEGIS mark and in-app/tab/auth identity.
 2. [x] HORIZON Actions parser remediation: structural labels render as headings rather than checkboxes.
 3. [x] AQ-1 Conversational Query Gateway — deployed, validated and merged.
-4. [ ] Google Calendar conversational controls with preview/confirmation for writes.
-5. [ ] Canonical discoverable command registry shared by AEGIS, chat, widgets, Tasker/voice and tests.
-6. [ ] SPARK capture UX for Journal, Vent, Reflect, Check-In and Assess.
-7. [ ] Gmail / Mail Gateway and mail-client surface.
+4. [ ] AQ-2 Google Calendar conversational controls with preview/confirmation for writes — implementation/stabilization active.
+5. [ ] HELPER-1 — single-process `gpos-helper.exe` Windows tray/background host for native notifications and future local integration. Do not split into multiple Windows services unless a future requirement forces separation.
+6. [ ] Canonical discoverable command registry shared by AEGIS, chat, widgets, Tasker/voice and tests.
+7. [ ] SPARK capture UX for Journal, Vent, Reflect, Check-In and Assess.
+8. [ ] Gmail / Mail Gateway and mail-client surface.
 
 ## Follow-on security work
 
