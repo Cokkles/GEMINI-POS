@@ -3,6 +3,26 @@
 Status: PLANNED / HIGH PRIORITY
 Execution timing: after SPARK + KINETIC V2 reaches a stable runtime checkpoint.
 
+## Priority 0 — Authentication, Authorization & Security Audit Foundation
+
+Before broad production enablement of sensitive AEGIS capabilities, establish an application security boundary that protects personal GPOS state and consequential actions even when the frontend URL itself is publicly reachable.
+
+Requirements:
+
+- identity-based authentication rather than URL secrecy or a browser-only password gate;
+- secure session creation, expiration, logout, and revocation;
+- explicit authorization checks on protected backend operations;
+- backend-only credentials and tokens;
+- optional MFA/passkey support through the selected identity provider;
+- future Security / Sessions UI with recent login history and active-session visibility;
+- append-oriented audit events for login success/failure, session creation/expiration/revocation, authorization denials, and sensitive-action confirmation events;
+- no passwords, access tokens, OAuth codes, mail bodies, journal content, or other sensitive payloads in authentication logs;
+- hosting-independent design so frontend hosting can change without removing API authorization controls.
+
+A public hostname is acceptable. Possession of the URL must never itself grant access to private GPOS state or write capabilities.
+
+See `docs/security/AEGIS-AUTHENTICATION-AND-AUDIT.md`.
+
 ## Priority 1 — Conversational Query Gateway
 
 AEGIS should provide a natural-language GPOS query surface backed by server-side Gemini API access.
