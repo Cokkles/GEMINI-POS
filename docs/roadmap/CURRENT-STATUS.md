@@ -3,18 +3,18 @@
 ## Repository
 
 - Private core repository: `Cokkles/GEMINI-POS`
-- Active bootstrap/reconstruction branch: `agent/gpos-bootstrap`
-- Draft PR: #1
-- Architecture documentation: synchronized through accepted V2.4.
-- Repository-native V2.1–V2.4 implementation baseline: **RECONSTRUCTED / VALIDATED**.
-- Confirmed isolated reconstruction suite: **11 tests passed**.
-- GitHub Actions reconstructed-baseline validation: **PASS** (run `32604371116`, job `test`).
+- Default branch: `main`
+- Repository-native V2.1–V2.4 baseline: **RECONSTRUCTED / VALIDATED / MERGED**.
+- V2.5 implementation branch: `agent/v2-5-horizon-integration`.
+- AEGIS authentication work proceeds independently in `Cokkles/aegis-itinerary-project` on `agent/aegis-auth-foundation`.
+- GitHub Actions reconstructed-baseline validation: PASS.
 
 ## Architecture
 
 - GPOS private-core architecture foundation: established
 - SPARK + KINETIC architecture: `v2.0.1-frozen`
 - Contract schema version: `2.0.1`
+- HORIZON canonical specification: `v2.2.0-clean`
 - Version-controlled engineering authority: `Cokkles/GEMINI-POS`
 
 ## Completed validated checkpoints
@@ -27,35 +27,42 @@
 - [x] V2.4 — typed-claim `:assess` engine
 - [x] Repository-native V2.1–V2.4 reconstruction and validation
 
-Detailed checkpoint summaries are retained under `docs/phase-history/` and the reconstruction closeout is in `docs/migration/IMPLEMENTATION-IMPORT-MANIFEST.md`.
+## Active checkpoint — V2.5 HORIZON Integration Migration
 
-## Repository-native baseline now includes
+Repository-native V2.5 contract consumer implementation is in progress.
 
-- seven JSON Schema Draft 2020-12 contracts plus producer/consumer registries;
-- KINETIC state, trend, configuration parsing, date normalization, null-safe handling, and HORIZON projection;
-- SPARK evidence/state/provenance logic, ACTIVE_NOTE_FILTER, pattern calibration, strategy applicability, structured source adapters, and HORIZON projection;
-- ASSESS typed-claim engine, coordinator, renderer, and exact-three-action invariant;
-- synthetic/adversarial repository tests;
-- GitHub Actions workflow for reproducible baseline testing.
+Implemented on the V2.5 branch:
 
-No production Workspace data or credentials are stored in the repository.
+- `KINETIC_TO_HORIZON_V2` consumption boundary;
+- optional `SPARK_TO_HORIZON_V2` consumption boundary;
+- leading-prefix ACTIVE_NOTE_FILTER enforcement;
+- explicit PRISM-internal rejection at SENTINEL-FIN presentation boundary;
+- previous-briefing discard invariant;
+- retired HORIZON artifact kill boundary;
+- synthetic V2.5 integration test matrix.
 
-## Next runtime implementation checkpoint
+Production runtime cutover is not considered complete until the external HORIZON execution path can be rewired and a post-cutover generation of `latest_horizon_briefing` is validated. Repository implementation alone must not be reported as production cutover.
 
-**V2.5 — HORIZON Integration Migration**
+## Read-only production validation finding
 
-Goal: migrate HORIZON from direct raw-domain reads/calculations to `SPARK_TO_HORIZON_V2` and `KINETIC_TO_HORIZON_V2` while preserving existing production behavior until a controlled cutover is validated.
+The current `latest_horizon_briefing` remains readable and current-day nutrition values can be independently compared against the production nutrition ledger/configuration. A defect was also observed in the current briefing's “Things to Consider” section: unmarked archival note-like entries appear alongside valid `FOLLOW_UP:` entries. This violates the frozen ACTIVE_NOTE_FILTER policy and must be corrected by the V2.5 production cutover rather than carried forward.
 
 ## Remaining stabilization sequence
 
-- [ ] V2.5 — HORIZON Integration Migration
+- [ ] V2.5 — HORIZON Integration Migration — repository implementation active; production cutover pending
 - [ ] V2.6 — AEGIS Command/UI Alignment
 - [ ] V2.7 — End-to-End Validation & Runtime Lock
 
-## High-priority AEGIS work after stabilization
+## Parallel AEGIS Priority 0 security work
 
-- Conversational Query Gateway using backend-only Gemini credentials and bounded/domain-aware context.
-- Google Calendar Gateway for read/search/create/edit/reschedule/cancel with controlled confirmations.
-- Unified discoverable GPOS command UX, including Journal/Vent/Reflect/Check-In/Assess and executive/system actions.
+Authentication/security foundation may proceed in parallel because it does not alter SPARK/KINETIC/HORIZON domain contracts. Sensitive Calendar/Gmail/GPOS write capabilities should not be broadly enabled before authentication and backend authorization exist.
 
-See `docs/roadmap/AEGIS-HIGH-PRIORITY.md`.
+## High-priority AEGIS work
+
+1. Authentication, authorization, session and audit foundation.
+2. Conversational Query Gateway using backend-only Gemini credentials and bounded/domain-aware context.
+3. Google Calendar Gateway for read/search/create/edit/reschedule/cancel with controlled confirmations.
+4. Gmail / Mail Gateway and mail-client surface.
+5. Unified discoverable GPOS command UX, including Journal/Vent/Reflect/Check-In/Assess and executive/system actions.
+
+See `docs/roadmap/AEGIS-HIGH-PRIORITY.md` and `docs/security/AEGIS-AUTHENTICATION-AND-AUDIT.md`.
