@@ -8,7 +8,7 @@
 - HORIZON V2.5 integration migration: **COMPLETE / PRODUCTION VALIDATED / MERGED**.
 - AEGIS AUTH-1: **COMPLETE / PRODUCTION VALIDATED** in `Cokkles/aegis-itinerary-project`.
 - AEGIS visual identity + HORIZON Actions parser refresh: **IMPLEMENTED / MERGED**.
-- AEGIS AQ-1 Conversational Query Gateway: **IMPLEMENTED ON DRAFT BRANCH / BACKEND DEPLOYMENT PENDING**.
+- AEGIS AQ-1 Conversational Query Gateway: **DEPLOYED / VALIDATED / MERGED**.
 - GitHub Actions reconstructed-baseline validation: PASS.
 
 ## Architecture
@@ -31,6 +31,7 @@
 - [x] V2.5 — HORIZON bounded-contract integration and production cutover
 - [x] AEGIS AUTH-1 — Google identity, server-side allowlist, authenticated transport, logout/session handling and production validation
 - [x] AEGIS UI refresh — restrained flat identity and HORIZON action-group rendering fix
+- [x] AEGIS AQ-1 — authenticated read-only conversational query gateway with bounded domain context and session-only history
 
 ## HORIZON V2.5 production state
 
@@ -58,27 +59,28 @@ AEGIS now has an enforced authentication boundary:
 - logout/session rejection returns the client to the secure access boundary;
 - AUTH-1 production validation completed without functional regressions.
 
-## AEGIS AQ-1 active checkpoint
+## AEGIS AQ-1 production state
 
-AQ-1 is the first authenticated conversational query gateway for GEMINI-POS.
+AQ-1 is now the live authenticated conversational query gateway for GEMINI-POS.
 
-Current implementation state:
+Validated production state:
 
-- draft branch/PR exists in `Cokkles/aegis-itinerary-project`;
+- backend version `2.6.1` deployed to the existing Apps Script Web App endpoint;
 - backend contract: `AEGIS_AI_QUERY_V1`;
 - protected scope: `ai.query`;
 - backend-only Gemini API credentials remain hidden from the browser;
 - short conversation continuity uses browser `sessionStorage` only;
-- transcripts are isolated by mode and capped to a bounded recent history;
+- transcripts are isolated by mode and capped to bounded recent history;
 - no durable conversation memory is written;
 - AQ-1 is strictly read-only and performs zero canonical mutations;
 - supported bounded modes: General, Career, Finance, Logistics, System;
 - Career mode does not invent unavailable employment history or strengths;
 - Finance mode consumes SENTINEL-FIN bounded summary rather than PRISM internals;
 - Logistics mode receives Gmail metadata, not message bodies;
-- System mode receives AEGIS capability/health telemetry only.
-
-Production frontend publication is intentionally blocked until the Apps Script 2.6.1 AQ-1 backend candidate is deployed and validated.
+- System mode receives AEGIS capability/health telemetry only;
+- Apps Script smoke test passed with `mutation_performed=false` and `durable_memory_written=false`;
+- AEGIS frontend PR merged after production backend validation;
+- AUTH/login, main navigation, favicon and AQ-1 surfaces now share the restrained AEGIS v3 identity.
 
 ## Remaining stabilization sequence
 
@@ -88,9 +90,9 @@ Production frontend publication is intentionally blocked until the Apps Script 2
 
 ## Immediate AEGIS development sequence
 
-1. [x] Visual identity refresh: restrained flat AEGIS mark and in-app/tab identity.
+1. [x] Visual identity refresh: restrained flat AEGIS mark and in-app/tab/auth identity.
 2. [x] HORIZON Actions parser remediation: structural labels render as headings rather than checkboxes.
-3. [~] AQ-1 Conversational Query Gateway — implementation complete; Apps Script deployment and browser validation next.
+3. [x] AQ-1 Conversational Query Gateway — deployed, validated and merged.
 4. [ ] Google Calendar conversational controls with preview/confirmation for writes.
 5. [ ] Canonical discoverable command registry shared by AEGIS, chat, widgets, Tasker/voice and tests.
 6. [ ] SPARK capture UX for Journal, Vent, Reflect, Check-In and Assess.
