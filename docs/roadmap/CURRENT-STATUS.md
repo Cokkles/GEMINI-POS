@@ -5,8 +5,8 @@
 - Private core repository: `Cokkles/GEMINI-POS`
 - Default branch: `main`
 - Repository-native V2.1–V2.4 baseline: **RECONSTRUCTED / VALIDATED / MERGED**.
-- V2.5 implementation branch: `agent/v2-5-horizon-integration`.
-- AEGIS authentication work proceeds independently in `Cokkles/aegis-itinerary-project` on `agent/aegis-auth-foundation`.
+- HORIZON V2.5 integration migration: **COMPLETE / PRODUCTION VALIDATED / MERGED**.
+- AEGIS AUTH-1: **COMPLETE / PRODUCTION VALIDATED** in `Cokkles/aegis-itinerary-project`.
 - GitHub Actions reconstructed-baseline validation: PASS.
 
 ## Architecture
@@ -26,43 +26,53 @@
 - [x] V2.3A — parser/pattern/strategy hardening
 - [x] V2.4 — typed-claim `:assess` engine
 - [x] Repository-native V2.1–V2.4 reconstruction and validation
+- [x] V2.5 — HORIZON bounded-contract integration and production cutover
+- [x] AEGIS AUTH-1 — Google identity, server-side allowlist, authenticated transport, logout/session handling and production validation
 
-## Active checkpoint — V2.5 HORIZON Integration Migration
+## HORIZON V2.5 production state
 
-Repository-native V2.5 contract consumer implementation is in progress.
+HORIZON production now consumes bounded subsystem interfaces rather than bypassing domain boundaries:
 
-Implemented on the V2.5 branch:
+- `KINETIC_TO_HORIZON_V2` is the nutrition presentation interface;
+- `SPARK_TO_HORIZON_V2` is the only SPARK briefing interface;
+- leading-prefix `ACTIVE_NOTE_FILTER` is enforced;
+- SENTINEL-FIN remains financial authority and PRISM internals are excluded from presentation state;
+- previous briefing contents are not factual input;
+- retired HORIZON JSON/feed paths remain blocked;
+- `latest_horizon_briefing` generation has passed clean-room production validation.
 
-- `KINETIC_TO_HORIZON_V2` consumption boundary;
-- optional `SPARK_TO_HORIZON_V2` consumption boundary;
-- leading-prefix ACTIVE_NOTE_FILTER enforcement;
-- explicit PRISM-internal rejection at SENTINEL-FIN presentation boundary;
-- previous-briefing discard invariant;
-- retired HORIZON artifact kill boundary;
-- synthetic V2.5 integration test matrix.
+## AEGIS AUTH-1 production state
 
-Production runtime cutover is not considered complete until the external HORIZON execution path can be rewired and a post-cutover generation of `latest_horizon_briefing` is validated. Repository implementation alone must not be reported as production cutover.
+AEGIS now has an enforced authentication boundary:
 
-## Read-only production validation finding
-
-The current `latest_horizon_briefing` remains readable and current-day nutrition values can be independently compared against the production nutrition ledger/configuration. A defect was also observed in the current briefing's “Things to Consider” section: unmarked archival note-like entries appear alongside valid `FOLLOW_UP:` entries. This violates the frozen ACTIVE_NOTE_FILTER policy and must be corrected by the V2.5 production cutover rather than carried forward.
+- Google Identity Services frontend login;
+- server-side Google ID-token verification;
+- private email allowlist in Apps Script Script Properties;
+- `AEGIS_AUTH_REQUIRED=true` in production;
+- session-only browser ID-token storage;
+- protected Workspace-backed reads and writes routed through authenticated POST operations;
+- direct private Apps Script GET access fails closed;
+- logout/session rejection returns the client to the secure access boundary;
+- AUTH-1 production validation completed without functional regressions.
 
 ## Remaining stabilization sequence
 
-- [ ] V2.5 — HORIZON Integration Migration — repository implementation active; production cutover pending
+- [x] V2.5 — HORIZON Integration Migration
 - [ ] V2.6 — AEGIS Command/UI Alignment
 - [ ] V2.7 — End-to-End Validation & Runtime Lock
 
-## Parallel AEGIS Priority 0 security work
+## Immediate AEGIS development sequence
 
-Authentication/security foundation may proceed in parallel because it does not alter SPARK/KINETIC/HORIZON domain contracts. Sensitive Calendar/Gmail/GPOS write capabilities should not be broadly enabled before authentication and backend authorization exist.
+1. Visual identity refresh: restrained flat AEGIS icon, favicon/PWA assets and in-app branding.
+2. HORIZON Actions parser remediation: structural labels such as `Active Tasks:` and `Active Grocery List:` must not render as actionable checkboxes.
+3. Conversational Query Gateway using authenticated backend Gemini routing and bounded/domain-aware GPOS context.
+4. Google Calendar conversational controls with preview/confirmation for writes.
+5. Canonical discoverable command registry shared by AEGIS, chat, widgets, Tasker/voice and tests.
+6. SPARK capture UX for Journal, Vent, Reflect, Check-In and Assess.
+7. Gmail / Mail Gateway and mail-client surface.
 
-## High-priority AEGIS work
+## Follow-on security work
 
-1. Authentication, authorization, session and audit foundation.
-2. Conversational Query Gateway using backend-only Gemini credentials and bounded/domain-aware context.
-3. Google Calendar Gateway for read/search/create/edit/reschedule/cancel with controlled confirmations.
-4. Gmail / Mail Gateway and mail-client surface.
-5. Unified discoverable GPOS command UX, including Journal/Vent/Reflect/Check-In/Assess and executive/system actions.
+AUTH-2 may later add login history, active sessions, revocation controls, configurable session timeout/re-authentication policy and security-event presentation. These are follow-on capabilities, not AUTH-1 blockers.
 
 See `docs/roadmap/AEGIS-HIGH-PRIORITY.md` and `docs/security/AEGIS-AUTHENTICATION-AND-AUDIT.md`.
