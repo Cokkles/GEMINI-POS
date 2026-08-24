@@ -21,6 +21,7 @@ Status date: 2026-08-24
 - On-demand AEGIS dashboard snapshot with read-only typed routing, compact response metrics and bounded terminal states.
 - Bounded in-memory request activity ledger and PWA-aligned Activity view without bodies, query strings, cookies, identities or credentials.
 - PKCE-bound, single-use cross-origin session exchange for an allowlisted HTTPS PWA without third-party-cookie or browser-held Google credential dependency.
+- Browser-native compatibility adapter for bounded helper discovery, PKCE login, helper session handling, dashboard/Calendar reads and logout; retained in GEMINI-POS pending an explicit AEGIS integration change.
 
 ## Validation
 
