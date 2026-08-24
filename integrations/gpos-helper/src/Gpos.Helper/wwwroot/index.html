@@ -14,7 +14,7 @@
     <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span><b>AEGIS</b><small>GPOS HELPER</small></span></div>
     <div class="nav-group"><small>OVERVIEW</small><button class="nav-item active" data-view="overview"><span class="nav-icon">01</span><span>Dashboard</span></button></div>
     <div class="nav-group"><small>HELPER</small><button class="nav-item" data-view="connection"><span class="nav-icon">02</span><span>Connection</span></button><button class="nav-item" data-view="system"><span class="nav-icon">03</span><span>System</span></button></div>
-    <div class="nav-group"><small>AEGIS</small><button class="nav-item" data-view="calendar"><span class="nav-icon">04</span><span>Calendar</span></button><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">GO</span><span>Open PWA</span></a></div>
+    <div class="nav-group"><small>AEGIS</small><button class="nav-item" data-view="snapshot"><span class="nav-icon">04</span><span>Snapshot</span></button><button class="nav-item" data-view="calendar"><span class="nav-icon">05</span><span>Calendar</span></button><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">GO</span><span>Open PWA</span></a></div>
     <div class="nav-version">HELPER v<span data-version>0.1.0</span> | API v1</div>
   </nav>
 
@@ -110,6 +110,20 @@
           <p class="note">This helper does not confirm or write calendar changes. Any proposed change remains a preview in the authoritative AEGIS flow.</p>
         </section>
       </div>
+    </section>
+
+    <section class="view" id="snapshot">
+      <div class="snapshot-head">
+        <div><p class="eyebrow">BOUNDED AEGIS GATEWAY</p><h2>AEGIS SNAPSHOT</h2><p class="note">A read-only view of the current dashboard contract. Data remains authoritative upstream.</p></div>
+        <button class="action secondary" id="snapshotRefresh">Load Snapshot <span>On demand</span></button>
+      </div>
+      <div class="snapshot-metrics" id="snapshotMetrics">
+        <article class="metric"><small>STATE</small><strong>NOT LOADED</strong><span>On-demand request</span></article>
+      </div>
+      <section class="panel">
+        <div class="panel-head"><div><p class="eyebrow">UPSTREAM CONTRACT</p><h2>DASHBOARD PAYLOAD</h2></div><span class="source-badge" id="snapshotState">READY</span></div>
+        <div class="snapshot-result empty" id="snapshotResult"><strong>Snapshot ready</strong><span>Authenticate and choose Load Snapshot. The helper will make one finite request to Apps Script.</span></div>
+      </section>
     </section>
   </main>
 
