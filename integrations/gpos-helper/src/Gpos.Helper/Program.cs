@@ -3,6 +3,7 @@ using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
 namespace Gpos.Helper;
@@ -29,6 +30,7 @@ public partial class Program
         builder.Services.AddSingleton<HelperSessionStore>();
         builder.Services.AddSingleton<HeartbeatState>();
         builder.Services.AddSingleton<RequestActivityStore>();
+        builder.Services.AddSingleton<ClientSessionFlowStore>();
         builder.Services.AddHostedService<HeartbeatWorker>();
         builder.Services.AddSingleton<ISecretStore, WindowsDpapiSecretStore>();
         builder.Services.AddSingleton<IGoogleCredentialProvider, GoogleCredentialProvider>();
@@ -108,10 +110,29 @@ public partial class Program
             if (early.LaunchBrowser && !early.DevelopmentMode && OperatingSystem.IsWindows()) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             return Results.Ok(new { status = "LOGIN_PENDING", authorization_url = url });
         });
-        api.MapGet("/auth/callback", async (string code, string state, HttpContext ctx, IAuthProvider auth, HelperSessionStore sessions, CancellationToken ct) =>
+        api.MapPost("/auth/client/start", async (ClientLoginRequest request, IAuthProvider auth, ClientSessionFlowStore flows, CancellationToken ct) =>
+        {
+            if (!AllowedReturnUrl(request.ReturnUrl, early.AllowedOrigins)) return Results.BadRequest(new { error = "return_origin_not_allowed" });
+            var url = await auth.BeginLoginAsync(ct);
+            var parsed = new Uri(new Uri("http://127.0.0.1"), url);
+            var providerState = QueryHelpers.ParseQuery(parsed.Query)["state"].FirstOrDefault();
+            if (providerState is null || !flows.Prepare(providerState, request.ReturnUrl, request.CodeChallenge)) return Results.BadRequest(new { error = "invalid_client_flow" });
+            if (early.LaunchBrowser && !early.DevelopmentMode && OperatingSystem.IsWindows()) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            return Results.Ok(new { status = "LOGIN_PENDING", authorization_url = url, exchange = "/api/v1/auth/client/exchange" });
+        });
+        api.MapPost("/auth/client/exchange", (ClientExchangeRequest request, ClientSessionFlowStore flows, HelperSessionStore sessions) =>
+        {
+            var identity = flows.Exchange(request.Code, request.CodeVerifier);
+            if (identity is null) return Results.Json(new { error = "invalid_or_expired_client_code" }, statusCode: 401);
+            var session = sessions.Create(identity);
+            return Results.Ok(new { session_token = session.Token, expires_at = session.ExpiresAt, identity = new { identity.Email, identity.DisplayName } });
+        });
+        api.MapGet("/auth/callback", async (string code, string state, HttpContext ctx, IAuthProvider auth, HelperSessionStore sessions, ClientSessionFlowStore flows, CancellationToken ct) =>
         {
             var result = await auth.CompleteLoginAsync(code, state, ct);
             if (!result.Success || result.Identity is null) return Results.Json(new { authenticated = false, error = result.Error }, statusCode: 401);
+            var clientRedirect = flows.Complete(state, result.Identity);
+            if (clientRedirect is not null) return Results.Redirect(clientRedirect);
             var session = sessions.Create(result.Identity);
             ctx.Response.Cookies.Append("gpos_session", session.Token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = !early.DevelopmentMode, Expires = session.ExpiresAt, Path = "/api/v1" });
             if (ctx.Request.GetTypedHeaders().Accept?.Any(x => x.MediaType.Value?.Equals("text/html", StringComparison.OrdinalIgnoreCase) == true) == true) return Results.Redirect("/");
@@ -142,6 +163,11 @@ public partial class Program
     { return sessions.Validate(SessionToken(context)) is null ? Results.Json(new { error = "auth_required" }, statusCode: 401) : ToResult(await operation()); }
     private static IResult ToResult(UpstreamResult r) => r.Success ? Results.Json(r.Body) : Results.Json(new { error = r.ErrorCategory, message = r.Error, upstream_status = r.StatusCode, retry_count = r.RetryCount }, statusCode: r.StatusCode is >= 400 and <= 599 ? r.StatusCode : 502);
     private static string? SessionToken(HttpContext c) => c.Request.Headers["X-GPOS-Session"].FirstOrDefault() ?? c.Request.Cookies["gpos_session"];
+    private static bool AllowedReturnUrl(string value, string[] allowedOrigins)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo)) return false;
+        return allowedOrigins.Any(origin => Uri.TryCreate(origin, UriKind.Absolute, out var allowed) && string.Equals(uri.GetLeftPart(UriPartial.Authority), allowed.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase));
+    }
     private static string Version() => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0";
     public sealed record CalendarQuery(string Question, object[]? History);
     public sealed record SetupCheck(string Id, bool Ready, string Detail);
