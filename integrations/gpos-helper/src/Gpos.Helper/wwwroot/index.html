@@ -74,13 +74,18 @@
         <div class="inline-actions"><button class="mini primary" id="authButtonSecondary">Authenticate</button><button class="mini danger" id="logoutButton">Log out</button></div>
         <p class="note">Development authentication is local-only. Production mode uses the system browser, Google OAuth with PKCE, and the configured email allowlist.</p>
       </section>
+      <section class="panel setup-panel">
+        <div class="panel-head"><div><p class="eyebrow">PRODUCTION PATH</p><h2>SETUP READINESS</h2></div><span class="source-badge" id="setupMode">CHECKING</span></div>
+        <div class="setup-list" id="setupList"><span class="muted">Checking non-secret configuration.</span></div>
+        <p class="note">This checklist reports readiness only. It never returns client secrets, tokens, endpoint values, or allowed email addresses.</p>
+      </section>
     </section>
 
     <section class="view" id="system">
       <div class="grid">
         <section class="panel"><div class="panel-head"><div><p class="eyebrow">SERVICE</p><h2>HEALTH DETAIL</h2></div></div><pre id="healthDetail">Loading.</pre></section>
         <section class="panel"><div class="panel-head"><div><p class="eyebrow">WORKER</p><h2>BACKGROUND FOUNDATION</h2></div></div><div class="worker-state"><span class="pulse"></span><div><strong id="workerLabel">Waiting for heartbeat</strong><small id="workerDetail">Bounded periodic worker</small></div></div></section>
-        <section class="panel full"><div class="panel-head"><div><p class="eyebrow">API V1</p><h2>LOCAL ENDPOINTS</h2></div></div><div class="endpoint-list"><a href="/api/v1/health">/api/v1/health</a><a href="/api/v1/capabilities">/api/v1/capabilities</a><a href="/api/v1/auth/status">/api/v1/auth/status</a><a href="/api/v1/diagnostics">/api/v1/diagnostics</a></div></section>
+        <section class="panel full"><div class="panel-head"><div><p class="eyebrow">API V1</p><h2>LOCAL ENDPOINTS</h2></div></div><div class="endpoint-list"><a href="/api/v1/health">/api/v1/health</a><a href="/api/v1/capabilities">/api/v1/capabilities</a><a href="/api/v1/auth/status">/api/v1/auth/status</a><a href="/api/v1/diagnostics">/api/v1/diagnostics</a><a href="/api/v1/setup/status">/api/v1/setup/status</a></div></section>
       </div>
     </section>
   </main>

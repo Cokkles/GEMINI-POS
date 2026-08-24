@@ -16,6 +16,7 @@ Phase-1 development added a durable Google credential lifecycle behind `IGoogleC
 - Apps Script receives only the current Google ID token; the local helper session is never forwarded upstream.
 - Logout clears both the local session and the DPAPI-protected Google token package.
 - `/api/v1/auth/status` and the helper dashboard expose only a non-secret readiness category.
+- `/api/v1/setup/status` and the PWA-aligned Connection view provide a non-secret checklist for production mode, loopback binding, secure Apps Script configuration, Desktop OAuth client presence, identity allowlist presence and loopback callback configuration.
 
 ## Validation
 

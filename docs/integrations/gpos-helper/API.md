@@ -11,6 +11,7 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 | GET | `/health` | No | Availability, version, uptime and safe upstream configuration state. |
 | GET | `/capabilities` | No | Machine-readable implemented capability IDs. |
 | GET | `/diagnostics` | No | Safe runtime/build/listener/worker diagnostics; no secrets. |
+| GET | `/setup/status` | No | Safe production-readiness checks without returning configured values or identities. |
 | GET | `/auth/status` | Optional | Local session state, safe identity summary and non-secret credential readiness (`ABSENT`, `VALID`, `REFRESHABLE`, `EXPIRED`, or `DEVELOPMENT_MOCK`). |
 | POST | `/auth/login` | No | Starts login and returns `authorization_url`; production may open the system browser. |
 | GET | `/auth/callback?code=...&state=...` | No | OAuth loopback callback; sets the helper session cookie on success. |

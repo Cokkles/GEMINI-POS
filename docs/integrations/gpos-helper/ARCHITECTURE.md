@@ -46,5 +46,5 @@ Default endpoint: `http://127.0.0.1:47831`. Unknown browser origins are denied. 
 
 ## Capability policy
 
-Capabilities are advertised individually and only when the route is implemented. Phase 0 advertises `helper.health`, `helper.auth`, `helper.background_jobs`, `aegis.proxy`, and `calendar.read`. It does not advertise notification delivery, task access, AI query, HORIZON generation, or Calendar write.
+Capabilities are advertised individually and only when the route is implemented. The current helper advertises `helper.health`, `helper.auth`, `helper.background_jobs`, `helper.setup`, `aegis.proxy`, and `calendar.read`. It does not advertise notification delivery, task access, AI query, HORIZON generation, or Calendar write.
 

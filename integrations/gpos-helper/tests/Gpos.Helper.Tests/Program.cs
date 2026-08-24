@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("capability endpoint", Capabilities), ("config loading", Config),
+    ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("capability endpoint", Capabilities), ("safe setup readiness", SetupReadiness), ("config loading", Config),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
@@ -51,6 +51,13 @@ static async Task Capabilities() => await WithApp(async client =>
     var values = json.GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()).ToArray();
     Check(values.Contains("helper.health") && values.Contains("aegis.proxy"), "required capabilities missing");
     Check(!values.Contains("calendar.write"), "unimplemented write capability advertised");
+});
+
+static async Task SetupReadiness() => await WithApp(async client =>
+{
+    var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/setup/status"); var serialized = json.ToString();
+    Check(!json.GetProperty("production_ready").GetBoolean() && json.GetProperty("checks").GetArrayLength() == 6, "setup readiness was incorrect");
+    Check(!serialized.Contains("client-secret") && !serialized.Contains("@example.com"), "setup readiness exposed secret configuration");
 });
 
 static async Task Config() => await WithAppServices((client, app) =>

@@ -16,10 +16,11 @@ Status date: 2026-08-24
 - Windows single-file self-contained packaging and a Docker portability proof.
 - PWA-aligned local control surface for helper health, authentication, capabilities, diagnostics, worker state and bounded AEGIS connectivity.
 - DPAPI-backed Google credential lifecycle with expiry tracking, single-flight refresh, safe readiness status and fail-closed refresh errors.
+- Safe production-readiness API and dashboard checklist for listener, Apps Script, OAuth client, identity allowlist and callback configuration.
 
 ## Validation
 
-- Offline automated harness: 25/25 passed.
+- Offline automated harness: 26/26 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
 - No compiled artifact is committed; `dist/` remains ignored.

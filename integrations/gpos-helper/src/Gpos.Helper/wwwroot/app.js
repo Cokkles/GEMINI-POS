@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const state={health:null,auth:null,capabilities:null,diagnostics:null};
+const state={health:null,auth:null,capabilities:null,diagnostics:null,setup:null};
 
 async function api(path,options={}){
   const controller=new AbortController();
@@ -17,7 +17,7 @@ function formatUptime(seconds=0){const h=Math.floor(seconds/3600),m=Math.floor((
 function toast(message){const node=$('toast');node.textContent=message;node.classList.add('show');setTimeout(()=>node.classList.remove('show'),2600)}
 
 function render(){
-  const {health,auth,capabilities,diagnostics}=state;
+  const {health,auth,capabilities,diagnostics,setup}=state;
   if(health){
     const ready=health.status==='AVAILABLE';
     text('serviceMetric',health.status);text('upstreamMetric',health.upstream.apps_script);text('uptimeMetric',formatUptime(health.uptime_seconds));text('stripMessage',ready?'Helper available on loopback':'Helper response received');text('gatewayState',health.upstream.apps_script.replaceAll('_',' '));text('healthDetail',JSON.stringify(health,null,2));
@@ -35,12 +35,15 @@ function render(){
     text('endpointValue',`Port ${diagnostics.port}`);const items=[['RUNTIME',`.NET ${diagnostics.runtime}`],['ARCHITECTURE',diagnostics.process_architecture],['AUTH PROVIDER',diagnostics.auth.replaceAll('_',' ')],['HEARTBEATS',String(diagnostics.heartbeat.count)]];$('diagnostics').innerHTML=items.map(([label,value])=>`<div class="diagnostic"><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
     const last=diagnostics.heartbeat.last_beat;text('workerLabel',last?'Heartbeat active':'Worker scheduled');text('workerDetail',last?`Last beat ${new Date(last).toLocaleTimeString()}`:'First beat occurs after configured interval');
   }
+  if(setup){
+    text('setupMode',setup.production_ready?'PRODUCTION READY':setup.mode);$('setupList').innerHTML=setup.checks.map(check=>`<div class="setup-item ${check.ready?'ready':''}"><span class="setup-state">${check.ready?'OK':'!'}</span><div><strong>${escapeHtml(check.id.replaceAll('_',' '))}</strong><small>${escapeHtml(check.detail)}</small></div></div>`).join('');
+  }
 }
 
 async function refresh(showToast=false){
   try{
-    const [health,auth,capabilities,diagnostics]=await Promise.all([api('/api/v1/health'),api('/api/v1/auth/status'),api('/api/v1/capabilities'),api('/api/v1/diagnostics')]);
-    Object.assign(state,{health,auth,capabilities,diagnostics});render();if(showToast)toast('Helper status refreshed');
+    const [health,auth,capabilities,diagnostics,setup]=await Promise.all([api('/api/v1/health'),api('/api/v1/auth/status'),api('/api/v1/capabilities'),api('/api/v1/diagnostics'),api('/api/v1/setup/status')]);
+    Object.assign(state,{health,auth,capabilities,diagnostics,setup});render();if(showToast)toast('Helper status refreshed');
   }catch(error){text('stripMessage',error.name==='AbortError'?'Status check timed out':error.message);text('serviceState','UNAVAILABLE');$('serviceState').className='state failed';$('liveDot').className='live-dot failed';if(showToast)toast('Unable to refresh helper');}
 }
 

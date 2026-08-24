@@ -65,7 +65,24 @@ public partial class Program
             status = "AVAILABLE", service = "gpos-helper", version = Version(), uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
             auth = auth.Mode, upstream = new { apps_script = string.IsNullOrWhiteSpace(early.AppsScriptEndpoint) ? "NOT_CONFIGURED" : "CONFIGURED", google = auth.Mode == "google_oauth" ? "CONFIGURED" : "DEVELOPMENT_MOCK" }
         }));
-        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.auth", "helper.background_jobs", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.auth", "helper.background_jobs", "helper.setup", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/setup/status", (IOptions<HelperOptions> configured) =>
+        {
+            var value = configured.Value;
+            var listenIsLoopback = IPAddress.TryParse(value.ListenAddress, out var address) && IPAddress.IsLoopback(address);
+            var endpointIsHttps = Uri.TryCreate(value.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
+            var redirectIsLoopback = Uri.TryCreate(value.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var redirectAddress) && IPAddress.IsLoopback(redirectAddress);
+            var checks = new[]
+            {
+                new SetupCheck("production_mode", !value.DevelopmentMode, "Development mock must be disabled."),
+                new SetupCheck("loopback_listener", listenIsLoopback, "Listener must remain on loopback."),
+                new SetupCheck("apps_script_endpoint", endpointIsHttps, "A secure Apps Script endpoint is required."),
+                new SetupCheck("google_oauth_client", !string.IsNullOrWhiteSpace(value.GoogleOAuth.ClientId), "A Desktop OAuth client ID is required."),
+                new SetupCheck("identity_allowlist", value.AllowedEmails.Length > 0, "At least one allowed Google identity is required."),
+                new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use a loopback host.")
+            };
+            return Results.Ok(new { production_ready = checks.All(x => x.Ready), mode = value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION", checks });
+        });
         api.MapGet("/diagnostics", (IAuthProvider auth, HeartbeatState heartbeat) => Results.Ok(new
         {
             service = "gpos-helper", version = Version(), runtime = Environment.Version.ToString(), os = Environment.OSVersion.Platform.ToString(), process_architecture = RuntimeInformation.ProcessArchitecture.ToString(),
@@ -120,5 +137,6 @@ public partial class Program
     private static string? SessionToken(HttpContext c) => c.Request.Headers["X-GPOS-Session"].FirstOrDefault() ?? c.Request.Cookies["gpos_session"];
     private static string Version() => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0";
     public sealed record CalendarQuery(string Question, object[]? History);
+    public sealed record SetupCheck(string Id, bool Ready, string Detail);
 }
 
