@@ -14,10 +14,11 @@ Status date: 2026-08-24
 - JSON structured logs, request/upstream timing fields, error categories, and secret redaction.
 - Cancellation-aware heartbeat worker.
 - Windows single-file self-contained packaging and a Docker portability proof.
+- PWA-aligned local control surface for helper health, authentication, capabilities, diagnostics, worker state and bounded AEGIS connectivity.
 
 ## Validation
 
-- Offline automated harness: 21/21 passed.
+- Offline automated harness: 22/22 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
 - No compiled artifact is committed; `dist/` remains ignored.

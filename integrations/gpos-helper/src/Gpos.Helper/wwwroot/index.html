@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0d5c45">
+  <title>GPOS Helper Control</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <button class="mobile-menu" id="menuButton" aria-label="Open navigation">?</button>
+  <div class="scrim" id="scrim"></div>
+  <nav class="nav" id="nav" aria-label="Helper navigation">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span><b>AEGIS</b><small>GPOS HELPER</small></span></div>
+    <div class="nav-group"><small>OVERVIEW</small><button class="nav-item active" data-view="overview"><span class="nav-icon"></span><span>Dashboard</span></button></div>
+    <div class="nav-group"><small>HELPER</small><button class="nav-item" data-view="connection"><span class="nav-icon">?</span><span>Connection</span></button><button class="nav-item" data-view="system"><span class="nav-icon">?</span><span>System</span></button></div>
+    <div class="nav-group"><small>AEGIS</small><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">?</span><span>Open PWA</span></a></div>
+    <div class="nav-version">HELPER v<span data-version>0.1.0</span> � API v1</div>
+  </nav>
+
+  <main class="shell">
+    <header class="status-strip">
+      <b>GPOS LOCAL SERVICE</b>
+      <span id="stripMessage">Connecting to helper.</span>
+      <span class="live-dot" id="liveDot" aria-label="Connection state"></span>
+    </header>
+
+    <div class="hero">
+      <div><p class="eyebrow">AEGIS COMPANION</p><h1>GPOS HELPER CONTROL</h1><p>Local authentication, service health and bounded AEGIS connectivity</p></div>
+      <button class="state pending" id="serviceState">? CHECKING</button>
+    </div>
+
+    <div class="actions">
+      <button class="action primary" id="authButton">Authenticate <span>Local session</span></button>
+      <button class="action secondary" id="refreshButton">Refresh Status <span>Live check</span></button>
+    </div>
+
+    <section class="view active" id="overview">
+      <div class="metrics" aria-label="Current helper metrics">
+        <article class="metric"><small>SERVICE</small><strong id="serviceMetric">-</strong><span>Loopback host</span></article>
+        <article class="metric"><small>AUTHENTICATION</small><strong id="authMetric">-</strong><span id="authIdentity">No identity</span></article>
+        <article class="metric"><small>APPS SCRIPT</small><strong id="upstreamMetric">-</strong><span>AUTH-1 gateway</span></article>
+        <article class="metric"><small>UPTIME</small><strong id="uptimeMetric">-</strong><span>Current process</span></article>
+      </div>
+
+      <div class="grid">
+        <section class="panel connection-panel">
+          <div class="panel-head"><div><p class="eyebrow">LOCAL BOUNDARY</p><h2>HELPER CONNECTION</h2></div><span class="source-badge">127.0.0.1</span></div>
+          <div class="connection-map">
+            <div class="node"><small>CLIENT</small><strong>AEGIS / Browser</strong><span>Configured origin</span></div>
+            <div class="route"><span></span><b>LOCAL SESSION</b><span></span></div>
+            <div class="node accent"><small>SERVICE</small><strong>gpos-helper</strong><span id="endpointValue">Port 47831</span></div>
+            <div class="route"><span></span><b>BOUNDED AUTH-1</b><span></span></div>
+            <div class="node"><small>UPSTREAM</small><strong>Apps Script</strong><span id="gatewayState">Not configured</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><div><p class="eyebrow">AVAILABLE NOW</p><h2>CAPABILITIES</h2></div><span class="count-badge" id="capabilityCount">0</span></div>
+          <div class="capabilities" id="capabilities"><span class="muted">Loading capabilities.</span></div>
+        </section>
+
+        <section class="panel full">
+          <div class="panel-head"><div><p class="eyebrow">RUNTIME</p><h2>SAFE DIAGNOSTICS</h2></div><button class="mini" data-view-link="system">Open system view</button></div>
+          <div class="diagnostics" id="diagnostics"><span class="muted">Collecting safe runtime details.</span></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="view" id="connection">
+      <section class="panel">
+        <div class="panel-head"><div><p class="eyebrow">SESSION CONTROL</p><h2>AUTHENTICATION</h2></div><span class="source-badge" id="providerBadge">UNKNOWN</span></div>
+        <div class="auth-card"><div class="identity-avatar" id="identityAvatar">?</div><div><small>CURRENT IDENTITY</small><strong id="identityName">Not authenticated</strong><span id="identityEmail">No helper session</span></div></div>
+        <div class="inline-actions"><button class="mini primary" id="authButtonSecondary">Authenticate</button><button class="mini danger" id="logoutButton">Log out</button></div>
+        <p class="note">Development authentication is local-only. Production mode uses the system browser, Google OAuth with PKCE, and the configured email allowlist.</p>
+      </section>
+    </section>
+
+    <section class="view" id="system">
+      <div class="grid">
+        <section class="panel"><div class="panel-head"><div><p class="eyebrow">SERVICE</p><h2>HEALTH DETAIL</h2></div></div><pre id="healthDetail">Loading.</pre></section>
+        <section class="panel"><div class="panel-head"><div><p class="eyebrow">WORKER</p><h2>BACKGROUND FOUNDATION</h2></div></div><div class="worker-state"><span class="pulse"></span><div><strong id="workerLabel">Waiting for heartbeat</strong><small id="workerDetail">Bounded periodic worker</small></div></div></section>
+        <section class="panel full"><div class="panel-head"><div><p class="eyebrow">API V1</p><h2>LOCAL ENDPOINTS</h2></div></div><div class="endpoint-list"><a href="/api/v1/health">/api/v1/health</a><a href="/api/v1/capabilities">/api/v1/capabilities</a><a href="/api/v1/auth/status">/api/v1/auth/status</a><a href="/api/v1/diagnostics">/api/v1/diagnostics</a></div></section>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
+

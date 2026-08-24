@@ -23,6 +23,11 @@ AEGIS / local client
 - `ISecretStore`: Windows DPAPI implementation. The interface is the container migration seam.
 - `IAppsScriptGateway`: typed, authenticated POST envelopes compatible with AUTH-1; timeout, cancellation, retry budget, exponential backoff and jitter.
 - `HeartbeatWorker`: one cancellation-aware `PeriodicTimer`; no busy loop or second process.
+- Local control surface: static assets served by the same process. It follows the AEGIS PWA navigation, status strip, panel, typography, and responsive-layout language while displaying only helper-owned state.
+
+## UI relationship to AEGIS
+
+The AEGIS PWA remains the primary user interface and the visual authority. The helper control surface is deliberately a companion view, not a fork: it owns local health, authentication, capabilities, diagnostics and connection state only. New helper screens should reuse AEGIS layout primitives and vocabulary wherever practical, but must not duplicate canonical subsystem data or create a second HORIZON, Calendar, Tasks, finance, or intelligence experience.
 
 ## Initialization and terminal states
 

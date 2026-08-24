@@ -55,6 +55,8 @@ public partial class Program
             finally { app.Logger.LogInformation("Request complete request_id={RequestId} endpoint={Endpoint} method={Method} duration_ms={DurationMs} result={Result}", requestId, context.Request.Path.Value, context.Request.Method, watch.ElapsedMilliseconds, context.Response.StatusCode); }
         });
         app.UseCors("frontend");
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
 
         var api = app.MapGroup("/api/v1");
         api.MapGet("/health", (IAuthProvider auth) => Results.Ok(new
@@ -86,6 +88,7 @@ public partial class Program
             if (!result.Success || result.Identity is null) return Results.Json(new { authenticated = false, error = result.Error }, statusCode: 401);
             var session = sessions.Create(result.Identity);
             ctx.Response.Cookies.Append("gpos_session", session.Token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = !early.DevelopmentMode, Expires = session.ExpiresAt, Path = "/api/v1" });
+            if (ctx.Request.GetTypedHeaders().Accept?.Any(x => x.MediaType.Value?.Equals("text/html", StringComparison.OrdinalIgnoreCase) == true) == true) return Results.Redirect("/");
             return Results.Ok(new { authenticated = true, expires_at = session.ExpiresAt, identity = new { result.Identity.Email, result.Identity.DisplayName } });
         });
         api.MapPost("/auth/logout", (HttpContext ctx, HelperSessionStore sessions) => { sessions.Revoke(SessionToken(ctx)); ctx.Response.Cookies.Delete("gpos_session", new CookieOptions { Path = "/api/v1" }); return Results.Ok(new { authenticated = false }); });

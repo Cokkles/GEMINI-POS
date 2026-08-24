@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("health endpoint", Health), ("capability endpoint", Capabilities), ("config loading", Config),
+    ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("capability endpoint", Capabilities), ("config loading", Config),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
@@ -30,6 +30,12 @@ foreach (var test in tests)
 }
 Console.WriteLine($"RESULT: {tests.Count - failures.Count}/{tests.Count} passed");
 return failures.Count == 0 ? 0 : 1;
+
+static async Task ControlSurface() => await WithApp(async client =>
+{
+    var html = await client.GetStringAsync("/");
+    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css"), "control surface was not served");
+});
 
 static async Task Health() => await WithApp(async client =>
 {
@@ -158,7 +164,8 @@ static async Task WithApp(Func<HttpClient, Task> action) => await WithAppService
 static async Task WithAppServices(Func<HttpClient, WebApplication, Task> action)
 {
     var port = FreePort();
-    var args = new[] { $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=true", "--Helper:LaunchBrowser=false", "--Helper:HeartbeatSeconds=5", "--Helper:SessionMinutes=60", "--Helper:UpstreamMaxRetries=2", "--Helper:AllowedOrigins:0=https://cokkles.github.io" };
+    var contentRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Gpos.Helper"));
+    var args = new[] { $"--contentRoot={contentRoot}", $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=true", "--Helper:LaunchBrowser=false", "--Helper:HeartbeatSeconds=5", "--Helper:SessionMinutes=60", "--Helper:UpstreamMaxRetries=2", "--Helper:AllowedOrigins:0=https://cokkles.github.io" };
     await using var app = Gpos.Helper.Program.Build(args, services => { services.RemoveAll<ISecretStore>(); services.AddSingleton<ISecretStore, MemorySecretStore>(); });
     await app.StartAsync();
     try { using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") }; await action(client, app); }

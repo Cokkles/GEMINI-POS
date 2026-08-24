@@ -16,11 +16,15 @@ public sealed class HeartbeatWorker(HeartbeatState state, IOptions<HelperOptions
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.Value.HeartbeatSeconds), timeProvider);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            state.Beat(timeProvider.GetUtcNow());
-            logger.LogDebug("Background heartbeat count={HeartbeatCount}", state.Count);
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                state.Beat(timeProvider.GetUtcNow());
+                logger.LogDebug("Background heartbeat count={HeartbeatCount}", state.Count);
+            }
         }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
 }
 

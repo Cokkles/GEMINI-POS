@@ -2,6 +2,8 @@
 
 Base URL: `http://127.0.0.1:47831/api/v1`
 
+The local PWA-aligned helper control surface is served from `http://127.0.0.1:47831/` by the same process.
+
 Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie or `X-GPOS-Session`. Error responses use a finite category such as `auth_required`, `upstream_auth_required`, `timeout`, `malformed_response`, `upstream_unavailable`, or `retry_budget_exhausted`.
 
 | Method | Route | Auth | Purpose |
