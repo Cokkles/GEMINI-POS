@@ -36,6 +36,24 @@ Create an OAuth 2.0 Client ID with application type **Desktop app**. Configure t
 
 The OAuth client value called a client secret for an installed application cannot be treated as a confidential server secret, but this repository still requires it to be supplied at runtime and never committed.
 
+## Production launch and validation
+
+Set the required `GPOS_` environment variables in the current process or an OS-backed launch configuration. Do not place populated values in repository files or command history. Then run:
+
+```powershell
+.\scripts\run-production.ps1
+```
+
+The launcher fails before startup unless the Apps Script endpoint, Desktop OAuth values, callback and at least one allowed identity are present. It forces loopback binding, production mode, browser launch and the exact GitHub Pages origin without printing configured values.
+
+After authenticating in the system browser, validate the live boundary:
+
+```powershell
+.\scripts\validate-live.ps1
+```
+
+The validator checks health, production readiness, required capabilities, the credentialed `X-GPOS-Session` preflight, local authentication and upstream configuration with five-second request limits. For a credential-free development smoke test only, use `-AllowDevelopment`.
+
 ## Build and verify
 
 ```powershell
@@ -46,4 +64,3 @@ Invoke-RestMethod http://127.0.0.1:47831/api/v1/health
 Output: `integrations/gpos-helper/dist/win-x64/gpos-helper.exe`.
 
 Foreground execution requires no Administrator privileges. Stop with Ctrl+C for graceful cancellation. Windows Service/tray installation is intentionally deferred.
-
