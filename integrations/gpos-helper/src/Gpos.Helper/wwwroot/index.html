@@ -13,8 +13,8 @@
   <nav class="nav" id="nav" aria-label="Helper navigation">
     <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span><b>AEGIS</b><small>GPOS HELPER</small></span></div>
     <div class="nav-group"><small>OVERVIEW</small><button class="nav-item active" data-view="overview"><span class="nav-icon">01</span><span>Dashboard</span></button></div>
-    <div class="nav-group"><small>HELPER</small><button class="nav-item" data-view="connection"><span class="nav-icon">02</span><span>Connection</span></button><button class="nav-item" data-view="system"><span class="nav-icon">03</span><span>System</span></button></div>
-    <div class="nav-group"><small>AEGIS</small><button class="nav-item" data-view="snapshot"><span class="nav-icon">04</span><span>Snapshot</span></button><button class="nav-item" data-view="calendar"><span class="nav-icon">05</span><span>Calendar</span></button><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">GO</span><span>Open PWA</span></a></div>
+    <div class="nav-group"><small>HELPER</small><button class="nav-item" data-view="connection"><span class="nav-icon">02</span><span>Connection</span></button><button class="nav-item" data-view="system"><span class="nav-icon">03</span><span>System</span></button><button class="nav-item" data-view="activity"><span class="nav-icon">04</span><span>Activity</span></button></div>
+    <div class="nav-group"><small>AEGIS</small><button class="nav-item" data-view="snapshot"><span class="nav-icon">05</span><span>Snapshot</span></button><button class="nav-item" data-view="calendar"><span class="nav-icon">06</span><span>Calendar</span></button><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">GO</span><span>Open PWA</span></a></div>
     <div class="nav-version">HELPER v<span data-version>0.1.0</span> | API v1</div>
   </nav>
 
@@ -123,6 +123,14 @@
       <section class="panel">
         <div class="panel-head"><div><p class="eyebrow">UPSTREAM CONTRACT</p><h2>DASHBOARD PAYLOAD</h2></div><span class="source-badge" id="snapshotState">READY</span></div>
         <div class="snapshot-result empty" id="snapshotResult"><strong>Snapshot ready</strong><span>Authenticate and choose Load Snapshot. The helper will make one finite request to Apps Script.</span></div>
+      </section>
+    </section>
+
+    <section class="view" id="activity">
+      <section class="panel">
+        <div class="panel-head"><div><p class="eyebrow">SAFE OBSERVABILITY</p><h2>RECENT HELPER ACTIVITY</h2></div><button class="mini" id="activityRefresh">Refresh activity</button></div>
+        <div class="activity-summary"><span class="source-badge" id="activityCount">0 REQUESTS</span><p class="note">In-memory only. Request bodies, query strings, cookies, identities and credentials are never collected.</p></div>
+        <div class="activity-table" id="activityTable"><div class="activity-empty">Loading recent activity.</div></div>
       </section>
     </section>
   </main>
