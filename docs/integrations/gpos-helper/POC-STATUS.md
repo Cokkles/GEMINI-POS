@@ -23,6 +23,7 @@ Status date: 2026-08-24
 - PKCE-bound, single-use cross-origin session exchange for an allowlisted HTTPS PWA without third-party-cookie or browser-held Google credential dependency.
 - Browser-native compatibility adapter for bounded helper discovery, PKCE login, helper session handling, dashboard/Calendar reads and logout; retained in GEMINI-POS pending an explicit AEGIS integration change.
 - AEGIS-facing migration bridge that prefers an authenticated helper for read routes and invokes the existing Apps Script operation exactly once when the helper is signed out, unavailable or terminally failed.
+- AUTH-1 compatibility review pinned to the current read-only AEGIS baseline, with deployed-origin preflight coverage for the custom helper session header.
 
 ## Validation
 
