@@ -9,9 +9,11 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 | Method | Route | Auth | Purpose |
 |---|---|---:|---|
 | GET | `/health` | No | Availability, version, uptime and safe upstream configuration state. |
+| GET | `/live` | No | Lightweight process liveness probe for service managers and containers. |
+| GET | `/ready` | No | Deployment readiness probe; development is ready while a production instance returns 503 until all safe setup checks pass. |
 | GET | `/capabilities` | No | Machine-readable implemented capability IDs. |
 | GET | `/diagnostics` | No | Safe runtime/build/listener/worker diagnostics; no secrets. |
-| GET | `/activity?limit=20` | No | Recent bounded in-memory request metadata; excludes bodies, query strings, cookies and identities. |
+| GET | `/activity?limit=20&include_routine=false` | No | Recent bounded in-memory request metadata; routine probes/polling are hidden by default and bodies, query strings, cookies and identities are always excluded. |
 | GET | `/setup/status` | No | Safe production-readiness checks without returning configured values or identities. |
 | GET | `/auth/status` | Optional | Local session state, safe identity summary and non-secret credential readiness (`ABSENT`, `VALID`, `REFRESHABLE`, `EXPIRED`, or `DEVELOPMENT_MOCK`). |
 | POST | `/auth/login` | No | Starts login and returns `authorization_url`; production may open the system browser. |
@@ -23,7 +25,7 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 | GET | `/aegis/health` | Yes | Typed AUTH-1 request with upstream action `get_health`. |
 | POST | `/aegis/calendar/query` | Yes | Sends `{question, history}` as `calendar_ai`; input is bounded and the operation is never retried. |
 
-Compatibility redirects are provided from `/health` and `/capabilities` to the versioned routes.
+Compatibility redirects are provided from `/health`, `/live`, `/ready` and `/capabilities` to the versioned routes.
 
 Example Calendar query:
 
@@ -39,3 +41,4 @@ The route does not implement `calendar_confirm`. Any upstream change proposal re
 ## PWA session bridge
 
 The GitHub Pages client must not depend on the helper cookie being available cross-site. It generates a PKCE verifier and S256 challenge, calls `/auth/client/start`, follows the returned authorization URL, and receives `gpos_code` in its allowlisted return URL fragment. The fragment is not sent to the hosting server. The client exchanges the code and verifier once at `/auth/client/exchange`, keeps the returned helper session token only in memory or session-scoped storage, and sends it as `X-GPOS-Session`. The value is a local helper session-not a Google credential. Codes expire after one minute and are consumed even when verification fails.
+
