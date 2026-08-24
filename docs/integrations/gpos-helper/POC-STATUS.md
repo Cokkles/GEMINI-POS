@@ -26,6 +26,7 @@ Status date: 2026-08-24
 - AUTH-1 compatibility review pinned to the current read-only AEGIS baseline, with deployed-origin preflight coverage for the custom helper session header.
 - Fail-closed Windows production launcher and non-secret live validation script for readiness, capabilities, GitHub Pages preflight, authentication and upstream configuration.
 - Reproducible Windows release-candidate ZIP with payload SHA-256 manifest and isolated packaged-binary smoke validation.
+- Platform-aware secret storage: Windows DPAPI, memory-only Linux development, and fail-closed AES-256-GCM Linux production storage using a separately mounted orchestrator key.
 
 ## Validation
 
