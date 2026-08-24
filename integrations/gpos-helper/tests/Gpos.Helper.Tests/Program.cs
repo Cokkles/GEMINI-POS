@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("capability endpoint", Capabilities), ("safe setup readiness", SetupReadiness), ("config loading", Config),
+    ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
@@ -52,8 +52,16 @@ static async Task Capabilities() => await WithApp(async client =>
 {
     var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/capabilities");
     var values = json.GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()).ToArray();
-    Check(values.Contains("helper.health") && values.Contains("aegis.proxy"), "required capabilities missing");
+    Check(values.Contains("helper.health") && values.Contains("helper.activity") && values.Contains("aegis.proxy"), "required capabilities missing");
     Check(!values.Contains("calendar.write"), "unimplemented write capability advertised");
+});
+
+static async Task SafeActivity() => await WithApp(async client =>
+{
+    await client.GetAsync("/api/v1/health?token=never-expose-this");
+    var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/activity?limit=50"); var serialized = json.ToString();
+    Check(json.GetProperty("entries").GetArrayLength() > 0 && serialized.Contains("/api/v1/health"), "request activity was not recorded");
+    Check(!serialized.Contains("never-expose-this") && !serialized.Contains("token"), "request activity exposed a query or secret");
 });
 
 static async Task SetupReadiness() => await WithApp(async client =>
