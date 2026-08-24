@@ -19,7 +19,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
-    ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure),
+    ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("portable secrets are encrypted", PortableSecrets),
     ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
@@ -69,7 +69,7 @@ static async Task SafeActivity() => await WithApp(async client =>
 static async Task SetupReadiness() => await WithApp(async client =>
 {
     var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/setup/status"); var serialized = json.ToString();
-    Check(!json.GetProperty("production_ready").GetBoolean() && json.GetProperty("checks").GetArrayLength() == 6, "setup readiness was incorrect");
+    Check(!json.GetProperty("production_ready").GetBoolean() && json.GetProperty("checks").GetArrayLength() == 7, "setup readiness was incorrect");
     Check(!serialized.Contains("client-secret") && !serialized.Contains("@example.com"), "setup readiness exposed secret configuration");
 });
 
@@ -215,6 +215,21 @@ static async Task CredentialRefreshFailure()
     var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"));
     var token = await CredentialProvider(store, handler, time).GetIdTokenAsync(default);
     Check(token is null && handler.Calls == 1, "failed refresh did not fail closed");
+}
+
+static async Task PortableSecrets()
+{
+    var root = Path.Combine(AppContext.BaseDirectory, "portable-secret-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+    var keyFile = Path.Combine(root, "key"); var storePath = Path.Combine(root, "store"); var secret = "refresh-token-never-plaintext";
+    await File.WriteAllTextAsync(keyFile, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+    try
+    {
+        using var store = new PortableAesSecretStore(Options.Create(new HelperOptions { SecretStorePath = storePath, SecretStoreKeyFile = keyFile }));
+        await store.SaveAsync("google-token", secret, default); var file = Directory.GetFiles(storePath).Single(); var bytes = await File.ReadAllBytesAsync(file);
+        Check(!Encoding.UTF8.GetString(bytes).Contains(secret) && await store.GetAsync("google-token", default) == secret, "portable secret was not encrypted and recovered");
+        await store.DeleteAsync("google-token", default); Check(!File.Exists(file), "portable secret was not deleted");
+    }
+    finally { Directory.Delete(root, true); }
 }
 
 static async Task Cancellation()
