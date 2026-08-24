@@ -21,7 +21,7 @@ function render(){
   if(health){
     const ready=health.status==='AVAILABLE';
     text('serviceMetric',health.status);text('upstreamMetric',health.upstream.apps_script);text('uptimeMetric',formatUptime(health.uptime_seconds));text('stripMessage',ready?'Helper available on loopback':'Helper response received');text('gatewayState',health.upstream.apps_script.replaceAll('_',' '));text('healthDetail',JSON.stringify(health,null,2));
-    text('serviceState',ready?'? AVAILABLE':'? DEGRADED');$('serviceState').className=`state ${ready?'':'failed'}`;$('liveDot').className=`live-dot ${ready?'ready':'failed'}`;
+    text('serviceState',ready?'AVAILABLE':'DEGRADED');$('serviceState').className=`state ${ready?'':'failed'}`;$('liveDot').className=`live-dot ${ready?'ready':'failed'}`;
     document.querySelectorAll('[data-version]').forEach(n=>n.textContent=health.version);
   }
   if(auth){
@@ -41,7 +41,7 @@ async function refresh(showToast=false){
   try{
     const [health,auth,capabilities,diagnostics]=await Promise.all([api('/api/v1/health'),api('/api/v1/auth/status'),api('/api/v1/capabilities'),api('/api/v1/diagnostics')]);
     Object.assign(state,{health,auth,capabilities,diagnostics});render();if(showToast)toast('Helper status refreshed');
-  }catch(error){text('stripMessage',error.name==='AbortError'?'Status check timed out':error.message);text('serviceState','? UNAVAILABLE');$('serviceState').className='state failed';$('liveDot').className='live-dot failed';if(showToast)toast('Unable to refresh helper');}
+  }catch(error){text('stripMessage',error.name==='AbortError'?'Status check timed out':error.message);text('serviceState','UNAVAILABLE');$('serviceState').className='state failed';$('liveDot').className='live-dot failed';if(showToast)toast('Unable to refresh helper');}
 }
 
 async function authenticate(){
