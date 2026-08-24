@@ -81,7 +81,7 @@ async function loadSnapshot(){
 }
 async function loadActivity(showToast=false){
   try{
-    const result=await api('/api/v1/activity?limit=30');const entries=result.entries||[];text('activityCount',`${entries.length} REQUEST${entries.length===1?'':'S'}`);
+    const includeRoutine=$('activityRoutine').checked;const result=await api(`/api/v1/activity?limit=30&include_routine=${includeRoutine}`);const entries=result.entries||[];text('activityCount',`${entries.length} REQUEST${entries.length===1?'':'S'}`);
     $('activityTable').innerHTML=entries.length?`<div class="activity-row activity-labels"><span>TIME</span><span>METHOD</span><span>ENDPOINT</span><span>STATUS</span><span>DURATION</span></div>${entries.map(entry=>`<div class="activity-row"><span>${escapeHtml(new Date(entry.timestamp).toLocaleTimeString())}</span><strong>${escapeHtml(entry.method)}</strong><code>${escapeHtml(entry.endpoint)}</code><span class="activity-status ${entry.status>=400?'bad':'good'}">${entry.status}</span><span>${entry.durationMs} ms</span></div>`).join('')}`:'<div class="activity-empty">No helper requests have been recorded yet.</div>';
     if(showToast)toast('Activity refreshed');
   }catch(error){$('activityTable').innerHTML=`<div class="activity-empty">Activity unavailable: ${escapeHtml(error.message)}</div>`}
@@ -98,4 +98,6 @@ $('refreshButton').addEventListener('click',()=>refresh(true));$('authButton').a
 $('calendarForm').addEventListener('submit',queryCalendar);document.querySelectorAll('[data-calendar-prompt]').forEach(button=>button.addEventListener('click',()=>{$('calendarQuestion').value=button.dataset.calendarPrompt;$('calendarQuestion').focus()}));
 $('snapshotRefresh').addEventListener('click',loadSnapshot);
 $('activityRefresh').addEventListener('click',()=>loadActivity(true));
+$('activityRoutine').addEventListener('change',()=>loadActivity());
 refresh();setInterval(()=>refresh(),30000);
+
