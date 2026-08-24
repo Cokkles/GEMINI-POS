@@ -17,6 +17,8 @@ public sealed class HelperOptions
     public bool LaunchBrowser { get; set; } = true;
     public string[] AllowedOrigins { get; set; } = ["https://cokkles.github.io"];
     public string[] AllowedEmails { get; set; } = [];
+    public string SecretStorePath { get; set; } = "/var/lib/gpos-helper/secrets";
+    public string SecretStoreKeyFile { get; set; } = "/run/secrets/gpos_helper_key";
     public GoogleOAuthOptions GoogleOAuth { get; set; } = new();
 }
 
@@ -31,4 +33,3 @@ public sealed class GoogleOAuthOptions
 public sealed record AuthIdentity(string Subject, string Email, string DisplayName);
 public sealed record AuthResult(bool Success, AuthIdentity? Identity = null, string? Error = null);
 public sealed record UpstreamResult(bool Success, int StatusCode, JsonElement? Body, string? ErrorCategory = null, string? Error = null, int RetryCount = 0, long DurationMs = 0);
-
