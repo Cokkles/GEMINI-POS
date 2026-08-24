@@ -27,10 +27,12 @@ Status date: 2026-08-24
 - Fail-closed Windows production launcher and non-secret live validation script for readiness, capabilities, GitHub Pages preflight, authentication and upstream configuration.
 - Reproducible Windows release-candidate ZIP with payload SHA-256 manifest and isolated packaged-binary smoke validation.
 - Platform-aware secret storage: Windows DPAPI, memory-only Linux development, and fail-closed AES-256-GCM Linux production storage using a separately mounted orchestrator key.
+- Dedicated liveness and readiness probes for process supervisors, with production readiness tied to the same safe setup checks shown in the dashboard.
+- Activity view suppresses routine polling by default while retaining an opt-in view of every bounded request record.
 
 ## Validation
 
-- Offline automated harness: 26/26 passed.
+- Offline automated harness: 32/32 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
 - No compiled artifact is committed; `dist/` remains ignored.
@@ -40,8 +42,8 @@ Status date: 2026-08-24
 - Register real Google OAuth credentials and run the credentialed integration suite.
 - Exercise Apps Script 2.6.3 against the production endpoint and confirm allowlist behavior end to end.
 - Validate refresh-token behavior with real Google credentials and implement optional remote Google revocation.
-- Define the non-Windows `ISecretStore` implementation before container deployment.
 - Add HTTPS or a mutually authenticated local transport before any non-loopback binding is considered.
 - AEGIS frontend integration is intentionally not included; the AEGIS repository was inspected but not modified.
 
 The implementation exit criteria are met locally. Production OAuth validation remains an operational Phase-1 gate, not a silent mock.
+
