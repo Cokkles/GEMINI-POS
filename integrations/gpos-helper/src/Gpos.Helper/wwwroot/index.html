@@ -14,7 +14,7 @@
     <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span><b>AEGIS</b><small>GPOS HELPER</small></span></div>
     <div class="nav-group"><small>OVERVIEW</small><button class="nav-item active" data-view="overview"><span class="nav-icon">01</span><span>Dashboard</span></button></div>
     <div class="nav-group"><small>HELPER</small><button class="nav-item" data-view="connection"><span class="nav-icon">02</span><span>Connection</span></button><button class="nav-item" data-view="system"><span class="nav-icon">03</span><span>System</span></button></div>
-    <div class="nav-group"><small>AEGIS</small><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">GO</span><span>Open PWA</span></a></div>
+    <div class="nav-group"><small>AEGIS</small><button class="nav-item" data-view="calendar"><span class="nav-icon">04</span><span>Calendar</span></button><a class="nav-item" href="https://cokkles.github.io/aegis-itinerary-project/" target="_blank" rel="noopener"><span class="nav-icon">GO</span><span>Open PWA</span></a></div>
     <div class="nav-version">HELPER v<span data-version>0.1.0</span> | API v1</div>
   </nav>
 
@@ -88,10 +88,32 @@
         <section class="panel full"><div class="panel-head"><div><p class="eyebrow">API V1</p><h2>LOCAL ENDPOINTS</h2></div></div><div class="endpoint-list"><a href="/api/v1/health">/api/v1/health</a><a href="/api/v1/capabilities">/api/v1/capabilities</a><a href="/api/v1/auth/status">/api/v1/auth/status</a><a href="/api/v1/diagnostics">/api/v1/diagnostics</a><a href="/api/v1/setup/status">/api/v1/setup/status</a></div></section>
       </div>
     </section>
+
+    <section class="view" id="calendar">
+      <div class="grid calendar-grid">
+        <section class="panel">
+          <div class="panel-head"><div><p class="eyebrow">AEGIS CALENDAR</p><h2>ASK YOUR SCHEDULE</h2></div><span class="source-badge">READ ONLY</span></div>
+          <form id="calendarForm" class="query-form">
+            <label for="calendarQuestion">What would you like to know?</label>
+            <textarea id="calendarQuestion" maxlength="2000" rows="5" placeholder="What is on my calendar tomorrow?" required></textarea>
+            <div class="query-footer"><small id="calendarHint">Uses the bounded AUTH-1 calendar query route.</small><button class="mini primary" id="calendarSubmit" type="submit">Ask AEGIS</button></div>
+          </form>
+          <div class="prompt-chips" aria-label="Suggested calendar questions">
+            <button type="button" data-calendar-prompt="What is on my calendar tomorrow?">Tomorrow</button>
+            <button type="button" data-calendar-prompt="Show my schedule for the next seven days.">Next 7 days</button>
+            <button type="button" data-calendar-prompt="When is my next appointment?">Next appointment</button>
+          </div>
+        </section>
+        <section class="panel response-panel">
+          <div class="panel-head"><div><p class="eyebrow">BOUNDED RESULT</p><h2>CALENDAR RESPONSE</h2></div><span class="source-badge" id="calendarState">READY</span></div>
+          <div class="calendar-response empty" id="calendarResponse"><strong>No query yet</strong><span>Authenticate, configure Apps Script, then ask a read-only calendar question.</span></div>
+          <p class="note">This helper does not confirm or write calendar changes. Any proposed change remains a preview in the authoritative AEGIS flow.</p>
+        </section>
+      </div>
+    </section>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
 </body>
 </html>
-
