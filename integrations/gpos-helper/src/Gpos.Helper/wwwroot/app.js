@@ -79,9 +79,16 @@ async function loadSnapshot(){
     const message=error.name==='AbortError'?'Snapshot request timed out. Please try again.':error.message;text('snapshotState','UNAVAILABLE');$('snapshotMetrics').innerHTML='<article class="metric"><small>STATE</small><strong>UNAVAILABLE</strong><span>Terminal result</span></article>';$('snapshotResult').className='snapshot-result failed';$('snapshotResult').innerHTML=`<strong>AEGIS snapshot unavailable</strong><span>${escapeHtml(message)}</span>`;
   }finally{button.disabled=false}
 }
+async function loadActivity(showToast=false){
+  try{
+    const result=await api('/api/v1/activity?limit=30');const entries=result.entries||[];text('activityCount',`${entries.length} REQUEST${entries.length===1?'':'S'}`);
+    $('activityTable').innerHTML=entries.length?`<div class="activity-row activity-labels"><span>TIME</span><span>METHOD</span><span>ENDPOINT</span><span>STATUS</span><span>DURATION</span></div>${entries.map(entry=>`<div class="activity-row"><span>${escapeHtml(new Date(entry.timestamp).toLocaleTimeString())}</span><strong>${escapeHtml(entry.method)}</strong><code>${escapeHtml(entry.endpoint)}</code><span class="activity-status ${entry.status>=400?'bad':'good'}">${entry.status}</span><span>${entry.durationMs} ms</span></div>`).join('')}`:'<div class="activity-empty">No helper requests have been recorded yet.</div>';
+    if(showToast)toast('Activity refreshed');
+  }catch(error){$('activityTable').innerHTML=`<div class="activity-empty">Activity unavailable: ${escapeHtml(error.message)}</div>`}
+}
 function summaryValue(value){if(value===null||value===undefined)return '-';if(Array.isArray(value))return `${value.length} items`;if(typeof value==='object')return `${Object.keys(value).length} fields`;return String(value).slice(0,42)}
 function escapeHtml(value){return String(value).replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]))}
-function showView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.nav-item[data-view]').forEach(v=>v.classList.toggle('active',v.dataset.view===id));closeNav()}
+function showView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.nav-item[data-view]').forEach(v=>v.classList.toggle('active',v.dataset.view===id));if(id==='activity')loadActivity();closeNav()}
 function closeNav(){$('nav').classList.remove('open');$('scrim').classList.remove('show')}
 
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.view)));
@@ -90,4 +97,5 @@ $('menuButton').addEventListener('click',()=>{$('nav').classList.add('open');$('
 $('refreshButton').addEventListener('click',()=>refresh(true));$('authButton').addEventListener('click',authenticate);$('authButtonSecondary').addEventListener('click',authenticate);$('logoutButton').addEventListener('click',logout);
 $('calendarForm').addEventListener('submit',queryCalendar);document.querySelectorAll('[data-calendar-prompt]').forEach(button=>button.addEventListener('click',()=>{$('calendarQuestion').value=button.dataset.calendarPrompt;$('calendarQuestion').focus()}));
 $('snapshotRefresh').addEventListener('click',loadSnapshot);
+$('activityRefresh').addEventListener('click',()=>loadActivity(true));
 refresh();setInterval(()=>refresh(),30000);
