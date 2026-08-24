@@ -32,7 +32,12 @@ public partial class Program
         builder.Services.AddSingleton<RequestActivityStore>();
         builder.Services.AddSingleton<ClientSessionFlowStore>();
         builder.Services.AddHostedService<HeartbeatWorker>();
-        builder.Services.AddSingleton<ISecretStore, WindowsDpapiSecretStore>();
+        builder.Services.AddSingleton<ISecretStore>(sp =>
+        {
+            if (OperatingSystem.IsWindows()) return ActivatorUtilities.CreateInstance<WindowsDpapiSecretStore>(sp);
+            var configured = sp.GetRequiredService<IOptions<HelperOptions>>();
+            return configured.Value.DevelopmentMode ? new EphemeralSecretStore() : new PortableAesSecretStore(configured);
+        });
         builder.Services.AddSingleton<IGoogleCredentialProvider, GoogleCredentialProvider>();
         builder.Services.AddSingleton<IAuthProvider>(sp => sp.GetRequiredService<IOptions<HelperOptions>>().Value.DevelopmentMode ? new DevelopmentAuthProvider() : ActivatorUtilities.CreateInstance<GoogleOAuthProvider>(sp));
         builder.Services.AddHttpClient("apps-script", c => c.Timeout = Timeout.InfiniteTimeSpan);
@@ -81,6 +86,7 @@ public partial class Program
             var listenIsLoopback = IPAddress.TryParse(value.ListenAddress, out var address) && IPAddress.IsLoopback(address);
             var endpointIsHttps = Uri.TryCreate(value.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
             var redirectIsLoopback = Uri.TryCreate(value.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var redirectAddress) && IPAddress.IsLoopback(redirectAddress);
+            var secretStoreReady = OperatingSystem.IsWindows() || value.DevelopmentMode || (Directory.Exists(value.SecretStorePath) && File.Exists(value.SecretStoreKeyFile));
             var checks = new[]
             {
                 new SetupCheck("production_mode", !value.DevelopmentMode, "Development mock must be disabled."),
@@ -88,7 +94,8 @@ public partial class Program
                 new SetupCheck("apps_script_endpoint", endpointIsHttps, "A secure Apps Script endpoint is required."),
                 new SetupCheck("google_oauth_client", !string.IsNullOrWhiteSpace(value.GoogleOAuth.ClientId), "A Desktop OAuth client ID is required."),
                 new SetupCheck("identity_allowlist", value.AllowedEmails.Length > 0, "At least one allowed Google identity is required."),
-                new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use a loopback host.")
+                new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use a loopback host."),
+                new SetupCheck("secret_store", secretStoreReady, OperatingSystem.IsWindows() ? "Windows DPAPI is available." : value.DevelopmentMode ? "Development secrets are memory-only." : "Encrypted storage and mounted key are required.")
             };
             return Results.Ok(new { production_ready = checks.All(x => x.Ready), mode = value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION", checks });
         });
