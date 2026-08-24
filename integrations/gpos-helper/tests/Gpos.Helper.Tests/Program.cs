@@ -35,7 +35,10 @@ return failures.Count == 0 ? 0 : 1;
 static async Task ControlSurface() => await WithApp(async client =>
 {
     var html = await client.GetStringAsync("/");
-    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css"), "control surface was not served");
+    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css") && html.Contains("calendarForm"), "control surface was not served");
+    using var css = await client.GetAsync("/app.css"); using var js = await client.GetAsync("/app.js");
+    Check(css.IsSuccessStatusCode && css.Content.Headers.ContentType?.MediaType == "text/css", "control surface stylesheet was not served");
+    Check(js.IsSuccessStatusCode && js.Content.Headers.ContentType?.MediaType is "text/javascript" or "application/javascript", "control surface script was not served");
 });
 
 static async Task Health() => await WithApp(async client =>
@@ -247,4 +250,3 @@ sealed class LogSink : ILogger<AppsScriptGateway>
     public bool IsEnabled(LogLevel logLevel) => true;
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Text += formatter(state, exception);
 }
-
