@@ -15,6 +15,8 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 | GET | `/setup/status` | No | Safe production-readiness checks without returning configured values or identities. |
 | GET | `/auth/status` | Optional | Local session state, safe identity summary and non-secret credential readiness (`ABSENT`, `VALID`, `REFRESHABLE`, `EXPIRED`, or `DEVELOPMENT_MOCK`). |
 | POST | `/auth/login` | No | Starts login and returns `authorization_url`; production may open the system browser. |
+| POST | `/auth/client/start` | No | Starts a PKCE-bound login for an allowlisted HTTPS PWA return URL. |
+| POST | `/auth/client/exchange` | No | Exchanges a one-minute, single-use client code plus PKCE verifier for a helper-only session token. |
 | GET | `/auth/callback?code=...&state=...` | No | OAuth loopback callback; sets the helper session cookie on success. |
 | POST | `/auth/logout` | Optional | Revokes the presented local session, clears its cookie and deletes locally persisted Google credentials. |
 | GET | `/aegis/dashboard` | Yes | Typed AUTH-1 request with upstream action `get_dashboard`. |
@@ -33,3 +35,7 @@ Example Calendar query:
 ```
 
 The route does not implement `calendar_confirm`. Any upstream change proposal remains a preview; Calendar write is therefore not advertised.
+
+## PWA session bridge
+
+The GitHub Pages client must not depend on the helper cookie being available cross-site. It generates a PKCE verifier and S256 challenge, calls `/auth/client/start`, follows the returned authorization URL, and receives `gpos_code` in its allowlisted return URL fragment. The fragment is not sent to the hosting server. The client exchanges the code and verifier once at `/auth/client/exchange`, keeps the returned helper session token only in memory or session-scoped storage, and sends it as `X-GPOS-Session`. The value is a local helper session-not a Google credential. Codes expire after one minute and are consumed even when verification fails.
