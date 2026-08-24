@@ -25,12 +25,13 @@ The helper does not authorize or reinterpret subsystem facts. Calendar query ret
 
 ## Secrets
 
-Never commit populated `config/appsettings.json`, OAuth values, tokens, API keys, journal data, or financial detail. A POC token package is stored under the current Windows user's local application data as opaque DPAPI ciphertext. Logout revokes local sessions; durable credential revocation and refresh-token lifecycle are Phase-1 work.
+Never commit populated `config/appsettings.json`, OAuth values, tokens, API keys, journal data, or financial detail. A POC token package is stored under the current Windows user's local application data as opaque DPAPI ciphertext. Logout revokes local sessions, makes a bounded best-effort Google token revocation request, and always removes the local credential package even when Google is unavailable.
 
 ## Known security limitations
 
 - Real Google and Apps Script integration has not been executed without deployment credentials.
-- Local logout deletes the DPAPI token package, but remote Google token revocation is not yet implemented.
+- Remote Google token revocation still requires validation with real production credentials.
 - Sessions are single-node/in-memory and disappear on restart.
 - Plain HTTP is acceptable only for the loopback POC. Non-loopback hosting requires TLS and a revised cookie/CSRF design.
 - The container secret-store implementation is intentionally absent, so the Dockerfile is not production-ready.
+
