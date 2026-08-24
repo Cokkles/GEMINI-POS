@@ -19,7 +19,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
-    ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("portable secrets are encrypted", PortableSecrets),
+    ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
     ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
@@ -225,6 +225,22 @@ static async Task CredentialRefreshFailure()
     Check(token is null && handler.Calls == 1, "failed refresh did not fail closed");
 }
 
+static async Task CredentialRevocation()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new MemorySecretStore();
+    await store.SaveAsync("google-token", JsonSerializer.Serialize(new StoredGoogleToken("access", "refresh", "id", time.GetUtcNow().AddHours(1))), default);
+    var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.OK, "{}")); var result = await CredentialProvider(store, handler, time).RevokeAsync(default);
+    Check(result == "REVOKED" && handler.Calls == 1 && await store.GetAsync("google-token", default) is null, "credential was not remotely revoked and locally cleared");
+}
+
+static async Task CredentialRevocationFailure()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new MemorySecretStore();
+    await store.SaveAsync("google-token", JsonSerializer.Serialize(new StoredGoogleToken("access", "refresh", "id", time.GetUtcNow().AddHours(1))), default);
+    var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.ServiceUnavailable, "{}")); var result = await CredentialProvider(store, handler, time).RevokeAsync(default);
+    Check(result == "FAILED" && handler.Calls == 1 && await store.GetAsync("google-token", default) is null, "failed remote revoke did not clear the local credential");
+}
+
 static async Task PortableSecrets()
 {
     var root = Path.Combine(AppContext.BaseDirectory, "portable-secret-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
@@ -302,6 +318,7 @@ sealed class FixedCredentialProvider(string? token) : IGoogleCredentialProvider
     public Task<string?> GetIdTokenAsync(CancellationToken cancellationToken) => Task.FromResult(token);
     public Task<string> GetStateAsync(CancellationToken cancellationToken) => Task.FromResult(token is null ? "ABSENT" : "VALID");
     public Task ClearAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task<string> RevokeAsync(CancellationToken cancellationToken) => Task.FromResult("NOT_PRESENT");
 }
 sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; public void Advance(TimeSpan amount) => now += amount; }
 sealed class LogSink : ILogger<AppsScriptGateway>
