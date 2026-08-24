@@ -28,6 +28,7 @@ public partial class Program
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<HelperSessionStore>();
         builder.Services.AddSingleton<HeartbeatState>();
+        builder.Services.AddSingleton<RequestActivityStore>();
         builder.Services.AddHostedService<HeartbeatWorker>();
         builder.Services.AddSingleton<ISecretStore, WindowsDpapiSecretStore>();
         builder.Services.AddSingleton<IGoogleCredentialProvider, GoogleCredentialProvider>();
@@ -53,7 +54,12 @@ public partial class Program
                 app.Logger.LogError("Request failed request_id={RequestId} endpoint={Endpoint} method={Method} duration_ms={DurationMs} result={Result} error_category={Category} detail={Detail}", requestId, context.Request.Path.Value, context.Request.Method, watch.ElapsedMilliseconds, "failure", ex.GetType().Name, SecretRedactor.Redact(ex.Message));
                 if (!context.Response.HasStarted) await Results.Problem(statusCode: 500, title: "Internal helper error").ExecuteAsync(context);
             }
-            finally { app.Logger.LogInformation("Request complete request_id={RequestId} endpoint={Endpoint} method={Method} duration_ms={DurationMs} result={Result}", requestId, context.Request.Path.Value, context.Request.Method, watch.ElapsedMilliseconds, context.Response.StatusCode); }
+            finally
+            {
+                var endpoint = context.Request.Path.Value ?? "/";
+                app.Services.GetRequiredService<RequestActivityStore>().Record(context.Request.Method, endpoint, context.Response.StatusCode, watch.ElapsedMilliseconds);
+                app.Logger.LogInformation("Request complete request_id={RequestId} endpoint={Endpoint} method={Method} duration_ms={DurationMs} result={Result}", requestId, endpoint, context.Request.Method, watch.ElapsedMilliseconds, context.Response.StatusCode);
+            }
         });
         app.UseCors("frontend");
         app.UseDefaultFiles();
@@ -65,7 +71,8 @@ public partial class Program
             status = "AVAILABLE", service = "gpos-helper", version = Version(), uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
             auth = auth.Mode, upstream = new { apps_script = string.IsNullOrWhiteSpace(early.AppsScriptEndpoint) ? "NOT_CONFIGURED" : "CONFIGURED", google = auth.Mode == "google_oauth" ? "CONFIGURED" : "DEVELOPMENT_MOCK" }
         }));
-        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.auth", "helper.background_jobs", "helper.setup", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.auth", "helper.background_jobs", "helper.setup", "helper.activity", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/activity", (RequestActivityStore activity, int? limit) => Results.Ok(new { entries = activity.Recent(limit ?? 20) }));
         api.MapGet("/setup/status", (IOptions<HelperOptions> configured) =>
         {
             var value = configured.Value;
@@ -139,4 +146,3 @@ public partial class Program
     public sealed record CalendarQuery(string Question, object[]? History);
     public sealed record SetupCheck(string Id, bool Ready, string Detail);
 }
-
