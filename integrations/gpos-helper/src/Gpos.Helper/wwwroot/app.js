@@ -57,6 +57,17 @@ async function authenticate(){
 }
 
 async function logout(){try{await api('/api/v1/auth/logout',{method:'POST'});await refresh();toast('Local session ended')}catch(error){toast(`Logout failed: ${error.message}`)}}
+async function queryCalendar(event){
+  event.preventDefault();const question=$('calendarQuestion').value.trim();if(!question)return;
+  if(!state.auth?.authenticated){showView('connection');toast('Authenticate before querying AEGIS');return}
+  const submit=$('calendarSubmit');submit.disabled=true;text('calendarState','ASKING');$('calendarResponse').className='calendar-response loading';$('calendarResponse').innerHTML='<strong>Checking your calendar.</strong><span>The request will stop automatically if the upstream service does not respond.</span>';
+  try{
+    const result=await api('/api/v1/aegis/calendar/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,history:[]})});
+    text('calendarState','COMPLETE');$('calendarResponse').className='calendar-response';$('calendarResponse').innerHTML=`<pre>${escapeHtml(JSON.stringify(result,null,2))}</pre>`;
+  }catch(error){
+    const message=error.name==='AbortError'?'Calendar request timed out. Please try again.':error.message;text('calendarState','UNAVAILABLE');$('calendarResponse').className='calendar-response failed';$('calendarResponse').innerHTML=`<strong>Calendar unavailable</strong><span>${escapeHtml(message)}</span>`;
+  }finally{submit.disabled=false}
+}
 function escapeHtml(value){return String(value).replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]))}
 function showView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.nav-item[data-view]').forEach(v=>v.classList.toggle('active',v.dataset.view===id));closeNav()}
 function closeNav(){$('nav').classList.remove('open');$('scrim').classList.remove('show')}
@@ -65,5 +76,5 @@ document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener
 document.querySelectorAll('[data-view-link]').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.viewLink)));
 $('menuButton').addEventListener('click',()=>{$('nav').classList.add('open');$('scrim').classList.add('show')});$('scrim').addEventListener('click',closeNav);
 $('refreshButton').addEventListener('click',()=>refresh(true));$('authButton').addEventListener('click',authenticate);$('authButtonSecondary').addEventListener('click',authenticate);$('logoutButton').addEventListener('click',logout);
+$('calendarForm').addEventListener('submit',queryCalendar);document.querySelectorAll('[data-calendar-prompt]').forEach(button=>button.addEventListener('click',()=>{$('calendarQuestion').value=button.dataset.calendarPrompt;$('calendarQuestion').focus()}));
 refresh();setInterval(()=>refresh(),30000);
-
