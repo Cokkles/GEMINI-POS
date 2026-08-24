@@ -29,10 +29,11 @@ Status date: 2026-08-24
 - Platform-aware secret storage: Windows DPAPI, memory-only Linux development, and fail-closed AES-256-GCM Linux production storage using a separately mounted orchestrator key.
 - Dedicated liveness and readiness probes for process supervisors, with production readiness tied to the same safe setup checks shown in the dashboard.
 - Activity view suppresses routine polling by default while retaining an opt-in view of every bounded request record.
+- Logout performs bounded best-effort Google token revocation and always clears the encrypted local credential package.
 
 ## Validation
 
-- Offline automated harness: 32/32 passed.
+- Offline automated harness: 34/34 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
 - No compiled artifact is committed; `dist/` remains ignored.
@@ -41,7 +42,7 @@ Status date: 2026-08-24
 
 - Register real Google OAuth credentials and run the credentialed integration suite.
 - Exercise Apps Script 2.6.3 against the production endpoint and confirm allowlist behavior end to end.
-- Validate refresh-token behavior with real Google credentials and implement optional remote Google revocation.
+- Validate refresh-token and remote-revocation behavior with real Google credentials.
 - Add HTTPS or a mutually authenticated local transport before any non-loopback binding is considered.
 - AEGIS frontend integration is intentionally not included; the AEGIS repository was inspected but not modified.
 
