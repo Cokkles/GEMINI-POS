@@ -78,25 +78,19 @@ public partial class Program
             status = "AVAILABLE", service = "gpos-helper", version = Version(), uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
             auth = auth.Mode, upstream = new { apps_script = string.IsNullOrWhiteSpace(early.AppsScriptEndpoint) ? "NOT_CONFIGURED" : "CONFIGURED", google = auth.Mode == "google_oauth" ? "CONFIGURED" : "DEVELOPMENT_MOCK" }
         }));
-        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.auth", "helper.background_jobs", "helper.setup", "helper.activity", "aegis.proxy", "calendar.read" } }));
-        api.MapGet("/activity", (RequestActivityStore activity, int? limit) => Results.Ok(new { entries = activity.Recent(limit ?? 20) }));
+        api.MapGet("/live", () => Results.Ok(new { status = "ALIVE", service = "gpos-helper", uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds }));
+        api.MapGet("/ready", (IOptions<HelperOptions> configured) =>
+        {
+            var checks = GetSetupChecks(configured.Value);
+            var ready = configured.Value.DevelopmentMode || checks.All(x => x.Ready);
+            return Results.Json(new { status = ready ? "READY" : "NOT_READY", mode = configured.Value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION", failed_checks = checks.Where(x => !x.Ready).Select(x => x.Id) }, statusCode: ready ? 200 : 503);
+        });
+        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.readiness", "helper.auth", "helper.background_jobs", "helper.setup", "helper.activity", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/activity", (RequestActivityStore activity, int? limit, bool? include_routine) => Results.Ok(new { entries = activity.Recent(limit ?? 20, include_routine ?? false), routine_included = include_routine ?? false }));
         api.MapGet("/setup/status", (IOptions<HelperOptions> configured) =>
         {
             var value = configured.Value;
-            var listenIsLoopback = IPAddress.TryParse(value.ListenAddress, out var address) && IPAddress.IsLoopback(address);
-            var endpointIsHttps = Uri.TryCreate(value.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
-            var redirectIsLoopback = Uri.TryCreate(value.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var redirectAddress) && IPAddress.IsLoopback(redirectAddress);
-            var secretStoreReady = OperatingSystem.IsWindows() || value.DevelopmentMode || (Directory.Exists(value.SecretStorePath) && File.Exists(value.SecretStoreKeyFile));
-            var checks = new[]
-            {
-                new SetupCheck("production_mode", !value.DevelopmentMode, "Development mock must be disabled."),
-                new SetupCheck("loopback_listener", listenIsLoopback, "Listener must remain on loopback."),
-                new SetupCheck("apps_script_endpoint", endpointIsHttps, "A secure Apps Script endpoint is required."),
-                new SetupCheck("google_oauth_client", !string.IsNullOrWhiteSpace(value.GoogleOAuth.ClientId), "A Desktop OAuth client ID is required."),
-                new SetupCheck("identity_allowlist", value.AllowedEmails.Length > 0, "At least one allowed Google identity is required."),
-                new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use a loopback host."),
-                new SetupCheck("secret_store", secretStoreReady, OperatingSystem.IsWindows() ? "Windows DPAPI is available." : value.DevelopmentMode ? "Development secrets are memory-only." : "Encrypted storage and mounted key are required.")
-            };
+            var checks = GetSetupChecks(value);
             return Results.Ok(new { production_ready = checks.All(x => x.Ready), mode = value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION", checks });
         });
         api.MapGet("/diagnostics", (IAuthProvider auth, HeartbeatState heartbeat) => Results.Ok(new
@@ -162,6 +156,8 @@ public partial class Program
             return ToResult(await g.PostAsync(new { action = "calendar_ai", question = query.Question, history = query.History ?? Array.Empty<object>() }, false, ct));
         });
         app.MapGet("/health", () => Results.Redirect("/api/v1/health"));
+        app.MapGet("/live", () => Results.Redirect("/api/v1/live"));
+        app.MapGet("/ready", () => Results.Redirect("/api/v1/ready"));
         app.MapGet("/capabilities", () => Results.Redirect("/api/v1/capabilities"));
         return app;
     }
@@ -175,7 +171,25 @@ public partial class Program
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo)) return false;
         return allowedOrigins.Any(origin => Uri.TryCreate(origin, UriKind.Absolute, out var allowed) && string.Equals(uri.GetLeftPart(UriPartial.Authority), allowed.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase));
     }
+    private static SetupCheck[] GetSetupChecks(HelperOptions value)
+    {
+        var listenIsLoopback = IPAddress.TryParse(value.ListenAddress, out var address) && IPAddress.IsLoopback(address);
+        var endpointIsHttps = Uri.TryCreate(value.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
+        var redirectIsLoopback = Uri.TryCreate(value.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var redirectAddress) && IPAddress.IsLoopback(redirectAddress);
+        var secretStoreReady = OperatingSystem.IsWindows() || value.DevelopmentMode || (Directory.Exists(value.SecretStorePath) && File.Exists(value.SecretStoreKeyFile));
+        return new[]
+        {
+            new SetupCheck("production_mode", !value.DevelopmentMode, "Development mock must be disabled."),
+            new SetupCheck("loopback_listener", listenIsLoopback, "Listener must remain on loopback."),
+            new SetupCheck("apps_script_endpoint", endpointIsHttps, "A secure Apps Script endpoint is required."),
+            new SetupCheck("google_oauth_client", !string.IsNullOrWhiteSpace(value.GoogleOAuth.ClientId), "A Desktop OAuth client ID is required."),
+            new SetupCheck("identity_allowlist", value.AllowedEmails.Length > 0, "At least one allowed Google identity is required."),
+            new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use a loopback host."),
+            new SetupCheck("secret_store", secretStoreReady, OperatingSystem.IsWindows() ? "Windows DPAPI is available." : value.DevelopmentMode ? "Development secrets are memory-only." : "Encrypted storage and mounted key are required.")
+        };
+    }
     private static string Version() => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0";
     public sealed record CalendarQuery(string Question, object[]? History);
     public sealed record SetupCheck(string Id, bool Ready, string Detail);
 }
+
