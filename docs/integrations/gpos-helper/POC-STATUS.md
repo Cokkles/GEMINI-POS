@@ -18,6 +18,7 @@ Status date: 2026-08-24
 - DPAPI-backed Google credential lifecycle with expiry tracking, single-flight refresh, safe readiness status and fail-closed refresh errors.
 - Safe production-readiness API and dashboard checklist for listener, Apps Script, OAuth client, identity allowlist and callback configuration.
 - PWA-aligned, read-only Calendar query view with bounded loading, timeout and terminal error states.
+- On-demand AEGIS dashboard snapshot with read-only typed routing, compact response metrics and bounded terminal states.
 
 ## Validation
 
