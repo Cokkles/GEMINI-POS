@@ -20,7 +20,7 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 | POST | `/auth/client/start` | No | Starts a PKCE-bound login for an allowlisted HTTPS PWA return URL. |
 | POST | `/auth/client/exchange` | No | Exchanges a one-minute, single-use client code plus PKCE verifier for a helper-only session token. |
 | GET | `/auth/callback?code=...&state=...` | No | OAuth loopback callback; sets the helper session cookie on success. |
-| POST | `/auth/logout` | Optional | Revokes the presented local session, clears its cookie and deletes locally persisted Google credentials. |
+| POST | `/auth/logout` | Optional | Revokes the local session, attempts bounded Google token revocation, clears its cookie and always deletes locally persisted credentials. |
 | GET | `/aegis/dashboard` | Yes | Typed AUTH-1 request with upstream action `get_dashboard`. |
 | GET | `/aegis/health` | Yes | Typed AUTH-1 request with upstream action `get_health`. |
 | POST | `/aegis/calendar/query` | Yes | Sends `{question, history}` as `calendar_ai`; input is bounded and the operation is never retried. |
