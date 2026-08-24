@@ -17,6 +17,7 @@ Status date: 2026-08-24
 - PWA-aligned local control surface for helper health, authentication, capabilities, diagnostics, worker state and bounded AEGIS connectivity.
 - DPAPI-backed Google credential lifecycle with expiry tracking, single-flight refresh, safe readiness status and fail-closed refresh errors.
 - Safe production-readiness API and dashboard checklist for listener, Apps Script, OAuth client, identity allowlist and callback configuration.
+- PWA-aligned, read-only Calendar query view with bounded loading, timeout and terminal error states.
 
 ## Validation
 
@@ -35,4 +36,3 @@ Status date: 2026-08-24
 - AEGIS frontend integration is intentionally not included; the AEGIS repository was inspected but not modified.
 
 The implementation exit criteria are met locally. Production OAuth validation remains an operational Phase-1 gate, not a silent mock.
-
