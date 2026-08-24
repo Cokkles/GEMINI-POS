@@ -23,6 +23,7 @@ public interface IGoogleCredentialProvider
     Task<string?> GetIdTokenAsync(CancellationToken cancellationToken);
     Task<string> GetStateAsync(CancellationToken cancellationToken);
     Task ClearAsync(CancellationToken cancellationToken);
+    Task<string> RevokeAsync(CancellationToken cancellationToken);
 }
 
 public sealed class GoogleCredentialProvider(
@@ -100,6 +101,27 @@ public sealed class GoogleCredentialProvider(
     }
 
     public Task ClearAsync(CancellationToken cancellationToken) => secrets.DeleteAsync("google-token", cancellationToken);
+
+    public async Task<string> RevokeAsync(CancellationToken cancellationToken)
+    {
+        var stored = await ReadAsync(cancellationToken);
+        var token = stored?.RefreshToken ?? stored?.AccessToken;
+        if (string.IsNullOrWhiteSpace(token)) { await ClearAsync(cancellationToken); return "NOT_PRESENT"; }
+        var result = "FAILED";
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/revoke") { Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["token"] = token }) };
+            using var response = await clients.CreateClient("oauth").SendAsync(request, timeout.Token);
+            result = response.IsSuccessStatusCode ? "REVOKED" : "FAILED";
+            if (!response.IsSuccessStatusCode) logger.LogWarning("Google credential revocation failed category={Category} status={Status}", "oauth_revoke_failed", (int)response.StatusCode);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { logger.LogWarning("Google credential revocation failed category={Category}", "oauth_revoke_timeout"); }
+        catch (HttpRequestException ex) { logger.LogWarning("Google credential revocation failed category={Category} detail={Detail}", "oauth_revoke_unavailable", SecretRedactor.Redact(ex.Message)); }
+        finally { await ClearAsync(cancellationToken); }
+        return result;
+    }
 
     private async Task<StoredGoogleToken?> ReadAsync(CancellationToken cancellationToken)
     {
