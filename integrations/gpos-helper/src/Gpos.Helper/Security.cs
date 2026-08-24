@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
 
 namespace Gpos.Helper;
 
@@ -82,6 +83,62 @@ public sealed class WindowsDpapiSecretStore(IHostEnvironment environment) : ISec
     [DllImport("kernel32.dll", EntryPoint = "RtlZeroMemory")] private static extern void ZeroMemory(IntPtr destination, nuint length);
 }
 
+public sealed class EphemeralSecretStore : ISecretStore
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> values = new();
+    public Task SaveAsync(string name, string value, CancellationToken cancellationToken) { values[name] = value; return Task.CompletedTask; }
+    public Task<string?> GetAsync(string name, CancellationToken cancellationToken) => Task.FromResult(values.GetValueOrDefault(name));
+    public Task DeleteAsync(string name, CancellationToken cancellationToken) { values.TryRemove(name, out _); return Task.CompletedTask; }
+}
+
+public sealed class PortableAesSecretStore : ISecretStore, IDisposable
+{
+    private readonly string directory;
+    private readonly byte[] key;
+
+    public PortableAesSecretStore(IOptions<HelperOptions> options)
+    {
+        directory = options.Value.SecretStorePath;
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(options.Value.SecretStoreKeyFile)) throw new InvalidOperationException("Portable secret storage is not configured.");
+        var encoded = File.ReadAllText(options.Value.SecretStoreKeyFile).Trim();
+        try { key = Convert.FromBase64String(encoded); }
+        catch (FormatException) { throw new InvalidOperationException("Portable secret-store key must be base64 encoded."); }
+        if (key.Length != 32) { CryptographicOperations.ZeroMemory(key); throw new InvalidOperationException("Portable secret-store key must contain exactly 32 bytes."); }
+        Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    public async Task SaveAsync(string name, string value, CancellationToken cancellationToken)
+    {
+        var clear = Encoding.UTF8.GetBytes(value); var nonce = RandomNumberGenerator.GetBytes(12); var tag = new byte[16]; var cipher = new byte[clear.Length];
+        try
+        {
+            using var aes = new AesGcm(key, 16); aes.Encrypt(nonce, clear, cipher, tag, Encoding.UTF8.GetBytes(name));
+            var payload = new byte[1 + nonce.Length + tag.Length + cipher.Length]; payload[0] = 1;
+            nonce.CopyTo(payload, 1); tag.CopyTo(payload, 13); cipher.CopyTo(payload, 29);
+            var path = PathFor(name); var temporary = path + ".tmp-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(6));
+            await File.WriteAllBytesAsync(temporary, payload, cancellationToken);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.Move(temporary, path, true);
+        }
+        finally { CryptographicOperations.ZeroMemory(clear); CryptographicOperations.ZeroMemory(cipher); }
+    }
+
+    public async Task<string?> GetAsync(string name, CancellationToken cancellationToken)
+    {
+        var path = PathFor(name); if (!File.Exists(path)) return null;
+        var payload = await File.ReadAllBytesAsync(path, cancellationToken);
+        if (payload.Length < 29 || payload[0] != 1) throw new CryptographicException("Portable secret payload is invalid.");
+        var clear = new byte[payload.Length - 29];
+        try { using var aes = new AesGcm(key, 16); aes.Decrypt(payload.AsSpan(1, 12), payload.AsSpan(29), payload.AsSpan(13, 16), clear, Encoding.UTF8.GetBytes(name)); return Encoding.UTF8.GetString(clear); }
+        finally { CryptographicOperations.ZeroMemory(clear); }
+    }
+
+    public Task DeleteAsync(string name, CancellationToken cancellationToken) { var path = PathFor(name); if (File.Exists(path)) File.Delete(path); return Task.CompletedTask; }
+    public void Dispose() => CryptographicOperations.ZeroMemory(key);
+    private string PathFor(string name) => Path.Combine(directory, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(name))) + ".secret");
+}
+
 public static partial class SecretRedactor
 {
     public static string Redact(string? input)
@@ -97,4 +154,3 @@ public static partial class SecretRedactor
     [GeneratedRegex("(?i)(\\\"(?:access_token|refresh_token|id_token|auth_token|client_secret|password|api_key)\\\"\\s*:\\s*\\\")[^\\\"]*(\\\")")] private static partial Regex JsonSecretRegex();
     [GeneratedRegex("(?i)((?:token|key|secret|password)=)[^&\\s]+")] private static partial Regex QuerySecretRegex();
 }
-
