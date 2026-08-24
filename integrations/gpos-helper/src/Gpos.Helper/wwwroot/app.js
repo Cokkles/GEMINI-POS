@@ -25,7 +25,7 @@ function render(){
     document.querySelectorAll('[data-version]').forEach(n=>n.textContent=health.version);
   }
   if(auth){
-    text('authMetric',auth.authenticated?'SIGNED IN':'SIGNED OUT');text('authIdentity',auth.identity?.email||'No identity');text('providerBadge',auth.provider.replaceAll('_',' ').toUpperCase());text('identityName',auth.identity?.displayName||'Not authenticated');text('identityEmail',auth.identity?.email||'No helper session');text('identityAvatar',(auth.identity?.displayName||'?').slice(0,1).toUpperCase());
+    text('authMetric',auth.authenticated?'SIGNED IN':'SIGNED OUT');text('authIdentity',auth.identity?.email||'No identity');text('providerBadge',`${auth.provider.replaceAll('_',' ')} / ${auth.credential}`.toUpperCase());text('identityName',auth.identity?.displayName||'Not authenticated');text('identityEmail',auth.identity?.email||'No helper session');text('identityAvatar',(auth.identity?.displayName||'?').slice(0,1).toUpperCase());
     $('authButton').firstChild.textContent=auth.authenticated?'Authenticated ':'Authenticate ';$('authButtonSecondary').textContent=auth.authenticated?'Authenticated':'Authenticate';$('logoutButton').disabled=!auth.authenticated;
   }
   if(capabilities){

@@ -19,6 +19,7 @@ AEGIS / local client
 
 - Minimal API host: loopback HTTP, CORS allowlist, diagnostics, request telemetry, graceful shutdown.
 - `IAuthProvider`: development-only provider or Google Authorization Code + PKCE provider.
+- `IGoogleCredentialProvider`: reads the DPAPI-protected token package, reuses a sufficiently fresh ID token, and performs a single-flight refresh when it is near expiry. Missing, malformed, timed-out, or rejected refreshes fail closed.
 - `HelperSessionStore`: random opaque local sessions, stored only in memory, hashed at rest in the process, with finite expiry and logout revocation.
 - `ISecretStore`: Windows DPAPI implementation. The interface is the container migration seam.
 - `IAppsScriptGateway`: typed, authenticated POST envelopes compatible with AUTH-1; timeout, cancellation, retry budget, exponential backoff and jitter.
@@ -32,6 +33,8 @@ The AEGIS PWA remains the primary user interface and the visual authority. The h
 ## Initialization and terminal states
 
 There is one host startup and one auth provider. Login returns either `LOGIN_PENDING`, an authenticated finite session, or a terminal error. Every upstream call has a timeout and at most the configured retry count. HTTP 429/503 and transport failures are retryable only for operations marked idempotent. Calendar query is treated as a mutation-capable operation and is never retried.
+
+Google credentials have a separate lifecycle from helper sessions. The local session authorizes the client to call the helper; it is never sent upstream. The credential provider supplies the current Google ID token to AUTH-1, refreshing under a process-wide lock when fewer than two minutes remain. Logout revokes the local session and removes the locally persisted Google token package.
 
 ## Configuration precedence
 

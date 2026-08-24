@@ -7,7 +7,7 @@
 - Production authentication is Google Authorization Code + PKCE with ID-token audience/email verification and a fail-closed local email allowlist.
 - Development authentication is selected only by explicit `DevelopmentMode=true`.
 - Local sessions are 256-bit random values, held only in memory, indexed by SHA-256, expire finitely, and can be revoked by logout.
-- Google token material is protected with current-user Windows DPAPI. The helper session token is never forwarded to Apps Script.
+- Google token material is protected with current-user Windows DPAPI. ID tokens are reused only while fresh and are refreshed under a single-flight lock; refresh errors fail closed. The helper session token is never forwarded to Apps Script.
 - AUTH-1 remains authoritative upstream. The helper sends the Google ID token only inside the existing authenticated Apps Script POST envelope.
 - Network calls have timeout, cancellation, bounded retry count, terminal error categories, backoff, and jitter. Mutation-capable calls are not retried.
 - Logs omit bodies, query values and credentials; explicit redaction covers bearer, JSON token/secret, and query-secret patterns.
@@ -26,7 +26,7 @@ Never commit populated `config/appsettings.json`, OAuth values, tokens, API keys
 ## Known security limitations
 
 - Real Google and Apps Script integration has not been executed without deployment credentials.
-- Refresh-token rotation/revocation is not complete.
+- Local logout deletes the DPAPI token package, but remote Google token revocation is not yet implemented.
 - Sessions are single-node/in-memory and disappear on restart.
 - Plain HTTP is acceptable only for the loopback POC. Non-loopback hosting requires TLS and a revised cookie/CSRF design.
 - The container secret-store implementation is intentionally absent, so the Dockerfile is not production-ready.

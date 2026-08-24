@@ -12,7 +12,7 @@ public interface IAppsScriptGateway
     Task<UpstreamResult> PostAsync(object payload, bool idempotent, CancellationToken cancellationToken);
 }
 
-public sealed class AppsScriptGateway(IHttpClientFactory clients, IOptions<HelperOptions> options, ISecretStore secrets, ILogger<AppsScriptGateway> logger) : IAppsScriptGateway
+public sealed class AppsScriptGateway(IHttpClientFactory clients, IOptions<HelperOptions> options, IGoogleCredentialProvider credentials, ILogger<AppsScriptGateway> logger) : IAppsScriptGateway
 {
     public Task<UpstreamResult> GetAsync(string action, CancellationToken cancellationToken) =>
         SendAsync(new Dictionary<string, object?> { ["action"] = action }, true, cancellationToken);
@@ -22,7 +22,7 @@ public sealed class AppsScriptGateway(IHttpClientFactory clients, IOptions<Helpe
     private async Task<UpstreamResult> SendAsync(object payload, bool idempotent, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(options.Value.AppsScriptEndpoint)) return new(false, 503, null, "not_configured", "Apps Script endpoint is not configured.");
-        var authToken = await secrets.GetAsync("google-id-token", cancellationToken);
+        var authToken = await credentials.GetIdTokenAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(authToken)) return new(false, 401, null, "upstream_auth_required", "Google authentication is required.");
         var envelope = JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(payload)) ?? [];
         envelope["auth_token"] = authToken;

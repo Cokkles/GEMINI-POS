@@ -16,6 +16,106 @@ public interface IAuthProvider
     Task<AuthResult> CompleteLoginAsync(string code, string state, CancellationToken cancellationToken);
 }
 
+public sealed record StoredGoogleToken(string? AccessToken, string? RefreshToken, string IdToken, DateTimeOffset ExpiresAt);
+
+public interface IGoogleCredentialProvider
+{
+    Task<string?> GetIdTokenAsync(CancellationToken cancellationToken);
+    Task<string> GetStateAsync(CancellationToken cancellationToken);
+    Task ClearAsync(CancellationToken cancellationToken);
+}
+
+public sealed class GoogleCredentialProvider(
+    ISecretStore secrets,
+    IHttpClientFactory clients,
+    IOptions<HelperOptions> options,
+    TimeProvider timeProvider,
+    ILogger<GoogleCredentialProvider> logger) : IGoogleCredentialProvider
+{
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
+
+    public async Task<string?> GetIdTokenAsync(CancellationToken cancellationToken)
+    {
+        var stored = await ReadAsync(cancellationToken);
+        if (IsUsable(stored)) return stored!.IdToken;
+        if (string.IsNullOrWhiteSpace(stored?.RefreshToken)) return null;
+
+        await _refreshLock.WaitAsync(cancellationToken);
+        try
+        {
+            stored = await ReadAsync(cancellationToken);
+            if (IsUsable(stored)) return stored!.IdToken;
+            if (string.IsNullOrWhiteSpace(stored?.RefreshToken)) return null;
+
+            var oauth = options.Value.GoogleOAuth;
+            if (string.IsNullOrWhiteSpace(oauth.ClientId)) return null;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/token")
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_id"] = oauth.ClientId,
+                    ["client_secret"] = oauth.ClientSecret,
+                    ["refresh_token"] = stored.RefreshToken,
+                    ["grant_type"] = "refresh_token"
+                })
+            };
+            using var response = await clients.CreateClient("oauth").SendAsync(request, timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Google credential refresh failed category={Category} status={Status}", "oauth_refresh_failed", (int)response.StatusCode);
+                return null;
+            }
+            var refreshed = await response.Content.ReadFromJsonAsync<OAuthTokenResponse>(cancellationToken: timeout.Token);
+            if (string.IsNullOrWhiteSpace(refreshed?.IdToken))
+            {
+                logger.LogWarning("Google credential refresh failed category={Category}", "oauth_refresh_id_token_missing");
+                return null;
+            }
+            var next = new StoredGoogleToken(refreshed.AccessToken, refreshed.RefreshToken ?? stored.RefreshToken, refreshed.IdToken, timeProvider.GetUtcNow().AddSeconds(Math.Max(60, refreshed.ExpiresIn)));
+            await secrets.SaveAsync("google-token", JsonSerializer.Serialize(next), cancellationToken);
+            logger.LogInformation("Google credential refreshed result={Result} expires_at={ExpiresAt}", "success", next.ExpiresAt);
+            return next.IdToken;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("Google credential refresh failed category={Category}", "oauth_refresh_timeout");
+            return null;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Google credential refresh failed category={Category} detail={Detail}", "oauth_refresh_unavailable", SecretRedactor.Redact(ex.Message));
+            return null;
+        }
+        finally { _refreshLock.Release(); }
+    }
+
+    public async Task<string> GetStateAsync(CancellationToken cancellationToken)
+    {
+        var stored = await ReadAsync(cancellationToken);
+        if (stored is null) return "ABSENT";
+        if (IsUsable(stored)) return "VALID";
+        return string.IsNullOrWhiteSpace(stored.RefreshToken) ? "EXPIRED" : "REFRESHABLE";
+    }
+
+    public Task ClearAsync(CancellationToken cancellationToken) => secrets.DeleteAsync("google-token", cancellationToken);
+
+    private async Task<StoredGoogleToken?> ReadAsync(CancellationToken cancellationToken)
+    {
+        var json = await secrets.GetAsync("google-token", cancellationToken);
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<StoredGoogleToken>(json); }
+        catch (JsonException)
+        {
+            logger.LogWarning("Stored Google credential is unreadable category={Category}", "credential_malformed");
+            return null;
+        }
+    }
+
+    private bool IsUsable(StoredGoogleToken? token) => token is not null && !string.IsNullOrWhiteSpace(token.IdToken) && token.ExpiresAt > timeProvider.GetUtcNow().AddMinutes(2);
+}
+
 public sealed class HelperSessionStore(IOptions<HelperOptions> options, TimeProvider timeProvider)
 {
     private sealed record Session(AuthIdentity Identity, DateTimeOffset ExpiresAt);
@@ -91,8 +191,8 @@ public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpCl
         var validation = await clients.CreateClient("oauth").GetFromJsonAsync<GoogleIdentity>("https://oauth2.googleapis.com/tokeninfo?id_token=" + Uri.EscapeDataString(token.IdToken), cancellationToken);
         if (validation is null || validation.Audience != cfg.ClientId || validation.EmailVerified != "true" || string.IsNullOrWhiteSpace(validation.Subject)) return new(false, Error: "oauth_identity_invalid");
         if (string.IsNullOrWhiteSpace(validation.Email) || !options.Value.AllowedEmails.Contains(validation.Email, StringComparer.OrdinalIgnoreCase)) return new(false, Error: "identity_not_allowed");
-        await secrets.SaveAsync("google-token", JsonSerializer.Serialize(token), cancellationToken);
-        await secrets.SaveAsync("google-id-token", token.IdToken, cancellationToken);
+        var stored = new StoredGoogleToken(token.AccessToken, token.RefreshToken, token.IdToken, DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, token.ExpiresIn)));
+        await secrets.SaveAsync("google-token", JsonSerializer.Serialize(stored), cancellationToken);
         return new(true, new AuthIdentity(validation.Subject, validation.Email ?? "", validation.Name ?? validation.Email ?? "Google User"));
     }
 
@@ -101,4 +201,10 @@ public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpCl
     private sealed record GoogleToken([property: JsonPropertyName("access_token")] string? AccessToken, [property: JsonPropertyName("refresh_token")] string? RefreshToken, [property: JsonPropertyName("id_token")] string? IdToken, [property: JsonPropertyName("expires_in")] int ExpiresIn);
     private sealed record GoogleIdentity([property: JsonPropertyName("sub")] string Subject, [property: JsonPropertyName("aud")] string Audience, [property: JsonPropertyName("email")] string? Email, [property: JsonPropertyName("email_verified")] string? EmailVerified, [property: JsonPropertyName("name")] string? Name);
 }
+
+public sealed record OAuthTokenResponse(
+    [property: JsonPropertyName("access_token")] string? AccessToken,
+    [property: JsonPropertyName("refresh_token")] string? RefreshToken,
+    [property: JsonPropertyName("id_token")] string? IdToken,
+    [property: JsonPropertyName("expires_in")] int ExpiresIn);
 

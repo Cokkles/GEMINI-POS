@@ -17,6 +17,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
+    ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure),
     ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("invalid session", InvalidSession), ("session expiration", SessionExpiration),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
@@ -140,6 +141,34 @@ static async Task MalformedJson()
     Check(result.ErrorCategory == "malformed_response" && handler.Calls == 1, "malformed JSON not terminal");
 }
 
+static async Task FreshCredential()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new MemorySecretStore();
+    await store.SaveAsync("google-token", JsonSerializer.Serialize(new StoredGoogleToken("access", "refresh", "fresh-id-token", time.GetUtcNow().AddMinutes(30))), default);
+    var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.InternalServerError, "{}"));
+    var provider = CredentialProvider(store, handler, time); var token = await provider.GetIdTokenAsync(default);
+    Check(token == "fresh-id-token" && handler.Calls == 0, "fresh token was not reused");
+}
+
+static async Task CredentialRefresh()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new MemorySecretStore();
+    await store.SaveAsync("google-token", JsonSerializer.Serialize(new StoredGoogleToken("old-access", "refresh-value", "expired-id-token", time.GetUtcNow().AddMinutes(-1))), default);
+    var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.OK, "{\"access_token\":\"new-access\",\"id_token\":\"new-id-token\",\"expires_in\":3600}"));
+    var provider = CredentialProvider(store, handler, time); var token = await provider.GetIdTokenAsync(default);
+    var saved = JsonSerializer.Deserialize<StoredGoogleToken>((await store.GetAsync("google-token", default))!);
+    Check(token == "new-id-token" && saved?.RefreshToken == "refresh-value" && saved.ExpiresAt > time.GetUtcNow() && handler.Calls == 1, "credential refresh did not rotate safely");
+}
+
+static async Task CredentialRefreshFailure()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new MemorySecretStore();
+    await store.SaveAsync("google-token", JsonSerializer.Serialize(new StoredGoogleToken("old-access", "refresh-value", "expired-id-token", time.GetUtcNow().AddMinutes(-1))), default);
+    var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"));
+    var token = await CredentialProvider(store, handler, time).GetIdTokenAsync(default);
+    Check(token is null && handler.Calls == 1, "failed refresh did not fail closed");
+}
+
 static async Task Cancellation()
 {
     var handler = new SequenceHandler(async (_, ct) => { await Task.Delay(TimeSpan.FromSeconds(5), ct); return new(HttpStatusCode.OK); }); using var cts = new CancellationTokenSource(20);
@@ -156,9 +185,15 @@ static async Task WorkerBounded() => await WithAppServices(async (_, app) =>
 
 static AppsScriptGateway Gateway(HttpMessageHandler handler, int timeout = 1, int retries = 2, ILogger<AppsScriptGateway>? logger = null, string credential = "test-google-id-token")
 {
-    var secretStore = new MemorySecretStore(); secretStore.SaveAsync("google-id-token", credential, default).GetAwaiter().GetResult();
-    return new(new SingleClientFactory(new HttpClient(handler)), Options.Create(new HelperOptions { AppsScriptEndpoint = "https://example.invalid/exec", UpstreamTimeoutSeconds = timeout, UpstreamMaxRetries = retries }), secretStore, logger ?? NullLogger<AppsScriptGateway>.Instance);
+    return new(new SingleClientFactory(new HttpClient(handler)), Options.Create(new HelperOptions { AppsScriptEndpoint = "https://example.invalid/exec", UpstreamTimeoutSeconds = timeout, UpstreamMaxRetries = retries }), new FixedCredentialProvider(credential), logger ?? NullLogger<AppsScriptGateway>.Instance);
 }
+
+static GoogleCredentialProvider CredentialProvider(MemorySecretStore store, HttpMessageHandler handler, TimeProvider time) => new(
+    store,
+    new SingleClientFactory(new HttpClient(handler)),
+    Options.Create(new HelperOptions { GoogleOAuth = new GoogleOAuthOptions { ClientId = "client-id", ClientSecret = "client-secret" } }),
+    time,
+    NullLogger<GoogleCredentialProvider>.Instance);
 
 static async Task WithApp(Func<HttpClient, Task> action) => await WithAppServices((client, _) => action(client));
 static async Task WithAppServices(Func<HttpClient, WebApplication, Task> action)
@@ -191,6 +226,12 @@ sealed class SequenceHandler(params Func<HttpRequestMessage, CancellationToken, 
 }
 
 sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory { public HttpClient CreateClient(string name) => client; }
+sealed class FixedCredentialProvider(string? token) : IGoogleCredentialProvider
+{
+    public Task<string?> GetIdTokenAsync(CancellationToken cancellationToken) => Task.FromResult(token);
+    public Task<string> GetStateAsync(CancellationToken cancellationToken) => Task.FromResult(token is null ? "ABSENT" : "VALID");
+    public Task ClearAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
 sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; public void Advance(TimeSpan amount) => now += amount; }
 sealed class LogSink : ILogger<AppsScriptGateway>
 {

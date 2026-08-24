@@ -30,6 +30,7 @@ public partial class Program
         builder.Services.AddSingleton<HeartbeatState>();
         builder.Services.AddHostedService<HeartbeatWorker>();
         builder.Services.AddSingleton<ISecretStore, WindowsDpapiSecretStore>();
+        builder.Services.AddSingleton<IGoogleCredentialProvider, GoogleCredentialProvider>();
         builder.Services.AddSingleton<IAuthProvider>(sp => sp.GetRequiredService<IOptions<HelperOptions>>().Value.DevelopmentMode ? new DevelopmentAuthProvider() : ActivatorUtilities.CreateInstance<GoogleOAuthProvider>(sp));
         builder.Services.AddHttpClient("apps-script", c => c.Timeout = Timeout.InfiniteTimeSpan);
         builder.Services.AddHttpClient("oauth", c => c.Timeout = TimeSpan.FromSeconds(20));
@@ -71,10 +72,11 @@ public partial class Program
             listen_address = early.ListenAddress, port = early.Port, development_mode = early.DevelopmentMode, auth = auth.Mode, allowed_origins = early.AllowedOrigins,
             heartbeat = new { heartbeat.Count, last_beat = heartbeat.LastBeat }, uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds
         }));
-        api.MapGet("/auth/status", (HttpContext ctx, HelperSessionStore sessions, IAuthProvider auth) =>
+        api.MapGet("/auth/status", async (HttpContext ctx, HelperSessionStore sessions, IAuthProvider auth, IGoogleCredentialProvider credentials, CancellationToken ct) =>
         {
             var identity = sessions.Validate(SessionToken(ctx));
-            return Results.Ok(new { authenticated = identity is not null, provider = auth.Mode, identity = identity is null ? null : new { identity.Email, identity.DisplayName } });
+            var credential = auth.Mode == "development_mock" ? "DEVELOPMENT_MOCK" : await credentials.GetStateAsync(ct);
+            return Results.Ok(new { authenticated = identity is not null, provider = auth.Mode, credential, identity = identity is null ? null : new { identity.Email, identity.DisplayName } });
         });
         api.MapPost("/auth/login", async (IAuthProvider auth, CancellationToken ct) =>
         {
@@ -91,7 +93,13 @@ public partial class Program
             if (ctx.Request.GetTypedHeaders().Accept?.Any(x => x.MediaType.Value?.Equals("text/html", StringComparison.OrdinalIgnoreCase) == true) == true) return Results.Redirect("/");
             return Results.Ok(new { authenticated = true, expires_at = session.ExpiresAt, identity = new { result.Identity.Email, result.Identity.DisplayName } });
         });
-        api.MapPost("/auth/logout", (HttpContext ctx, HelperSessionStore sessions) => { sessions.Revoke(SessionToken(ctx)); ctx.Response.Cookies.Delete("gpos_session", new CookieOptions { Path = "/api/v1" }); return Results.Ok(new { authenticated = false }); });
+        api.MapPost("/auth/logout", async (HttpContext ctx, HelperSessionStore sessions, IGoogleCredentialProvider credentials, CancellationToken ct) =>
+        {
+            sessions.Revoke(SessionToken(ctx));
+            await credentials.ClearAsync(ct);
+            ctx.Response.Cookies.Delete("gpos_session", new CookieOptions { Path = "/api/v1" });
+            return Results.Ok(new { authenticated = false, credential = "ABSENT" });
+        });
 
         api.MapGet("/aegis/dashboard", (HttpContext c, IAppsScriptGateway g, HelperSessionStore s, CancellationToken ct) => Proxy(c, s, () => g.GetAsync("get_dashboard", ct)));
         api.MapGet("/aegis/health", (HttpContext c, IAppsScriptGateway g, HelperSessionStore s, CancellationToken ct) => Proxy(c, s, () => g.GetAsync("get_health", ct)));

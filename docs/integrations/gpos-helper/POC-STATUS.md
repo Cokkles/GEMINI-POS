@@ -15,10 +15,11 @@ Status date: 2026-08-24
 - Cancellation-aware heartbeat worker.
 - Windows single-file self-contained packaging and a Docker portability proof.
 - PWA-aligned local control surface for helper health, authentication, capabilities, diagnostics, worker state and bounded AEGIS connectivity.
+- DPAPI-backed Google credential lifecycle with expiry tracking, single-flight refresh, safe readiness status and fail-closed refresh errors.
 
 ## Validation
 
-- Offline automated harness: 22/22 passed.
+- Offline automated harness: 25/25 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
 - No compiled artifact is committed; `dist/` remains ignored.
@@ -27,7 +28,7 @@ Status date: 2026-08-24
 
 - Register real Google OAuth credentials and run the credentialed integration suite.
 - Exercise Apps Script 2.6.3 against the production endpoint and confirm allowlist behavior end to end.
-- Implement refresh-token rotation before relying on unattended long-running sessions. The POC stores the returned token package securely but currently forwards the current ID token.
+- Validate refresh-token behavior with real Google credentials and implement optional remote Google revocation.
 - Define the non-Windows `ISecretStore` implementation before container deployment.
 - Add HTTPS or a mutually authenticated local transport before any non-loopback binding is considered.
 - AEGIS frontend integration is intentionally not included; the AEGIS repository was inspected but not modified.
