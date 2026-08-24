@@ -122,3 +122,13 @@ Current implementation/stabilization state:
 AUTH-2 may later add login history, active sessions, revocation controls, configurable session timeout/re-authentication policy and security-event presentation. These are follow-on capabilities, not AUTH-1 blockers.
 
 See `docs/roadmap/AEGIS-HIGH-PRIORITY.md` and `docs/security/AEGIS-AUTHENTICATION-AND-AUDIT.md`.
+
+
+## GPOS HELPER Phase-0 POC
+
+- Branch: `agent/gpos-helper-poc`.
+- Single-process .NET 8 Windows helper implementation: **POC COMPLETE LOCALLY / PRODUCTION OAUTH VALIDATION PENDING**.
+- Loopback health, capabilities, diagnostics, local auth sessions, DPAPI token storage, typed AUTH-1 Apps Script gateway, bounded resilience, structured redacted logs, and heartbeat worker are implemented.
+- Automated validation: 21/21 checks passed; Windows self-contained single-file publish and executable smoke test passed.
+- AEGIS GitHub Pages and Apps Script AUTH-1 remain unchanged and authoritative.
+- Next gate: register Desktop OAuth credentials, validate the production Apps Script endpoint, then implement refresh-token lifecycle and a container secret-store adapter.
