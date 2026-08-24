@@ -68,6 +68,18 @@ async function queryCalendar(event){
     const message=error.name==='AbortError'?'Calendar request timed out. Please try again.':error.message;text('calendarState','UNAVAILABLE');$('calendarResponse').className='calendar-response failed';$('calendarResponse').innerHTML=`<strong>Calendar unavailable</strong><span>${escapeHtml(message)}</span>`;
   }finally{submit.disabled=false}
 }
+async function loadSnapshot(){
+  if(!state.auth?.authenticated){showView('connection');toast('Authenticate before loading AEGIS');return}
+  const button=$('snapshotRefresh');button.disabled=true;text('snapshotState','LOADING');$('snapshotResult').className='snapshot-result loading';$('snapshotResult').innerHTML='<strong>Loading AEGIS snapshot.</strong><span>This request has a finite timeout and will not retry forever.</span>';
+  try{
+    const result=await api('/api/v1/aegis/dashboard');const entries=result&&typeof result==='object'&&!Array.isArray(result)?Object.entries(result):[];
+    text('snapshotState','CURRENT');$('snapshotMetrics').innerHTML=(entries.length?entries.slice(0,4):[['state','available']]).map(([key,value])=>`<article class="metric"><small>${escapeHtml(String(key).replaceAll('_',' '))}</small><strong>${escapeHtml(summaryValue(value))}</strong><span>AEGIS response</span></article>`).join('');
+    $('snapshotResult').className='snapshot-result';$('snapshotResult').innerHTML=`<pre>${escapeHtml(JSON.stringify(result,null,2))}</pre>`;
+  }catch(error){
+    const message=error.name==='AbortError'?'Snapshot request timed out. Please try again.':error.message;text('snapshotState','UNAVAILABLE');$('snapshotMetrics').innerHTML='<article class="metric"><small>STATE</small><strong>UNAVAILABLE</strong><span>Terminal result</span></article>';$('snapshotResult').className='snapshot-result failed';$('snapshotResult').innerHTML=`<strong>AEGIS snapshot unavailable</strong><span>${escapeHtml(message)}</span>`;
+  }finally{button.disabled=false}
+}
+function summaryValue(value){if(value===null||value===undefined)return '-';if(Array.isArray(value))return `${value.length} items`;if(typeof value==='object')return `${Object.keys(value).length} fields`;return String(value).slice(0,42)}
 function escapeHtml(value){return String(value).replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]))}
 function showView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.nav-item[data-view]').forEach(v=>v.classList.toggle('active',v.dataset.view===id));closeNav()}
 function closeNav(){$('nav').classList.remove('open');$('scrim').classList.remove('show')}
@@ -77,4 +89,5 @@ document.querySelectorAll('[data-view-link]').forEach(button=>button.addEventLis
 $('menuButton').addEventListener('click',()=>{$('nav').classList.add('open');$('scrim').classList.add('show')});$('scrim').addEventListener('click',closeNav);
 $('refreshButton').addEventListener('click',()=>refresh(true));$('authButton').addEventListener('click',authenticate);$('authButtonSecondary').addEventListener('click',authenticate);$('logoutButton').addEventListener('click',logout);
 $('calendarForm').addEventListener('submit',queryCalendar);document.querySelectorAll('[data-calendar-prompt]').forEach(button=>button.addEventListener('click',()=>{$('calendarQuestion').value=button.dataset.calendarPrompt;$('calendarQuestion').focus()}));
+$('snapshotRefresh').addEventListener('click',loadSnapshot);
 refresh();setInterval(()=>refresh(),30000);
