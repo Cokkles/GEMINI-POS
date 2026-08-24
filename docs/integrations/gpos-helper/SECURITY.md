@@ -17,6 +17,8 @@
 
 Loopback reduces remote exposure but does not make all local processes trusted. Session cookies are `HttpOnly`, `SameSite=Strict`, scoped to `/api/v1`, and `Secure` outside development. A client may alternatively use `X-GPOS-Session`; it must protect that value. The helper must not be rebound beyond loopback without a new transport/security review.
 
+The cross-origin PWA bridge does not depend on third-party cookies. It accepts only configured HTTPS return origins, binds authorization to an S256 PKCE challenge, returns a random one-minute code in the URL fragment, consumes that code once, and issues only an opaque helper session. Google access, ID and refresh tokens remain inside the helper. A failed verifier consumes the code to prevent guessing and replay.
+
 The helper does not authorize or reinterpret subsystem facts. Calendar query retains the Apps Script preview/confirmation contract; no helper Calendar confirmation/write route exists in Phase 0.
 
 ## Secrets
@@ -30,4 +32,3 @@ Never commit populated `config/appsettings.json`, OAuth values, tokens, API keys
 - Sessions are single-node/in-memory and disappear on restart.
 - Plain HTTP is acceptable only for the loopback POC. Non-loopback hosting requires TLS and a revised cookie/CSRF design.
 - The container secret-store implementation is intentionally absent, so the Dockerfile is not production-ready.
-
