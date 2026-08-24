@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 var tests = new List<(string Name, Func<Task> Run)>
 {
     ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config),
-    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin),
+    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
@@ -82,6 +82,15 @@ static async Task Config() => await WithAppServices((client, app) =>
 
 static Task UnknownOrigin() => Cors("https://unknown.example", false);
 static Task AllowedOrigin() => Cors("https://cokkles.github.io", true);
+static async Task PwaSessionPreflight() => await WithApp(async client =>
+{
+    using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/aegis/dashboard");
+    request.Headers.Add("Origin", "https://cokkles.github.io"); request.Headers.Add("Access-Control-Request-Method", "GET"); request.Headers.Add("Access-Control-Request-Headers", "X-GPOS-Session");
+    using var response = await client.SendAsync(request);
+    Check(response.Headers.TryGetValues("Access-Control-Allow-Origin", out var origins) && origins.Single() == "https://cokkles.github.io", "PWA origin was not returned exactly");
+    Check(response.Headers.TryGetValues("Access-Control-Allow-Headers", out var headers) && headers.Any(x => x.Contains("X-GPOS-Session", StringComparison.OrdinalIgnoreCase)), "helper session header was not allowed");
+    Check(response.Headers.TryGetValues("Access-Control-Allow-Credentials", out var credentials) && credentials.Contains("true"), "credentialed PWA preflight was incomplete");
+});
 static async Task Cors(string origin, bool expected) => await WithApp(async client =>
 {
     using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/health");
