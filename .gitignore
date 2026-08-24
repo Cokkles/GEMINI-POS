@@ -38,3 +38,8 @@ Thumbs.db
 logs/
 tmp/
 .cache/
+
+# .NET helper
+**/bin/
+**/obj/
+.build-temp/
