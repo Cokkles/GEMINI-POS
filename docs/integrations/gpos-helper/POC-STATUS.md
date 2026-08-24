@@ -19,6 +19,7 @@ Status date: 2026-08-24
 - Safe production-readiness API and dashboard checklist for listener, Apps Script, OAuth client, identity allowlist and callback configuration.
 - PWA-aligned, read-only Calendar query view with bounded loading, timeout and terminal error states.
 - On-demand AEGIS dashboard snapshot with read-only typed routing, compact response metrics and bounded terminal states.
+- Bounded in-memory request activity ledger and PWA-aligned Activity view without bodies, query strings, cookies, identities or credentials.
 
 ## Validation
 
