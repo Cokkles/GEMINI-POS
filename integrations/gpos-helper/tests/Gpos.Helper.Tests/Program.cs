@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Gpos.Helper;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +20,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
     ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure),
-    ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("invalid session", InvalidSession), ("session expiration", SessionExpiration),
+    ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
 };
@@ -100,6 +102,25 @@ static async Task DevelopmentSession() => await WithApp(async client =>
 {
     using var response = await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
     Check(response.StatusCode == HttpStatusCode.OK && response.Headers.TryGetValues("Set-Cookie", out _), "development session was not created");
+});
+
+static async Task ClientSessionExchange() => await WithApp(async client =>
+{
+    var verifier = new string('v', 64); var challenge = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    var start = await (await client.PostAsJsonAsync("/api/v1/auth/client/start", new { returnUrl = "https://cokkles.github.io/aegis-itinerary-project/", codeChallenge = challenge })).Content.ReadFromJsonAsync<JsonElement>();
+    Check(start.GetProperty("authorization_url").GetString()!.Contains("state=development"), "client login did not start");
+    using var callback = await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
+    var location = callback.Headers.Location?.ToString() ?? ""; var code = location.Split("gpos_code=").LastOrDefault();
+    Check(callback.StatusCode == HttpStatusCode.Redirect && location.StartsWith("https://cokkles.github.io/") && !string.IsNullOrWhiteSpace(code), "client callback did not return a one-time code");
+    var exchange = await client.PostAsJsonAsync("/api/v1/auth/client/exchange", new { code, codeVerifier = verifier }); var body = await exchange.Content.ReadFromJsonAsync<JsonElement>();
+    Check(exchange.IsSuccessStatusCode && body.GetProperty("session_token").GetString()!.Length > 30, "client code exchange failed");
+    Check((await client.PostAsJsonAsync("/api/v1/auth/client/exchange", new { code, codeVerifier = verifier })).StatusCode == HttpStatusCode.Unauthorized, "client code replay was accepted");
+});
+
+static async Task ClientOriginRejection() => await WithApp(async client =>
+{
+    var response = await client.PostAsJsonAsync("/api/v1/auth/client/start", new { returnUrl = "https://evil.example/callback", codeChallenge = new string('a', 43) });
+    Check(response.StatusCode == HttpStatusCode.BadRequest, "unknown client return origin was accepted");
 });
 
 static Task SessionExpiration()
@@ -221,7 +242,7 @@ static async Task WithAppServices(Func<HttpClient, WebApplication, Task> action)
     var args = new[] { $"--contentRoot={contentRoot}", $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=true", "--Helper:LaunchBrowser=false", "--Helper:HeartbeatSeconds=5", "--Helper:SessionMinutes=60", "--Helper:UpstreamMaxRetries=2", "--Helper:AllowedOrigins:0=https://cokkles.github.io" };
     await using var app = Gpos.Helper.Program.Build(args, services => { services.RemoveAll<ISecretStore>(); services.AddSingleton<ISecretStore, MemorySecretStore>(); });
     await app.StartAsync();
-    try { using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") }; await action(client, app); }
+    try { using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new Uri($"http://127.0.0.1:{port}") }; await action(client, app); }
     finally { using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await app.StopAsync(cts.Token); }
 }
 
