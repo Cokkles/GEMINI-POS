@@ -85,7 +85,7 @@
       <div class="grid">
         <section class="panel"><div class="panel-head"><div><p class="eyebrow">SERVICE</p><h2>HEALTH DETAIL</h2></div></div><pre id="healthDetail">Loading.</pre></section>
         <section class="panel"><div class="panel-head"><div><p class="eyebrow">WORKER</p><h2>BACKGROUND FOUNDATION</h2></div></div><div class="worker-state"><span class="pulse"></span><div><strong id="workerLabel">Waiting for heartbeat</strong><small id="workerDetail">Bounded periodic worker</small></div></div></section>
-        <section class="panel full"><div class="panel-head"><div><p class="eyebrow">API V1</p><h2>LOCAL ENDPOINTS</h2></div></div><div class="endpoint-list"><a href="/api/v1/health">/api/v1/health</a><a href="/api/v1/capabilities">/api/v1/capabilities</a><a href="/api/v1/auth/status">/api/v1/auth/status</a><a href="/api/v1/diagnostics">/api/v1/diagnostics</a><a href="/api/v1/setup/status">/api/v1/setup/status</a></div></section>
+        <section class="panel full"><div class="panel-head"><div><p class="eyebrow">API V1</p><h2>LOCAL ENDPOINTS</h2></div></div><div class="endpoint-list"><a href="/api/v1/health">/api/v1/health</a><a href="/api/v1/live">/api/v1/live</a><a href="/api/v1/ready">/api/v1/ready</a><a href="/api/v1/capabilities">/api/v1/capabilities</a><a href="/api/v1/auth/status">/api/v1/auth/status</a><a href="/api/v1/diagnostics">/api/v1/diagnostics</a><a href="/api/v1/setup/status">/api/v1/setup/status</a></div></section>
       </div>
     </section>
 
@@ -128,7 +128,7 @@
 
     <section class="view" id="activity">
       <section class="panel">
-        <div class="panel-head"><div><p class="eyebrow">SAFE OBSERVABILITY</p><h2>RECENT HELPER ACTIVITY</h2></div><button class="mini" id="activityRefresh">Refresh activity</button></div>
+        <div class="panel-head"><div><p class="eyebrow">SAFE OBSERVABILITY</p><h2>RECENT HELPER ACTIVITY</h2></div><div class="activity-controls"><label><input type="checkbox" id="activityRoutine"> Include routine checks</label><button class="mini" id="activityRefresh">Refresh activity</button></div></div>
         <div class="activity-summary"><span class="source-badge" id="activityCount">0 REQUESTS</span><p class="note">In-memory only. Request bodies, query strings, cookies, identities and credentials are never collected.</p></div>
         <div class="activity-table" id="activityTable"><div class="activity-empty">Loading recent activity.</div></div>
       </section>
@@ -139,3 +139,4 @@
   <script src="/app.js" defer></script>
 </body>
 </html>
+
