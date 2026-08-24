@@ -142,9 +142,9 @@ public partial class Program
         api.MapPost("/auth/logout", async (HttpContext ctx, HelperSessionStore sessions, IGoogleCredentialProvider credentials, CancellationToken ct) =>
         {
             sessions.Revoke(SessionToken(ctx));
-            await credentials.ClearAsync(ct);
+            var remoteRevocation = await credentials.RevokeAsync(ct);
             ctx.Response.Cookies.Delete("gpos_session", new CookieOptions { Path = "/api/v1" });
-            return Results.Ok(new { authenticated = false, credential = "ABSENT" });
+            return Results.Ok(new { authenticated = false, credential = "ABSENT", remote_revocation = remoteRevocation });
         });
 
         api.MapGet("/aegis/dashboard", (HttpContext c, IAppsScriptGateway g, HelperSessionStore s, CancellationToken ct) => Proxy(c, s, () => g.GetAsync("get_dashboard", ct)));
