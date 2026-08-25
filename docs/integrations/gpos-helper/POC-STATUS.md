@@ -42,6 +42,7 @@ Status date: 2026-08-24
 - Inbound JSON and upstream response bodies have independently configurable hard byte ceilings with terminal 413/502 behavior.
 - Loopback Host validation rejects DNS-rebinding-style requests addressed through non-local hostnames before routing.
 - Unsafe browser methods enforce trusted origins, and logout requires an authenticated helper session before local or Google credential revocation.
+- Connection page includes an on-demand authenticated AEGIS health check using the existing read-only AUTH-1 contract without changing the PWA.
 
 ## Validation
 
