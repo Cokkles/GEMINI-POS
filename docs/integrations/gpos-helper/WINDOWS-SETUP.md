@@ -67,6 +67,8 @@ The smoke test launches the packaged executable on loopback port `47931`, verifi
 
 The normal build restores and verifies the Windows runtime pack. If NuGet is temporarily unavailable and the same runtime pack was already restored successfully, `-NoRestore` reuses that local cache; it must not be used as a substitute for an initial verified restore.
 
+Before launching an extracted or copied package, run `scripts/verify-package.ps1 -ArtifactDirectory <path>`. It fails on a missing, modified, duplicated, path-traversing or unexpected payload entry. The build runs this verifier automatically before creating the ZIP.
+
 ## Build and verify
 
 ```powershell
