@@ -15,6 +15,7 @@
 - Browser responses enforce a restrictive content policy, deny framing and unnecessary device capabilities, suppress referrers, and prevent MIME sniffing. API responses are marked `no-store`.
 - Startup validation fails closed unless the listener is loopback and production has HTTPS Apps Script, OAuth client, identity allowlist, loopback callback and platform secret-storage prerequisites.
 - A random non-secret process instance identifier lets clients detect restarts and discard stale helper sessions without exposing machine identity.
+- Login, callback and one-time-code endpoints use a bounded fixed-window limiter and reject excess local requests with HTTP 429.
 
 ## Threat boundaries
 
