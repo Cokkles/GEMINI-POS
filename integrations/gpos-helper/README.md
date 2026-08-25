@@ -20,5 +20,11 @@ Verify an extracted package before launch:
 .\scripts\verify-package.ps1
 ```
 
+Validate production configuration without starting the helper:
+
+```powershell
+.\scripts\run-production.ps1 -Preflight
+```
+
 See `docs/integrations/gpos-helper/` for the API, security model, setup, and current limitations.
 
