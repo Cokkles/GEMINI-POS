@@ -36,6 +36,8 @@ There is one host startup and one auth provider. Login returns either `LOGIN_PEN
 
 Google credentials have a separate lifecycle from helper sessions. The local session authorizes the client to call the helper; it is never sent upstream. The credential provider supplies the current Google ID token to AUTH-1, refreshing under a process-wide lock when fewer than two minutes remain. Logout revokes the local session and removes the locally persisted Google token package.
 
+HTTP contract tests exercise authenticated Dashboard and Calendar requests through cookie session validation, request binding and the typed gateway boundary. Calendar remains a non-idempotent call and reaches that boundary exactly once.
+
 ## Configuration precedence
 
 1. `GPOS_`-prefixed environment variables (for example `GPOS_Helper__Port`).
