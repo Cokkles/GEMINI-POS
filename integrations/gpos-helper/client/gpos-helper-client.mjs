@@ -1,6 +1,7 @@
 const DEFAULT_BASE_URL = 'http://127.0.0.1:47831';
 const SESSION_KEY = 'gpos_helper_session';
 const VERIFIER_KEY = 'gpos_helper_pkce_verifier';
+const INSTANCE_KEY = 'gpos_helper_instance';
 
 export class GposHelperClient {
   constructor({ baseUrl = DEFAULT_BASE_URL, timeoutMs = 5000, fetchImpl = globalThis.fetch, storage = globalThis.sessionStorage, location = globalThis.location, history = globalThis.history, cryptoImpl = globalThis.crypto } = {}) {
@@ -58,6 +59,7 @@ export class GposHelperClient {
     try {
       const response = await this.fetchImpl(this.baseUrl + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal, cache: 'no-store' });
       const payload = await response.json().catch(() => ({ error: 'malformed_response' }));
+      this.observeInstance(response.headers?.get?.('X-GPOS-Instance') || payload.instance_id);
       if (!response.ok) throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
       return payload;
     } finally { clearTimeout(timer); }
@@ -68,6 +70,13 @@ export class GposHelperClient {
     catch { this.storage.removeItem(SESSION_KEY); return null; }
   }
 
+  observeInstance(instance) {
+    if (!instance) return;
+    const previous = this.storage.getItem(INSTANCE_KEY);
+    if (previous && previous !== instance) { this.storage.removeItem(SESSION_KEY); this.storage.removeItem(VERIFIER_KEY); }
+    this.storage.setItem(INSTANCE_KEY, instance);
+  }
+
   randomToken(bytes) { const value = new Uint8Array(bytes); this.crypto.getRandomValues(value); return this.base64Url(value); }
   async challenge(verifier) { return this.base64Url(new Uint8Array(await this.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))); }
   base64Url(bytes) { let binary = ''; bytes.forEach(value => { binary += String.fromCharCode(value); }); return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, ''); }
@@ -76,3 +85,4 @@ export class GposHelperClient {
 }
 
 export const GPOS_HELPER_DEFAULT_URL = DEFAULT_BASE_URL;
+
