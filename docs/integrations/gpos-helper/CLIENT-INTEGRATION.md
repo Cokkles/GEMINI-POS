@@ -14,6 +14,8 @@ Status: compatibility artifact implemented in GEMINI-POS; AEGIS production files
 6. Send bounded helper calls through the adapter. Never copy Google tokens into the PWA.
 7. Call `logout()` to revoke and clear the local session.
 
+The adapter records only the helper's non-secret process instance identifier. When it changes, the adapter clears the stale helper session and any pending PKCE verifier before another authenticated request can be made.
+
 The adapter is not yet referenced by the AEGIS repository. Production adoption requires a small, separately reviewed compatibility change, fallback validation against the existing Apps Script path, and browser tests from the deployed GitHub Pages origin.
 
 ## AEGIS bridge artifact
@@ -35,4 +37,5 @@ node integrations/gpos-helper/client/gpos-helper-client.test.mjs
 node integrations/gpos-helper/client/gpos-helper-aegis-bridge.test.mjs
 ```
 
-The offline tests cover loopback enforcement, helper discovery, S256 challenge creation, one-time code exchange, fragment cleanup, authenticated request headers, remote-base rejection, signed-out fallback, unavailable fallback, helper preference and exactly-once fallback after a terminal helper failure.
+The offline tests cover loopback enforcement, helper discovery, restart-driven stale-session clearing, S256 challenge creation, one-time code exchange, fragment cleanup, authenticated request headers, remote-base rejection, signed-out fallback, unavailable fallback, helper preference and exactly-once fallback after a terminal helper failure.
+
