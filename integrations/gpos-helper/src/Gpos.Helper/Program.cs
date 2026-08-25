@@ -258,7 +258,7 @@ public partial class Program
             new SetupCheck("secret_store", secretStoreReady, OperatingSystem.IsWindows() ? "Windows DPAPI is available." : value.DevelopmentMode ? "Development secrets are memory-only." : "Encrypted storage and mounted key are required.")
         };
     }
-    private static string Version() => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0";
+    private static string Version() => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.2.0";
     public sealed record CalendarQuery(string Question, object[]? History);
     public sealed record SetupCheck(string Id, bool Ready, string Detail);
 }
