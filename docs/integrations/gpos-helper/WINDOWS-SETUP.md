@@ -52,7 +52,7 @@ After authenticating in the system browser, validate the live boundary:
 .\scripts\validate-live.ps1
 ```
 
-The validator checks health, liveness, deployment readiness, required capabilities, response security/cache policy, the credentialed `X-GPOS-Session` preflight, local authentication and upstream configuration with five-second request limits. For a credential-free development smoke test only, use `-AllowDevelopment`.
+The validator checks the expected release version and process identity along with health, liveness, deployment readiness, required capabilities, response security/cache policy, the credentialed `X-GPOS-Session` preflight, local authentication and upstream configuration with five-second request limits. Override `-ExpectedVersion` only when intentionally validating another build. For a credential-free development smoke test only, use `-AllowDevelopment`.
 
 ## Release-candidate package
 
