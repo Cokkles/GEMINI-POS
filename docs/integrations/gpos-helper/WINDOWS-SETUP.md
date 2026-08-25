@@ -61,7 +61,7 @@ Run `scripts/build-windows.ps1` to publish and smoke-test the self-contained Win
 - `dist/win-x64/gpos-helper.exe`
 - `dist/win-x64/wwwroot/`
 - `dist/win-x64/manifest.json` with a SHA-256 hash and byte count for every payload
-- `dist/gpos-helper-0.1.0-win-x64.zip` as the portable release directory
+- `dist/gpos-helper-0.2.0-win-x64.zip` as the portable release directory
 
 The smoke test launches the packaged executable on loopback port `47931`, verifies health, liveness, readiness, capabilities, security/cache headers and the control surface, and then stops only that test process. Use `-SkipSmoke` only in an environment that cannot execute Windows binaries.
 
