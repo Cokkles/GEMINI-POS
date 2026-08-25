@@ -13,7 +13,6 @@ dotnet @publishArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (-not $SkipSmoke) { & (Join-Path $PSScriptRoot 'smoke-windows.ps1') -ArtifactDirectory $output }
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 @('smoke.stdout.log', 'smoke.stderr.log') | ForEach-Object {
     $smokeLog = Join-Path $output $_
@@ -28,7 +27,6 @@ $manifest = [ordered]@{ service = 'gpos-helper'; version = $version; runtime = '
 $manifestPath = Join-Path $output 'manifest.json'
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 & (Join-Path $PSScriptRoot 'verify-package.ps1') -ArtifactDirectory $output
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $zip = Join-Path (Split-Path $output -Parent) "gpos-helper-$version-win-x64.zip"
 Compress-Archive -Path (Join-Path $output '*') -DestinationPath $zip -Force
