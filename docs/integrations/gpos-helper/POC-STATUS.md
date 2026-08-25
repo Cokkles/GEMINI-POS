@@ -36,6 +36,7 @@ Status date: 2026-08-24
 - Live and packaged release gates verify liveness, readiness, capabilities, browser security policy and API cache protection in addition to basic availability.
 - Production launcher defaults to the verified packaged executable and supports a no-launch preflight; source execution now requires an explicit switch.
 - Health, diagnostics and response headers expose a non-secret per-process instance identifier; the dashboard detects restarts and prompts for re-authentication when needed.
+- Browser compatibility adapter clears stale helper sessions and pending login state automatically when the process instance changes.
 
 ## Validation
 
