@@ -37,7 +37,7 @@ return failures.Count == 0 ? 0 : 1;
 static async Task ControlSurface() => await WithApp(async client =>
 {
     var html = await client.GetStringAsync("/");
-    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css") && html.Contains("calendarForm") && html.Contains("snapshotRefresh"), "control surface was not served");
+    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css") && html.Contains("calendarForm") && html.Contains("snapshotRefresh") && html.Contains("upstreamTest"), "control surface was not served");
     using var css = await client.GetAsync("/app.css"); using var js = await client.GetAsync("/app.js");
     Check(css.IsSuccessStatusCode && css.Content.Headers.ContentType?.MediaType == "text/css", "control surface stylesheet was not served");
     Check(js.IsSuccessStatusCode && js.Content.Headers.ContentType?.MediaType is "text/javascript" or "application/javascript", "control surface script was not served");
