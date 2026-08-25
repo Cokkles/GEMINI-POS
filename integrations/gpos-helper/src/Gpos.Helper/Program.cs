@@ -111,6 +111,15 @@ public partial class Program
             }
             await next();
         });
+        app.Use(async (context, next) =>
+        {
+            if (!TrustedMutationOrigin(context, early.AllowedOrigins))
+            {
+                await Results.Json(new { error = "invalid_origin" }, statusCode: StatusCodes.Status403Forbidden).ExecuteAsync(context);
+                return;
+            }
+            await next();
+        });
         app.UseCors("frontend");
         app.UseRateLimiter();
         app.UseDefaultFiles();
@@ -185,7 +194,9 @@ public partial class Program
         }).RequireRateLimiting("auth");
         api.MapPost("/auth/logout", async (HttpContext ctx, HelperSessionStore sessions, IGoogleCredentialProvider credentials, CancellationToken ct) =>
         {
-            sessions.Revoke(SessionToken(ctx));
+            var token = SessionToken(ctx);
+            if (sessions.Validate(token) is null) return Results.Json(new { error = "auth_required" }, statusCode: StatusCodes.Status401Unauthorized);
+            sessions.Revoke(token);
             var remoteRevocation = await credentials.RevokeAsync(ct);
             ctx.Response.Cookies.Delete("gpos_session", new CookieOptions { Path = "/api/v1" });
             return Results.Ok(new { authenticated = false, credential = "ABSENT", remote_revocation = remoteRevocation });
@@ -219,6 +230,16 @@ public partial class Program
     {
         var value = host.Host.Trim('[', ']');
         return value.Equals("localhost", StringComparison.OrdinalIgnoreCase) || (IPAddress.TryParse(value, out var address) && IPAddress.IsLoopback(address));
+    }
+    private static bool TrustedMutationOrigin(HttpContext context, string[] allowedOrigins)
+    {
+        if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method)) return true;
+        var originValue = context.Request.Headers.Origin.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(originValue)) return true;
+        if (!Uri.TryCreate(originValue, UriKind.Absolute, out var origin) || !string.IsNullOrEmpty(origin.UserInfo)) return false;
+        var requestAuthority = $"{context.Request.Scheme}://{context.Request.Host}";
+        if (Uri.TryCreate(requestAuthority, UriKind.Absolute, out var local) && string.Equals(origin.GetLeftPart(UriPartial.Authority), local.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase)) return true;
+        return allowedOrigins.Any(value => Uri.TryCreate(value, UriKind.Absolute, out var allowed) && string.Equals(origin.GetLeftPart(UriPartial.Authority), allowed.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase));
     }
     private static SetupCheck[] GetSetupChecks(HelperOptions value)
     {
