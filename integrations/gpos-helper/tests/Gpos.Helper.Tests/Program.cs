@@ -17,7 +17,7 @@ var tests = new List<(string Name, Func<Task> Run)>
 {
     ("PWA-aligned control surface", ControlSurface), ("safe support bundle", SafeSupportBundle), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed), ("complete production configuration starts", ProductionConfigStarts), ("unsafe production origin fails closed", UnsafeProductionOriginFailsClosed),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("untrusted mutation origin rejected", UntrustedMutationOrigin), ("allowed mutation origin accepted", AllowedMutationOrigin), ("non-loopback host rejection", NonLoopbackHost), ("localhost host accepted", LocalhostHost), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
-    ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
+    ("authenticated dashboard route", AuthenticatedDashboardRoute), ("authenticated Calendar route", AuthenticatedCalendarRoute), ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
     ("Google OAuth allowlisted login", GoogleOAuthAllowlisted), ("Google OAuth denied identity", GoogleOAuthDeniedIdentity), ("Google OAuth network failure", GoogleOAuthUnavailable), ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
@@ -215,6 +215,29 @@ static async Task AuthenticatedLogout() => await WithApp(async client =>
     var body = await response.Content.ReadFromJsonAsync<JsonElement>();
     Check(response.StatusCode == HttpStatusCode.OK && body.GetProperty("authenticated").GetBoolean() == false, "authenticated logout failed");
 });
+
+static async Task AuthenticatedDashboardRoute()
+{
+    var gateway = new FixedAppsScriptGateway();
+    await WithAppServices(async (client, _) =>
+    {
+        await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
+        var response = await client.GetFromJsonAsync<JsonElement>("/api/v1/aegis/dashboard");
+        Check(response.GetProperty("source").GetString() == "simulated_apps_script" && gateway.GetCalls == 1 && gateway.LastAction == "get_dashboard", "authenticated dashboard route did not reach the typed gateway once");
+    }, services => { services.RemoveAll<IAppsScriptGateway>(); services.AddSingleton<IAppsScriptGateway>(gateway); });
+}
+
+static async Task AuthenticatedCalendarRoute()
+{
+    var gateway = new FixedAppsScriptGateway();
+    await WithAppServices(async (client, _) =>
+    {
+        await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
+        using var response = await client.PostAsJsonAsync("/api/v1/aegis/calendar/query", new { question = "What is tomorrow?", history = Array.Empty<object>() });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Check(response.IsSuccessStatusCode && body.GetProperty("source").GetString() == "simulated_apps_script" && gateway.PostCalls == 1 && gateway.LastPayload.Contains("calendar_ai"), "authenticated Calendar route did not reach the mutation-safe gateway once");
+    }, services => { services.RemoveAll<IAppsScriptGateway>(); services.AddSingleton<IAppsScriptGateway>(gateway); });
+}
 static async Task InvalidSession() => await WithApp(async client =>
 {
     client.DefaultRequestHeaders.Add("X-GPOS-Session", "invalid");
@@ -472,12 +495,12 @@ static ProductionPaths CreateProductionSupportPaths()
 }
 
 static async Task WithApp(Func<HttpClient, Task> action) => await WithAppServices((client, _) => action(client));
-static async Task WithAppServices(Func<HttpClient, WebApplication, Task> action)
+static async Task WithAppServices(Func<HttpClient, WebApplication, Task> action, Action<IServiceCollection>? configure = null)
 {
     var port = FreePort();
     var contentRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Gpos.Helper"));
     var args = new[] { $"--contentRoot={contentRoot}", $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=true", "--Helper:LaunchBrowser=false", "--Helper:HeartbeatSeconds=5", "--Helper:SessionMinutes=60", "--Helper:UpstreamMaxRetries=2", "--Helper:AllowedOrigins:0=https://cokkles.github.io" };
-    await using var app = Gpos.Helper.Program.Build(args, services => { services.RemoveAll<ISecretStore>(); services.AddSingleton<ISecretStore, MemorySecretStore>(); });
+    await using var app = Gpos.Helper.Program.Build(args, services => { services.RemoveAll<ISecretStore>(); services.AddSingleton<ISecretStore, MemorySecretStore>(); configure?.Invoke(services); });
     await app.StartAsync();
     try { using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new Uri($"http://127.0.0.1:{port}") }; await action(client, app); }
     finally { using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await app.StopAsync(cts.Token); }
@@ -508,6 +531,16 @@ sealed class FixedCredentialProvider(string? token) : IGoogleCredentialProvider
     public Task<string> GetStateAsync(CancellationToken cancellationToken) => Task.FromResult(token is null ? "ABSENT" : "VALID");
     public Task ClearAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task<string> RevokeAsync(CancellationToken cancellationToken) => Task.FromResult("NOT_PRESENT");
+}
+sealed class FixedAppsScriptGateway : IAppsScriptGateway
+{
+    public int GetCalls { get; private set; }
+    public int PostCalls { get; private set; }
+    public string LastAction { get; private set; } = "";
+    public string LastPayload { get; private set; } = "";
+    public Task<UpstreamResult> GetAsync(string action, CancellationToken cancellationToken) { GetCalls++; LastAction = action; return Task.FromResult(Success()); }
+    public Task<UpstreamResult> PostAsync(object payload, bool idempotent, CancellationToken cancellationToken) { PostCalls++; LastPayload = JsonSerializer.Serialize(payload); return Task.FromResult(Success()); }
+    private static UpstreamResult Success() => new(true, 200, JsonSerializer.SerializeToElement(new { source = "simulated_apps_script" }));
 }
 sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; public void Advance(TimeSpan amount) => now += amount; }
 sealed record ProductionPaths(string Root, string Store, string Key) : IDisposable { public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); } }
