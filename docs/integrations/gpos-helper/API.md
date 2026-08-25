@@ -10,6 +10,8 @@ Inbound request bodies default to a 64 KiB ceiling and oversized requests return
 
 Authentication initiation, callback and one-time-code exchange routes share a bounded per-process fixed-window limiter. Excess requests return HTTP 429 without reaching the authentication provider.
 
+Requests with a non-loopback, non-`localhost` Host header terminate with HTTP 400 and `invalid_host`, independently of CORS decisions.
+
 | Method | Route | Auth | Purpose |
 |---|---|---:|---|
 | GET | `/health` | No | Availability, version, process instance/start time, uptime and safe upstream configuration state. |
