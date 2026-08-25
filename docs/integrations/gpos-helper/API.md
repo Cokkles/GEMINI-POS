@@ -6,6 +6,8 @@ The local PWA-aligned helper control surface is served from `http://127.0.0.1:47
 
 Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie or `X-GPOS-Session`. Error responses use a finite category such as `auth_required`, `upstream_auth_required`, `timeout`, `malformed_response`, `upstream_unavailable`, or `retry_budget_exhausted`.
 
+OAuth callback failures are terminal and finite, including `invalid_or_expired_state`, `oauth_token_exchange_failed`, `oauth_id_token_missing`, `oauth_identity_validation_failed`, `oauth_identity_invalid`, `identity_not_allowed`, `oauth_response_invalid`, `oauth_timeout`, and `oauth_unavailable`.
+
 Inbound request bodies default to a 64 KiB ceiling and oversized requests return HTTP 413. Upstream response bodies default to a 1 MiB streaming ceiling and terminate as `upstream_response_too_large` with HTTP 502.
 
 Authentication initiation, callback and one-time-code exchange routes share a bounded per-process fixed-window limiter. Excess requests return HTTP 429 without reaching the authentication provider.
