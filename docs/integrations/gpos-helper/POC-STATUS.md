@@ -46,10 +46,11 @@ Status date: 2026-08-24
 - Live and packaged release gates reject stale or mismatched helper versions and require a process instance identifier.
 - System view can download a safe support report containing bounded helper-owned runtime and readiness data without identities, credentials, configured origins or upstream payloads.
 - Production configuration is validated both negatively and positively across exact callback, HTTPS browser origin, installed-app client value and required OAuth scope invariants.
+- Google OAuth provider tests cover allowlisted success, encrypted token-package persistence boundary, denied identity, single-use state replay prevention and finite network failure.
 
 ## Validation
 
-- Offline automated harness: 52/52 passed.
+- Offline automated harness: 55/55 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
