@@ -1,4 +1,4 @@
-# GPOS Helper Phase-0 POC Status
+# GPOS Helper v0.2.0 Production-Validation Status
 
 Status date: 2026-08-24
 
@@ -60,5 +60,5 @@ Status date: 2026-08-24
 - Add HTTPS or a mutually authenticated local transport before any non-loopback binding is considered.
 - AEGIS frontend integration is intentionally not included; the AEGIS repository was inspected but not modified.
 
-The implementation exit criteria are met locally. Production OAuth validation remains an operational Phase-1 gate, not a silent mock.
+The local engineering exit criteria are met. Production OAuth and deployed Apps Script validation remain explicit operational gates, not silent mocks.
 
