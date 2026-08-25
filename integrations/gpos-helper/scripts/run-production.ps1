@@ -53,7 +53,17 @@ if ($Preflight) {
 Write-Host "Starting gpos-helper production mode on http://127.0.0.1:$Port"
 Write-Host "Launch target: $launchTarget"
 Write-Host 'Sensitive configuration values will not be displayed.'
-if ($Source) { dotnet run --project $project --no-launch-profile }
-else { & $executable }
-exit $LASTEXITCODE
+if ($Source) {
+    dotnet run --project $project --no-launch-profile
+    exit $LASTEXITCODE
+}
+
+Push-Location $ArtifactDirectory
+try {
+    & $executable
+    $processExitCode = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+exit $processExitCode
 
