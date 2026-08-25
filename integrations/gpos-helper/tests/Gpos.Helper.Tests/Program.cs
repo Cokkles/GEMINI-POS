@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("safe support bundle", SafeSupportBundle), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
+    ("PWA-aligned control surface", ControlSurface), ("safe support bundle", SafeSupportBundle), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed), ("complete production configuration starts", ProductionConfigStarts), ("unsafe production origin fails closed", UnsafeProductionOriginFailsClosed),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("untrusted mutation origin rejected", UntrustedMutationOrigin), ("allowed mutation origin accepted", AllowedMutationOrigin), ("non-loopback host rejection", NonLoopbackHost), ("localhost host accepted", LocalhostHost), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
@@ -47,7 +47,7 @@ static async Task SafeSupportBundle() => await WithApp(async client =>
 {
     await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
     var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/support/bundle"); var serialized = json.ToString();
-    Check(json.GetProperty("service").GetString() == "gpos-helper" && json.GetProperty("setup_checks").GetArrayLength() == 7, "support bundle was incomplete");
+    Check(json.GetProperty("service").GetString() == "gpos-helper" && json.GetProperty("setup_checks").GetArrayLength() == 10, "support bundle was incomplete");
     Check(!serialized.Contains("developer@localhost") && !serialized.Contains("session_token") && !serialized.Contains("allowed_origins") && !serialized.Contains("auth_token"), "support bundle exposed identity or credential data");
 });
 
@@ -111,7 +111,7 @@ static async Task SafeActivity() => await WithApp(async client =>
 static async Task SetupReadiness() => await WithApp(async client =>
 {
     var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/setup/status"); var serialized = json.ToString();
-    Check(!json.GetProperty("production_ready").GetBoolean() && json.GetProperty("checks").GetArrayLength() == 7, "setup readiness was incorrect");
+    Check(!json.GetProperty("production_ready").GetBoolean() && json.GetProperty("checks").GetArrayLength() == 10, "setup readiness was incorrect");
     Check(!serialized.Contains("client-secret") && !serialized.Contains("@example.com"), "setup readiness exposed secret configuration");
 });
 
@@ -129,6 +129,29 @@ static async Task ProductionConfigFailsClosed()
     await using var app = Gpos.Helper.Program.Build([$"--contentRoot={contentRoot}", $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=false", "--Helper:LaunchBrowser=false"]);
     try { await app.StartAsync(); throw new Exception("incomplete production configuration was accepted"); }
     catch (OptionsValidationException) { }
+}
+
+static async Task ProductionConfigStarts()
+{
+    var port = FreePort(); var support = CreateProductionSupportPaths();
+    await using var app = Gpos.Helper.Program.Build(ProductionArgs(port, "https://cokkles.github.io", support.Store, support.Key));
+    await app.StartAsync();
+    try
+    {
+        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        var ready = await client.GetFromJsonAsync<JsonElement>("/api/v1/ready");
+        Check(ready.GetProperty("status").GetString() == "READY" && ready.GetProperty("mode").GetString() == "PRODUCTION", "complete production configuration was not ready");
+    }
+    finally { await app.StopAsync(); support.Dispose(); }
+}
+
+static async Task UnsafeProductionOriginFailsClosed()
+{
+    var port = FreePort(); var support = CreateProductionSupportPaths();
+    await using var app = Gpos.Helper.Program.Build(ProductionArgs(port, "http://unsafe.example", support.Store, support.Key));
+    try { await app.StartAsync(); throw new Exception("unsafe production browser origin was accepted"); }
+    catch (OptionsValidationException) { }
+    finally { support.Dispose(); }
 }
 
 static Task UnknownOrigin() => Cors("https://unknown.example", false);
@@ -394,6 +417,19 @@ static GoogleCredentialProvider CredentialProvider(MemorySecretStore store, Http
     time,
     NullLogger<GoogleCredentialProvider>.Instance);
 
+static string[] ProductionArgs(int port, string origin, string store, string key)
+{
+    var contentRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Gpos.Helper"));
+    return [$"--contentRoot={contentRoot}", $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=false", "--Helper:LaunchBrowser=false", "--Helper:AppsScriptEndpoint=https://example.invalid/exec", "--Helper:GoogleOAuth:ClientId=client-id", "--Helper:GoogleOAuth:ClientSecret=client-value", $"--Helper:GoogleOAuth:RedirectUri=http://127.0.0.1:{port}/api/v1/auth/callback", "--Helper:AllowedEmails:0=user@example.com", $"--Helper:AllowedOrigins:0={origin}", $"--Helper:SecretStorePath={store}", $"--Helper:SecretStoreKeyFile={key}", "--Helper:HeartbeatSeconds=5"];
+}
+
+static ProductionPaths CreateProductionSupportPaths()
+{
+    var root = Path.Combine(AppContext.BaseDirectory, "production-paths-" + Guid.NewGuid().ToString("N")); var store = Path.Combine(root, "store"); var key = Path.Combine(root, "key");
+    Directory.CreateDirectory(store); File.WriteAllText(key, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+    return new(root, store, key);
+}
+
 static async Task WithApp(Func<HttpClient, Task> action) => await WithAppServices((client, _) => action(client));
 static async Task WithAppServices(Func<HttpClient, WebApplication, Task> action)
 {
@@ -433,6 +469,7 @@ sealed class FixedCredentialProvider(string? token) : IGoogleCredentialProvider
     public Task<string> RevokeAsync(CancellationToken cancellationToken) => Task.FromResult("NOT_PRESENT");
 }
 sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; public void Advance(TimeSpan amount) => now += amount; }
+sealed record ProductionPaths(string Root, string Store, string Key) : IDisposable { public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); } }
 sealed class LogSink : ILogger<AppsScriptGateway>
 {
     public string Text { get; private set; } = "";
