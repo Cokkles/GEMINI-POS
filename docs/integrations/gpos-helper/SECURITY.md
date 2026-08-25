@@ -18,6 +18,7 @@
 - Login, callback and one-time-code endpoints use a bounded fixed-window limiter and reject excess local requests with HTTP 429.
 - Helper sessions, pending OAuth states and one-time client grants have hard in-memory capacities and prune expired/oldest entries.
 - The server rejects oversized request bodies before JSON binding and streams upstream responses only to a configured byte ceiling.
+- Every request must use a loopback IP or `localhost` Host header, reducing local DNS-rebinding exposure independently of socket binding and CORS.
 
 ## Threat boundaries
 
