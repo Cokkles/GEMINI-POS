@@ -44,7 +44,7 @@ Set the required `GPOS_` environment variables in the current process or an OS-b
 .\scripts\run-production.ps1
 ```
 
-The launcher verifies the packaged payload before starting it. Use `-Preflight` to validate the package and non-secret configuration rules without launching a process, or `-Source` when intentionally running the source project during development. The launcher and helper process both fail before startup unless the Apps Script endpoint, Desktop OAuth values, callback and at least one allowed identity are present. The helper always requires loopback binding; the launcher also forces production mode, browser launch and the exact GitHub Pages origin without printing configured values.
+The launcher verifies the packaged payload before starting it. Use `-Preflight` to validate the package and non-secret configuration rules without launching a process, or `-Source` when intentionally running the source project during development. The launcher and helper process both fail before startup unless the HTTPS Apps Script endpoint, Desktop OAuth values, required identity scopes, exact callback path/port, explicit HTTPS browser origin and at least one allowed identity are present. The helper always requires loopback binding; the launcher also forces production mode, browser launch and the exact GitHub Pages origin without printing configured values.
 
 After authenticating in the system browser, validate the live boundary:
 
