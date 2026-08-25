@@ -102,6 +102,15 @@ public partial class Program
                 app.Logger.LogInformation("Request complete request_id={RequestId} endpoint={Endpoint} method={Method} duration_ms={DurationMs} result={Result}", requestId, endpoint, context.Request.Method, watch.ElapsedMilliseconds, context.Response.StatusCode);
             }
         });
+        app.Use(async (context, next) =>
+        {
+            if (!IsLoopbackHost(context.Request.Host))
+            {
+                await Results.Json(new { error = "invalid_host" }, statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(context);
+                return;
+            }
+            await next();
+        });
         app.UseCors("frontend");
         app.UseRateLimiter();
         app.UseDefaultFiles();
@@ -205,6 +214,11 @@ public partial class Program
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo)) return false;
         return allowedOrigins.Any(origin => Uri.TryCreate(origin, UriKind.Absolute, out var allowed) && string.Equals(uri.GetLeftPart(UriPartial.Authority), allowed.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase));
+    }
+    private static bool IsLoopbackHost(HostString host)
+    {
+        var value = host.Host.Trim('[', ']');
+        return value.Equals("localhost", StringComparison.OrdinalIgnoreCase) || (IPAddress.TryParse(value, out var address) && IPAddress.IsLoopback(address));
     }
     private static SetupCheck[] GetSetupChecks(HelperOptions value)
     {
