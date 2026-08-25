@@ -5,6 +5,7 @@
 - Default listener is `127.0.0.1`; no LAN/Internet exposure by default.
 - Browser origins are an explicit allowlist. Unknown origins receive no CORS grant; wildcard plus credentials is never configured.
 - Production authentication is Google Authorization Code + PKCE with ID-token audience/email verification and a fail-closed local email allowlist.
+- Google token exchange and identity validation return finite terminal categories for provider rejection, malformed responses, timeouts and network unavailability; OAuth state is single-use.
 - Development authentication is selected only by explicit `DevelopmentMode=true`.
 - Local sessions are 256-bit random values, held only in memory, indexed by SHA-256, expire finitely, and can be revoked by logout.
 - Google token material is protected with current-user Windows DPAPI. ID tokens are reused only while fresh and are refreshed under a single-flight lock; refresh errors fail closed. The helper session token is never forwarded to Apps Script.
