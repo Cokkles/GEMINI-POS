@@ -44,10 +44,11 @@ Status date: 2026-08-24
 - Unsafe browser methods enforce trusted origins, and logout requires an authenticated helper session before local or Google credential revocation.
 - Connection page includes an on-demand authenticated AEGIS health check using the existing read-only AUTH-1 contract without changing the PWA.
 - Live and packaged release gates reject stale or mismatched helper versions and require a process instance identifier.
+- System view can download a safe support report containing bounded helper-owned runtime and readiness data without identities, credentials, configured origins or upstream payloads.
 
 ## Validation
 
-- Offline automated harness: 49/49 passed.
+- Offline automated harness: 50/50 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
