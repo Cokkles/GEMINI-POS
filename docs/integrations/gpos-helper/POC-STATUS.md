@@ -32,11 +32,13 @@ Status date: 2026-08-24
 - Logout performs bounded best-effort Google token revocation and always clears the encrypted local credential package.
 - Control-surface security headers and `no-store` API responses reduce browser embedding, data caching and content-injection exposure.
 - Production startup fails closed on non-loopback binding or incomplete Apps Script, OAuth, allowlist, callback and secret-storage configuration, including direct executable launches.
+- Release packages include a standalone SHA-256 verifier that rejects missing, modified, duplicated, path-traversing and unexpected payload files before launch.
 
 ## Validation
 
 - Offline automated harness: 37/37 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
+- Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
 - No compiled artifact is committed; `dist/` remains ignored.
 
