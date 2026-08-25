@@ -138,7 +138,7 @@ public partial class Program
             var ready = configured.Value.DevelopmentMode || checks.All(x => x.Ready);
             return Results.Json(new { status = ready ? "READY" : "NOT_READY", mode = configured.Value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION", failed_checks = checks.Where(x => !x.Ready).Select(x => x.Id) }, statusCode: ready ? 200 : 503);
         });
-        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.readiness", "helper.auth", "helper.auth_rate_limits", "helper.background_jobs", "helper.setup", "helper.activity", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.readiness", "helper.auth", "helper.auth_rate_limits", "helper.background_jobs", "helper.setup", "helper.activity", "helper.support_bundle", "aegis.proxy", "calendar.read" } }));
         api.MapGet("/activity", (RequestActivityStore activity, int? limit, bool? include_routine) => Results.Ok(new { entries = activity.Recent(limit ?? 20, include_routine ?? false), routine_included = include_routine ?? false }));
         api.MapGet("/setup/status", (IOptions<HelperOptions> configured) =>
         {
@@ -152,6 +152,18 @@ public partial class Program
             listen_address = early.ListenAddress, port = early.Port, development_mode = early.DevelopmentMode, auth = auth.Mode, allowed_origins = early.AllowedOrigins,
             heartbeat = new { heartbeat.Count, last_beat = heartbeat.LastBeat }, instance_id = InstanceId, started_at = StartedAt, uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds
         }));
+        api.MapGet("/support/bundle", async (IOptions<HelperOptions> configured, IAuthProvider auth, IGoogleCredentialProvider credentials, HeartbeatState heartbeat, RequestActivityStore activity, CancellationToken ct) =>
+        {
+            var checks = GetSetupChecks(configured.Value);
+            return Results.Ok(new
+            {
+                generated_at = DateTimeOffset.UtcNow, service = "gpos-helper", version = Version(), instance_id = InstanceId, started_at = StartedAt,
+                uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds, runtime = Environment.Version.ToString(), os = Environment.OSVersion.Platform.ToString(),
+                process_architecture = RuntimeInformation.ProcessArchitecture.ToString(), mode = configured.Value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION",
+                auth_provider = auth.Mode, credential_state = await credentials.GetStateAsync(ct), production_ready = checks.All(x => x.Ready), setup_checks = checks,
+                heartbeat = new { heartbeat.Count, last_beat = heartbeat.LastBeat }, recent_activity = activity.Recent(50, false)
+            });
+        });
         api.MapGet("/auth/status", async (HttpContext ctx, HelperSessionStore sessions, IAuthProvider auth, IGoogleCredentialProvider credentials, CancellationToken ct) =>
         {
             var identity = sessions.Validate(SessionToken(ctx));
