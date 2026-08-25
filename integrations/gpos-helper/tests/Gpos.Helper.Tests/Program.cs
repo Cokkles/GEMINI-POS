@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config),
+    ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
@@ -41,6 +41,21 @@ static async Task ControlSurface() => await WithApp(async client =>
     using var css = await client.GetAsync("/app.css"); using var js = await client.GetAsync("/app.js");
     Check(css.IsSuccessStatusCode && css.Content.Headers.ContentType?.MediaType == "text/css", "control surface stylesheet was not served");
     Check(js.IsSuccessStatusCode && js.Content.Headers.ContentType?.MediaType is "text/javascript" or "application/javascript", "control surface script was not served");
+});
+
+static async Task SecurityHeaders() => await WithApp(async client =>
+{
+    using var response = await client.GetAsync("/");
+    Check(response.Headers.TryGetValues("Content-Security-Policy", out var csp) && csp.Single().Contains("frame-ancestors 'none'"), "content security policy was missing");
+    Check(response.Headers.TryGetValues("X-Content-Type-Options", out var contentType) && contentType.Single() == "nosniff", "content type protection was missing");
+    Check(response.Headers.TryGetValues("Referrer-Policy", out var referrer) && referrer.Single() == "no-referrer", "referrer policy was missing");
+    Check(response.Headers.TryGetValues("Permissions-Policy", out _), "permissions policy was missing");
+});
+
+static async Task ApiNoStore() => await WithApp(async client =>
+{
+    using var response = await client.GetAsync("/api/v1/auth/status");
+    Check(response.Headers.CacheControl?.NoStore == true, "authentication API response was cacheable");
 });
 
 static async Task Health() => await WithApp(async client =>
