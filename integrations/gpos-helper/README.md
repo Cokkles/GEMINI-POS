@@ -5,8 +5,10 @@ Windows production-validation candidate for GEMINI-POS. The helper is one .NET 8
 Quick start:
 
 ```powershell
-.\scripts\run-dev.ps1
+.\scripts\start-helper.ps1
 ```
+
+This starts development mode in its own PowerShell window, waits for health and opens the dashboard. Use `.\scripts\start-helper.ps1 -Mode Production` after setting the production environment variables.
 
 Build the self-contained executable:
 
