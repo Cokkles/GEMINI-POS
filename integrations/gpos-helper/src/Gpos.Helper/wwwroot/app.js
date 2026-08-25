@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const state={health:null,auth:null,capabilities:null,diagnostics:null,setup:null};
+const state={health:null,auth:null,capabilities:null,diagnostics:null,setup:null,instanceId:null};
 
 async function api(path,options={}){
   const controller=new AbortController();
@@ -43,7 +43,7 @@ function render(){
 async function refresh(showToast=false){
   try{
     const [health,auth,capabilities,diagnostics,setup]=await Promise.all([api('/api/v1/health'),api('/api/v1/auth/status'),api('/api/v1/capabilities'),api('/api/v1/diagnostics'),api('/api/v1/setup/status')]);
-    Object.assign(state,{health,auth,capabilities,diagnostics,setup});render();if(showToast)toast('Helper status refreshed');
+    const restarted=state.instanceId&&state.instanceId!==health.instance_id;Object.assign(state,{health,auth,capabilities,diagnostics,setup,instanceId:health.instance_id});render();if(restarted)toast('Helper restarted - authenticate again if needed');else if(showToast)toast('Helper status refreshed');
   }catch(error){text('stripMessage',error.name==='AbortError'?'Status check timed out':error.message);text('serviceState','UNAVAILABLE');$('serviceState').className='state failed';$('liveDot').className='live-dot failed';if(showToast)toast('Unable to refresh helper');}
 }
 
