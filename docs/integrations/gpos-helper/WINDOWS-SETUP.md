@@ -80,5 +80,21 @@ The unified validator runs the 57 helper tests, browser adapter tests, AEGIS bri
 
 Output: `integrations/gpos-helper/dist/win-x64/gpos-helper.exe`.
 
+## One-command launch
+
+From `integrations/gpos-helper`, start development mode and open the dashboard automatically:
+
+```powershell
+.\scripts\start-helper.ps1
+```
+
+After setting the production environment variables, use:
+
+```powershell
+.\scripts\start-helper.ps1 -Mode Production
+```
+
+The shortcut performs the appropriate production preflight when requested, starts the helper in its own PowerShell window, waits for `/api/v1/health` and opens `http://127.0.0.1:47831/`. Stop the helper with `Ctrl+C` in its service window.
+
 Foreground execution requires no Administrator privileges. Stop with Ctrl+C for graceful cancellation. Windows Service/tray installation is intentionally deferred.
 
