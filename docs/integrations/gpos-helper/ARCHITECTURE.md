@@ -20,7 +20,7 @@ AEGIS / local client
 - Minimal API host: loopback HTTP, CORS allowlist, diagnostics, request telemetry, graceful shutdown.
 - `IAuthProvider`: development-only provider or Google Authorization Code + PKCE provider.
 - `IGoogleCredentialProvider`: reads the DPAPI-protected token package, reuses a sufficiently fresh ID token, and performs a single-flight refresh when it is near expiry. Missing, malformed, timed-out, or rejected refreshes fail closed.
-- `HelperSessionStore`: random opaque local sessions, stored only in memory, hashed at rest in the process, with finite expiry and logout revocation.
+- `HelperSessionStore`: random opaque local sessions, stored only in memory, hashed at rest in the process, with finite expiry, logout revocation, expired-entry pruning and a hard capacity.
 - `ISecretStore`: Windows DPAPI implementation. The interface is the container migration seam.
 - `IAppsScriptGateway`: typed, authenticated POST envelopes compatible with AUTH-1; timeout, cancellation, retry budget, exponential backoff and jitter.
 - `HeartbeatWorker`: one cancellation-aware `PeriodicTimer`; no busy loop or second process.
