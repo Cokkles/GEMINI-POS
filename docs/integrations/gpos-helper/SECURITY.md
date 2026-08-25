@@ -17,6 +17,7 @@
 - A random non-secret process instance identifier lets clients detect restarts and discard stale helper sessions without exposing machine identity.
 - Login, callback and one-time-code endpoints use a bounded fixed-window limiter and reject excess local requests with HTTP 429.
 - Helper sessions, pending OAuth states and one-time client grants have hard in-memory capacities and prune expired/oldest entries.
+- The server rejects oversized request bodies before JSON binding and streams upstream responses only to a configured byte ceiling.
 
 ## Threat boundaries
 
