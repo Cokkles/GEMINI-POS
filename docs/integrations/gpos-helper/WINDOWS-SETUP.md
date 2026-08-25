@@ -44,7 +44,7 @@ Set the required `GPOS_` environment variables in the current process or an OS-b
 .\scripts\run-production.ps1
 ```
 
-The launcher fails before startup unless the Apps Script endpoint, Desktop OAuth values, callback and at least one allowed identity are present. It forces loopback binding, production mode, browser launch and the exact GitHub Pages origin without printing configured values.
+The launcher and helper process both fail before startup unless the Apps Script endpoint, Desktop OAuth values, callback and at least one allowed identity are present. The helper always requires loopback binding; the launcher also forces production mode, browser launch and the exact GitHub Pages origin without printing configured values.
 
 After authenticating in the system browser, validate the live boundary:
 
@@ -77,3 +77,4 @@ Invoke-RestMethod http://127.0.0.1:47831/api/v1/health
 Output: `integrations/gpos-helper/dist/win-x64/gpos-helper.exe`.
 
 Foreground execution requires no Administrator privileges. Stop with Ctrl+C for graceful cancellation. Windows Service/tray installation is intentionally deferred.
+
