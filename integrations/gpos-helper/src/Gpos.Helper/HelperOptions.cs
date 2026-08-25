@@ -13,6 +13,8 @@ public sealed class HelperOptions
     [Range(0, 5)] public int UpstreamMaxRetries { get; set; } = 2;
     [Range(5, 3600)] public int SessionMinutes { get; set; } = 60;
     [Range(5, 3600)] public int HeartbeatSeconds { get; set; } = 30;
+    [Range(1024, 1048576)] public int MaxRequestBodyBytes { get; set; } = 65536;
+    [Range(1024, 10485760)] public int MaxUpstreamResponseBytes { get; set; } = 1048576;
     public bool DevelopmentMode { get; set; }
     public bool LaunchBrowser { get; set; } = true;
     public string[] AllowedOrigins { get; set; } = ["https://cokkles.github.io"];
@@ -33,3 +35,4 @@ public sealed class GoogleOAuthOptions
 public sealed record AuthIdentity(string Subject, string Email, string DisplayName);
 public sealed record AuthResult(bool Success, AuthIdentity? Identity = null, string? Error = null);
 public sealed record UpstreamResult(bool Success, int StatusCode, JsonElement? Body, string? ErrorCategory = null, string? Error = null, int RetryCount = 0, long DurationMs = 0);
+
