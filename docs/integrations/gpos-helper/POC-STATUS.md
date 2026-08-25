@@ -47,10 +47,11 @@ Status date: 2026-08-24
 - System view can download a safe support report containing bounded helper-owned runtime and readiness data without identities, credentials, configured origins or upstream payloads.
 - Production configuration is validated both negatively and positively across exact callback, HTTPS browser origin, installed-app client value and required OAuth scope invariants.
 - Google OAuth provider tests cover allowlisted success, encrypted token-package persistence boundary, denied identity, single-use state replay prevention and finite network failure.
+- Authenticated HTTP contract tests prove Dashboard and Calendar requests traverse session validation and the typed Apps Script gateway exactly once, with Calendar remaining mutation-safe.
 
 ## Validation
 
-- Offline automated harness: 55/55 passed.
+- Offline automated harness: 57/57 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
