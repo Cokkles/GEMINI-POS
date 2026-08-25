@@ -26,5 +26,11 @@ Validate production configuration without starting the helper:
 .\scripts\run-production.ps1 -Preflight
 ```
 
+Run every offline validation suite and the packaged Windows gate:
+
+```powershell
+.\scripts\test-all.ps1 -IncludePackage
+```
+
 See `docs/integrations/gpos-helper/` for the API, security model, setup, and current limitations.
 
