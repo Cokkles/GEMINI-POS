@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 var tests = new List<(string Name, Func<Task> Run)>
 {
     ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
-    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight),
+    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
@@ -132,6 +132,12 @@ static async Task PwaSessionPreflight() => await WithApp(async client =>
     Check(response.Headers.TryGetValues("Access-Control-Allow-Origin", out var origins) && origins.Single() == "https://cokkles.github.io", "PWA origin was not returned exactly");
     Check(response.Headers.TryGetValues("Access-Control-Allow-Headers", out var headers) && headers.Any(x => x.Contains("X-GPOS-Session", StringComparison.OrdinalIgnoreCase)), "helper session header was not allowed");
     Check(response.Headers.TryGetValues("Access-Control-Allow-Credentials", out var credentials) && credentials.Contains("true"), "credentialed PWA preflight was incomplete");
+});
+static async Task AuthenticationRateLimit() => await WithApp(async client =>
+{
+    HttpResponseMessage? response = null;
+    for (var i = 0; i < 21; i++) { response?.Dispose(); response = await client.PostAsJsonAsync("/api/v1/auth/login", new { }); }
+    using (response) Check(response?.StatusCode == HttpStatusCode.TooManyRequests, "authentication requests were not rate limited");
 });
 static async Task Cors(string origin, bool expected) => await WithApp(async client =>
 {
