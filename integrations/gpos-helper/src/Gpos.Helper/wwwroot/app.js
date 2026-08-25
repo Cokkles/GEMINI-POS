@@ -57,6 +57,13 @@ async function authenticate(){
 }
 
 async function logout(){try{await api('/api/v1/auth/logout',{method:'POST'});await refresh();toast('Local session ended')}catch(error){toast(`Logout failed: ${error.message}`)}}
+async function testUpstream(){
+  if(!state.auth?.authenticated){showView('connection');toast('Authenticate before testing AEGIS');return}
+  const button=$('upstreamTest');button.disabled=true;$('upstreamTestResult').className='connection-test loading';$('upstreamTestResult').innerHTML='<strong>Testing AEGIS connection.</strong><span>One finite read-only health request is in progress.</span>';
+  try{const result=await api('/api/v1/aegis/health');$('upstreamTestResult').className='connection-test';$('upstreamTestResult').innerHTML=`<strong>AEGIS connection available</strong><span>${escapeHtml(summaryValue(result))}</span>`;toast('AEGIS connection verified')}
+  catch(error){const message=error.name==='AbortError'?'Connection test timed out':error.message;$('upstreamTestResult').className='connection-test failed';$('upstreamTestResult').innerHTML=`<strong>AEGIS connection unavailable</strong><span>${escapeHtml(message)}</span>`}
+  finally{button.disabled=false}
+}
 async function queryCalendar(event){
   event.preventDefault();const question=$('calendarQuestion').value.trim();if(!question)return;
   if(!state.auth?.authenticated){showView('connection');toast('Authenticate before querying AEGIS');return}
@@ -95,6 +102,7 @@ document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener
 document.querySelectorAll('[data-view-link]').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.viewLink)));
 $('menuButton').addEventListener('click',()=>{$('nav').classList.add('open');$('scrim').classList.add('show')});$('scrim').addEventListener('click',closeNav);
 $('refreshButton').addEventListener('click',()=>refresh(true));$('authButton').addEventListener('click',authenticate);$('authButtonSecondary').addEventListener('click',authenticate);$('logoutButton').addEventListener('click',logout);
+$('upstreamTest').addEventListener('click',testUpstream);
 $('calendarForm').addEventListener('submit',queryCalendar);document.querySelectorAll('[data-calendar-prompt]').forEach(button=>button.addEventListener('click',()=>{$('calendarQuestion').value=button.dataset.calendarPrompt;$('calendarQuestion').focus()}));
 $('snapshotRefresh').addEventListener('click',loadSnapshot);
 $('activityRefresh').addEventListener('click',()=>loadActivity(true));
