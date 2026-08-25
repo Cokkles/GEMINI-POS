@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
+    ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
@@ -56,6 +56,16 @@ static async Task ApiNoStore() => await WithApp(async client =>
 {
     using var response = await client.GetAsync("/api/v1/auth/status");
     Check(response.Headers.CacheControl?.NoStore == true, "authentication API response was cacheable");
+});
+
+static async Task InstanceIdentity() => await WithApp(async client =>
+{
+    using var response = await client.GetAsync("/api/v1/health");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var instance = json.GetProperty("instance_id").GetString();
+    Check(instance?.Length == 16, "health instance identifier was invalid");
+    Check(response.Headers.TryGetValues("X-GPOS-Instance", out var values) && values.Single() == instance, "response instance identifier did not match health");
+    Check(json.GetProperty("started_at").GetDateTimeOffset() <= DateTimeOffset.UtcNow, "health start time was invalid");
 });
 
 static async Task Health() => await WithApp(async client =>
