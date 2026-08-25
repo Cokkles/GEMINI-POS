@@ -23,6 +23,16 @@ try {
 } catch { Fail ('helper health request failed: ' + $_.Exception.Message) }
 
 try {
+    $live = GetJson '/api/v1/live'
+    if ($live.status -eq 'ALIVE') { Pass 'process liveness is ALIVE' } else { Fail 'process liveness is not ALIVE' }
+} catch { Fail ('liveness request failed: ' + $_.Exception.Message) }
+
+try {
+    $ready = GetJson '/api/v1/ready'
+    if ($ready.status -eq 'READY') { Pass 'deployment readiness is READY' } else { Fail 'deployment readiness is not READY' }
+} catch { Fail ('readiness request failed: ' + $_.Exception.Message) }
+
+try {
     $setup = GetJson '/api/v1/setup/status'
     if ($setup.production_ready) { Pass 'production setup is ready' }
     elseif ($AllowDevelopment -and $setup.mode -eq 'DEVELOPMENT') { Pass 'development setup accepted for smoke validation' }
@@ -31,7 +41,7 @@ try {
 
 try {
     $capabilities = GetJson '/api/v1/capabilities'
-    $requiredCapabilities = @('helper.health', 'helper.auth', 'helper.setup', 'helper.activity', 'aegis.proxy', 'calendar.read')
+    $requiredCapabilities = @('helper.health', 'helper.readiness', 'helper.auth', 'helper.setup', 'helper.activity', 'aegis.proxy', 'calendar.read')
     $missingCapabilities = @($requiredCapabilities | Where-Object { $_ -notin $capabilities.capabilities })
     if ($missingCapabilities.Count -eq 0) { Pass 'required helper capabilities are advertised' } else { Fail ('capabilities missing: ' + ($missingCapabilities -join ', ')) }
 } catch { Fail ('capability request failed: ' + $_.Exception.Message) }
@@ -52,6 +62,17 @@ try {
     else { Fail 'helper session is not authenticated' }
 } catch { Fail ('authentication status request failed: ' + $_.Exception.Message) }
 
+try {
+    $apiResponse = Invoke-WebRequest -Uri ([Uri]::new($HelperUrl, '/api/v1/auth/status')) -TimeoutSec 5 -UseBasicParsing
+    if ([string]$apiResponse.Headers['Cache-Control'] -match '(?i)no-store') { Pass 'API responses disable caching' } else { Fail 'API response is missing no-store' }
+} catch { Fail ('API cache-policy request failed: ' + $_.Exception.Message) }
+
+try {
+    $surface = Invoke-WebRequest -Uri $HelperUrl -TimeoutSec 5 -UseBasicParsing
+    $csp = [string]$surface.Headers['Content-Security-Policy']
+    if ($csp -match "frame-ancestors 'none'" -and $surface.Headers['X-Content-Type-Options'] -eq 'nosniff') { Pass 'control surface security policy is active' } else { Fail 'control surface security policy is incomplete' }
+} catch { Fail ('control surface policy request failed: ' + $_.Exception.Message) }
+
 if ($null -ne $health) {
     if ($health.upstream.apps_script -eq 'CONFIGURED') { Pass 'Apps Script upstream is configured' }
     elseif ($AllowDevelopment) { Pass 'unconfigured Apps Script accepted for smoke validation' }
@@ -63,3 +84,4 @@ if ($script:Failures.Count -gt 0) {
     exit 1
 }
 Write-Host 'RESULT: PASSED' -ForegroundColor Green
+
