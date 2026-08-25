@@ -73,6 +73,7 @@ static async Task Health() => await WithApp(async client =>
     var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/health");
     Check(json.GetProperty("status").GetString() == "AVAILABLE", "status was not AVAILABLE");
     Check(json.GetProperty("service").GetString() == "gpos-helper", "wrong service name");
+    Check(json.GetProperty("version").GetString() == "0.2.0", "release version was not 0.2.0");
 });
 
 static async Task Probes() => await WithApp(async client =>
