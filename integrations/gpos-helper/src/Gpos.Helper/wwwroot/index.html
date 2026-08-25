@@ -79,6 +79,11 @@
         <div class="setup-list" id="setupList"><span class="muted">Checking non-secret configuration.</span></div>
         <p class="note">This checklist reports readiness only. It never returns client secrets, tokens, endpoint values, or allowed email addresses.</p>
       </section>
+      <section class="panel setup-panel">
+        <div class="panel-head"><div><p class="eyebrow">BOUNDED AUTH-1</p><h2>AEGIS CONNECTION TEST</h2></div><button class="mini" id="upstreamTest">Test connection</button></div>
+        <div class="connection-test empty" id="upstreamTestResult"><strong>Not tested</strong><span>Authenticate, then run one finite read-only AEGIS health request.</span></div>
+        <p class="note">This check does not modify the PWA or upstream data. It uses the existing authoritative AEGIS health contract.</p>
+      </section>
     </section>
 
     <section class="view" id="system">
