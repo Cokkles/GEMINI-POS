@@ -12,6 +12,7 @@
 - Network calls have timeout, cancellation, bounded retry count, terminal error categories, backoff, and jitter. Mutation-capable calls are not retried.
 - Logs omit bodies, query values and credentials; explicit redaction covers bearer, JSON token/secret, and query-secret patterns.
 - Diagnostics disclose configuration state, not credential values or private domain data.
+- Browser responses enforce a restrictive content policy, deny framing and unnecessary device capabilities, suppress referrers, and prevent MIME sniffing. API responses are marked `no-store`.
 
 ## Threat boundaries
 
@@ -33,5 +34,5 @@ Never commit populated `config/appsettings.json`, OAuth values, tokens, API keys
 - Remote Google token revocation still requires validation with real production credentials.
 - Sessions are single-node/in-memory and disappear on restart.
 - Plain HTTP is acceptable only for the loopback POC. Non-loopback hosting requires TLS and a revised cookie/CSRF design.
-- The container secret-store implementation is intentionally absent, so the Dockerfile is not production-ready.
+- Container deployment remains gated on TLS or a trusted reverse proxy, explicit network policy and deployment validation.
 
