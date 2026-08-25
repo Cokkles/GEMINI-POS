@@ -19,6 +19,7 @@
 - Helper sessions, pending OAuth states and one-time client grants have hard in-memory capacities and prune expired/oldest entries.
 - The server rejects oversized request bodies before JSON binding and streams upstream responses only to a configured byte ceiling.
 - Every request must use a loopback IP or `localhost` Host header, reducing local DNS-rebinding exposure independently of socket binding and CORS.
+- Browser-originated mutations are rejected unless their Origin is the local surface or explicit PWA allowlist; logout additionally requires a valid helper session before shared credentials can be revoked.
 
 ## Threat boundaries
 
