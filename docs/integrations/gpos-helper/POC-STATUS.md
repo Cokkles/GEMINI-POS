@@ -38,10 +38,11 @@ Status date: 2026-08-24
 - Health, diagnostics and response headers expose a non-secret per-process instance identifier; the dashboard detects restarts and prompts for re-authentication when needed.
 - Browser compatibility adapter clears stale helper sessions and pending login state automatically when the process instance changes.
 - Authentication initiation, callback and one-time-code exchange routes reject excess loopback traffic with bounded HTTP 429 rate limits.
+- Helper sessions, OAuth state and one-time client grants prune expired entries and evict oldest entries at hard memory bounds.
 
 ## Validation
 
-- Offline automated harness: 39/39 passed.
+- Offline automated harness: 41/41 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
