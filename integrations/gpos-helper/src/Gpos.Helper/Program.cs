@@ -37,6 +37,7 @@ public partial class Program
             .ValidateOnStart();
         var early = builder.Configuration.GetSection(HelperOptions.Section).Get<HelperOptions>() ?? new();
         builder.WebHost.UseUrls($"http://{early.ListenAddress}:{early.Port}");
+        builder.WebHost.ConfigureKestrel(server => server.Limits.MaxRequestBodySize = early.MaxRequestBodyBytes);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<HelperSessionStore>();
         builder.Services.AddSingleton<HeartbeatState>();
