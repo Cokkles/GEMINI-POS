@@ -140,14 +140,25 @@ public sealed class GoogleCredentialProvider(
 
 public sealed class HelperSessionStore(IOptions<HelperOptions> options, TimeProvider timeProvider)
 {
-    private sealed record Session(AuthIdentity Identity, DateTimeOffset ExpiresAt);
+    private const int Capacity = 100;
+    private sealed record Session(AuthIdentity Identity, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
     private readonly ConcurrentDictionary<string, Session> _sessions = new();
+    private readonly object _gate = new();
 
     public (string Token, DateTimeOffset ExpiresAt) Create(AuthIdentity identity)
     {
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        var expires = timeProvider.GetUtcNow().AddMinutes(options.Value.SessionMinutes);
-        _sessions[Hash(token)] = new(identity, expires);
+        var now = timeProvider.GetUtcNow(); var expires = now.AddMinutes(options.Value.SessionMinutes);
+        lock (_gate)
+        {
+            foreach (var entry in _sessions.Where(x => x.Value.ExpiresAt <= now)) _sessions.TryRemove(entry.Key, out _);
+            while (_sessions.Count >= Capacity)
+            {
+                var oldest = _sessions.MinBy(x => x.Value.CreatedAt);
+                if (!_sessions.TryRemove(oldest.Key, out _)) break;
+            }
+            _sessions[Hash(token)] = new(identity, now, expires);
+        }
         return (token, expires);
     }
 
@@ -174,6 +185,7 @@ public sealed class DevelopmentAuthProvider : IAuthProvider
 
 public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpClientFactory clients, ISecretStore secrets) : IAuthProvider
 {
+    private const int PendingCapacity = 100;
     private sealed record Pending(string Verifier, DateTimeOffset ExpiresAt);
     private readonly ConcurrentDictionary<string, Pending> _pending = new();
     public string Mode => "google_oauth";
@@ -182,8 +194,15 @@ public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpCl
     {
         var cfg = options.Value.GoogleOAuth;
         if (string.IsNullOrWhiteSpace(cfg.ClientId)) throw new InvalidOperationException("Google OAuth is not configured.");
+        var now = DateTimeOffset.UtcNow;
+        foreach (var entry in _pending.Where(x => x.Value.ExpiresAt <= now)) _pending.TryRemove(entry.Key, out _);
+        while (_pending.Count >= PendingCapacity)
+        {
+            var oldest = _pending.MinBy(x => x.Value.ExpiresAt);
+            if (!_pending.TryRemove(oldest.Key, out _)) break;
+        }
         var state = Token(24); var verifier = Token(48);
-        _pending[state] = new(verifier, DateTimeOffset.UtcNow.AddMinutes(5));
+        _pending[state] = new(verifier, now.AddMinutes(5));
         var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
         var query = new Dictionary<string, string?>
         {
