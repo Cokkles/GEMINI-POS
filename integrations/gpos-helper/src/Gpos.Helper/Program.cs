@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
@@ -11,6 +12,7 @@ namespace Gpos.Helper;
 public partial class Program
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
+    private static readonly string InstanceId = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
     public static void Main(string[] args)
     {
         var app = Build(args);
@@ -64,6 +66,7 @@ public partial class Program
             context.Response.Headers["Referrer-Policy"] = "no-referrer";
             context.Response.Headers["X-Frame-Options"] = "DENY";
             context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+            context.Response.Headers["X-GPOS-Instance"] = InstanceId;
             if (context.Request.Path.StartsWithSegments("/api")) context.Response.Headers.CacheControl = "no-store";
             await next();
         });
@@ -92,7 +95,7 @@ public partial class Program
         var api = app.MapGroup("/api/v1");
         api.MapGet("/health", (IAuthProvider auth) => Results.Ok(new
         {
-            status = "AVAILABLE", service = "gpos-helper", version = Version(), uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
+            status = "AVAILABLE", service = "gpos-helper", version = Version(), instance_id = InstanceId, started_at = StartedAt, uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
             auth = auth.Mode, upstream = new { apps_script = string.IsNullOrWhiteSpace(early.AppsScriptEndpoint) ? "NOT_CONFIGURED" : "CONFIGURED", google = auth.Mode == "google_oauth" ? "CONFIGURED" : "DEVELOPMENT_MOCK" }
         }));
         api.MapGet("/live", () => Results.Ok(new { status = "ALIVE", service = "gpos-helper", uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds }));
@@ -114,7 +117,7 @@ public partial class Program
         {
             service = "gpos-helper", version = Version(), runtime = Environment.Version.ToString(), os = Environment.OSVersion.Platform.ToString(), process_architecture = RuntimeInformation.ProcessArchitecture.ToString(),
             listen_address = early.ListenAddress, port = early.Port, development_mode = early.DevelopmentMode, auth = auth.Mode, allowed_origins = early.AllowedOrigins,
-            heartbeat = new { heartbeat.Count, last_beat = heartbeat.LastBeat }, uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds
+            heartbeat = new { heartbeat.Count, last_beat = heartbeat.LastBeat }, instance_id = InstanceId, started_at = StartedAt, uptime_seconds = (long)(DateTimeOffset.UtcNow - StartedAt).TotalSeconds
         }));
         api.MapGet("/auth/status", async (HttpContext ctx, HelperSessionStore sessions, IAuthProvider auth, IGoogleCredentialProvider credentials, CancellationToken ct) =>
         {
