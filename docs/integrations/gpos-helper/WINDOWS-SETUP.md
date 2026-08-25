@@ -52,7 +52,7 @@ After authenticating in the system browser, validate the live boundary:
 .\scripts\validate-live.ps1
 ```
 
-The validator checks health, production readiness, required capabilities, the credentialed `X-GPOS-Session` preflight, local authentication and upstream configuration with five-second request limits. For a credential-free development smoke test only, use `-AllowDevelopment`.
+The validator checks health, liveness, deployment readiness, required capabilities, response security/cache policy, the credentialed `X-GPOS-Session` preflight, local authentication and upstream configuration with five-second request limits. For a credential-free development smoke test only, use `-AllowDevelopment`.
 
 ## Release-candidate package
 
@@ -63,7 +63,7 @@ Run `scripts/build-windows.ps1` to publish and smoke-test the self-contained Win
 - `dist/win-x64/manifest.json` with a SHA-256 hash and byte count for every payload
 - `dist/gpos-helper-0.1.0-win-x64.zip` as the portable release directory
 
-The smoke test launches the packaged executable on loopback port `47931`, verifies health, capabilities and the control surface, and then stops only that test process. Use `-SkipSmoke` only in an environment that cannot execute Windows binaries.
+The smoke test launches the packaged executable on loopback port `47931`, verifies health, liveness, readiness, capabilities, security/cache headers and the control surface, and then stops only that test process. Use `-SkipSmoke` only in an environment that cannot execute Windows binaries.
 
 The normal build restores and verifies the Windows runtime pack. If NuGet is temporarily unavailable and the same runtime pack was already restored successfully, `-NoRestore` reuses that local cache; it must not be used as a substitute for an initial verified restore.
 
