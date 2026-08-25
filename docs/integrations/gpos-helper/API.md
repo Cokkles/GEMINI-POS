@@ -21,6 +21,7 @@ Requests with a non-loopback, non-`localhost` Host header terminate with HTTP 40
 | GET | `/ready` | No | Deployment readiness probe; development is ready while a production instance returns 503 until all safe setup checks pass. |
 | GET | `/capabilities` | No | Machine-readable implemented capability IDs. |
 | GET | `/diagnostics` | No | Safe runtime/build/listener/worker diagnostics; no secrets. |
+| GET | `/support/bundle` | No | Downloadable non-secret runtime, readiness, credential-state, heartbeat and filtered-activity report. |
 | GET | `/activity?limit=20&include_routine=false` | No | Recent bounded in-memory request metadata; routine probes/polling are hidden by default and bodies, query strings, cookies and identities are always excluded. |
 | GET | `/setup/status` | No | Safe production-readiness checks without returning configured values or identities. |
 | GET | `/auth/status` | Optional | Local session state, safe identity summary and non-secret credential readiness (`ABSENT`, `VALID`, `REFRESHABLE`, `EXPIRED`, or `DEVELOPMENT_MOCK`). |
