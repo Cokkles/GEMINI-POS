@@ -20,7 +20,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
     ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
-    ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration),
+    ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration), ("session store is bounded", SessionStoreBounded), ("client flow store is bounded", ClientFlowStoreBounded),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
 };
@@ -184,6 +184,22 @@ static Task SessionExpiration()
 {
     var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new HelperSessionStore(Options.Create(new HelperOptions { SessionMinutes = 5 }), time);
     var token = store.Create(new("subject", "a@example.com", "A")).Token; time.Advance(TimeSpan.FromMinutes(6)); Check(store.Validate(token) is null, "expired session accepted"); return Task.CompletedTask;
+}
+
+static Task SessionStoreBounded()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new HelperSessionStore(Options.Create(new HelperOptions { SessionMinutes = 5 }), time);
+    string? first = null; string? last = null;
+    for (var i = 0; i < 101; i++) { last = store.Create(new("subject", "a@example.com", "A")).Token; first ??= last; time.Advance(TimeSpan.FromSeconds(1)); }
+    Check(store.Validate(first) is null && store.Validate(last) is not null, "session capacity did not evict the oldest entry"); return Task.CompletedTask;
+}
+
+static Task ClientFlowStoreBounded()
+{
+    var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new ClientSessionFlowStore(time); var challenge = new string('a', 43);
+    for (var i = 0; i < 101; i++) { Check(store.Prepare($"state-{i}", "https://cokkles.github.io/", challenge), "client flow was rejected"); time.Advance(TimeSpan.FromSeconds(1)); }
+    Check(store.Complete("state-0", new("subject", "a@example.com", "A")) is null, "client flow capacity retained the oldest entry");
+    Check(store.Complete("state-100", new("subject", "a@example.com", "A")) is not null, "client flow capacity lost the newest entry"); return Task.CompletedTask;
 }
 
 static Task Redaction()
