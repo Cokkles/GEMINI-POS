@@ -14,5 +14,11 @@ Build the self-contained executable:
 .\scripts\build-windows.ps1
 ```
 
+Verify an extracted package before launch:
+
+```powershell
+.\scripts\verify-package.ps1
+```
+
 See `docs/integrations/gpos-helper/` for the API, security model, setup, and current limitations.
 
