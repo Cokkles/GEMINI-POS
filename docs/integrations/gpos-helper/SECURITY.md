@@ -12,6 +12,7 @@
 - Network calls have timeout, cancellation, bounded retry count, terminal error categories, backoff, and jitter. Mutation-capable calls are not retried.
 - Logs omit bodies, query values and credentials; explicit redaction covers bearer, JSON token/secret, and query-secret patterns.
 - Diagnostics disclose configuration state, not credential values or private domain data.
+- The support report is assembled only from safe runtime/readiness state and filtered request metadata; it excludes identities, origins, configured values, payloads and credentials.
 - Browser responses enforce a restrictive content policy, deny framing and unnecessary device capabilities, suppress referrers, and prevent MIME sniffing. API responses are marked `no-store`.
 - Startup validation fails closed unless the listener is loopback and production has HTTPS Apps Script, OAuth client, identity allowlist, loopback callback and platform secret-storage prerequisites.
 - A random non-secret process instance identifier lets clients detect restarts and discard stale helper sessions without exposing machine identity.
