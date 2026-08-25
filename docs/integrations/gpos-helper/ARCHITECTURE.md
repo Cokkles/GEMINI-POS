@@ -1,6 +1,6 @@
 # GPOS Helper Architecture
 
-Status: Phase-0 POC implemented on `agent/gpos-helper-poc`.
+Status: v0.2.0 production-validation candidate on `agent/gpos-helper-poc`; real credentialed integration remains an operational gate.
 
 ## Boundary
 
