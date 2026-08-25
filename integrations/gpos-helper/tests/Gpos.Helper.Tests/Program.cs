@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Gpos.Helper;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -19,7 +20,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
-    ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
+    ("Google OAuth allowlisted login", GoogleOAuthAllowlisted), ("Google OAuth denied identity", GoogleOAuthDeniedIdentity), ("Google OAuth network failure", GoogleOAuthUnavailable), ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
     ("auth-required request", AuthRequired), ("logout requires authentication", LogoutRequiresAuthentication), ("authenticated logout", AuthenticatedLogout), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration), ("session store is bounded", SessionStoreBounded), ("client flow store is bounded", ClientFlowStoreBounded),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
@@ -332,6 +333,37 @@ static async Task OversizedUpstreamResponse()
     Check(result.StatusCode == 502 && result.ErrorCategory == "upstream_response_too_large", "oversized upstream response was not bounded");
 }
 
+static async Task GoogleOAuthAllowlisted()
+{
+    var store = new MemorySecretStore();
+    var handler = new SequenceHandler(
+        SequenceHandler.Json(HttpStatusCode.OK, "{\"access_token\":\"access\",\"refresh_token\":\"refresh\",\"id_token\":\"id-token\",\"expires_in\":3600}"),
+        SequenceHandler.Json(HttpStatusCode.OK, "{\"sub\":\"subject\",\"aud\":\"client-id\",\"email\":\"allowed@example.com\",\"email_verified\":\"true\",\"name\":\"Allowed User\"}"));
+    var provider = OAuthProvider(store, handler); var login = await provider.BeginLoginAsync(default); var state = QueryHelpers.ParseQuery(new Uri(login).Query)["state"].Single()!;
+    var result = await provider.CompleteLoginAsync("authorization-code", state, default); var saved = await store.GetAsync("google-token", default);
+    Check(result.Success && result.Identity?.Email == "allowed@example.com" && saved?.Contains("refresh") == true && handler.Calls == 2, "allowlisted Google login did not complete and persist credentials");
+    Check(!(await provider.CompleteLoginAsync("authorization-code", state, default)).Success, "Google OAuth state replay was accepted");
+}
+
+static async Task GoogleOAuthDeniedIdentity()
+{
+    var store = new MemorySecretStore();
+    var handler = new SequenceHandler(
+        SequenceHandler.Json(HttpStatusCode.OK, "{\"access_token\":\"access\",\"refresh_token\":\"refresh\",\"id_token\":\"id-token\",\"expires_in\":3600}"),
+        SequenceHandler.Json(HttpStatusCode.OK, "{\"sub\":\"subject\",\"aud\":\"client-id\",\"email\":\"denied@example.com\",\"email_verified\":\"true\",\"name\":\"Denied User\"}"));
+    var provider = OAuthProvider(store, handler); var login = await provider.BeginLoginAsync(default); var state = QueryHelpers.ParseQuery(new Uri(login).Query)["state"].Single()!;
+    var result = await provider.CompleteLoginAsync("authorization-code", state, default);
+    Check(!result.Success && result.Error == "identity_not_allowed" && await store.GetAsync("google-token", default) is null, "denied Google identity was accepted or persisted");
+}
+
+static async Task GoogleOAuthUnavailable()
+{
+    var store = new MemorySecretStore(); var handler = new SequenceHandler((_, _) => throw new HttpRequestException("simulated outage"));
+    var provider = OAuthProvider(store, handler); var login = await provider.BeginLoginAsync(default); var state = QueryHelpers.ParseQuery(new Uri(login).Query)["state"].Single()!;
+    var result = await provider.CompleteLoginAsync("authorization-code", state, default);
+    Check(!result.Success && result.Error == "oauth_unavailable", "Google network failure was not terminal and finite");
+}
+
 static async Task FreshCredential()
 {
     var time = new MutableTimeProvider(DateTimeOffset.UtcNow); var store = new MemorySecretStore();
@@ -416,6 +448,15 @@ static GoogleCredentialProvider CredentialProvider(MemorySecretStore store, Http
     Options.Create(new HelperOptions { GoogleOAuth = new GoogleOAuthOptions { ClientId = "client-id", ClientSecret = "client-secret" } }),
     time,
     NullLogger<GoogleCredentialProvider>.Instance);
+
+static GoogleOAuthProvider OAuthProvider(MemorySecretStore store, HttpMessageHandler handler) => new(
+    Options.Create(new HelperOptions
+    {
+        AllowedEmails = ["allowed@example.com"],
+        GoogleOAuth = new GoogleOAuthOptions { ClientId = "client-id", ClientSecret = "client-value", RedirectUri = "http://127.0.0.1:47831/api/v1/auth/callback" }
+    }),
+    new SingleClientFactory(new HttpClient(handler)),
+    store);
 
 static string[] ProductionArgs(int port, string origin, string store, string key)
 {
