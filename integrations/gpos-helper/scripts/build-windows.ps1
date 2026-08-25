@@ -12,7 +12,7 @@ if ($NoRestore) { $publishArguments += '--no-restore' }
 dotnet @publishArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-if (-not $SkipSmoke) { & (Join-Path $PSScriptRoot 'smoke-windows.ps1') -ArtifactDirectory $output }
+if (-not $SkipSmoke) { & (Join-Path $PSScriptRoot 'smoke-windows.ps1') -ArtifactDirectory $output -ExpectedVersion $version }
 
 @('smoke.stdout.log', 'smoke.stderr.log') | ForEach-Object {
     $smokeLog = Join-Path $output $_
