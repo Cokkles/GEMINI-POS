@@ -35,10 +35,11 @@ Status date: 2026-08-24
 - Release packages include a standalone SHA-256 verifier that rejects missing, modified, duplicated, path-traversing and unexpected payload files before launch.
 - Live and packaged release gates verify liveness, readiness, capabilities, browser security policy and API cache protection in addition to basic availability.
 - Production launcher defaults to the verified packaged executable and supports a no-launch preflight; source execution now requires an explicit switch.
+- Health, diagnostics and response headers expose a non-secret per-process instance identifier; the dashboard detects restarts and prompts for re-authentication when needed.
 
 ## Validation
 
-- Offline automated harness: 37/37 passed.
+- Offline automated harness: 38/38 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
