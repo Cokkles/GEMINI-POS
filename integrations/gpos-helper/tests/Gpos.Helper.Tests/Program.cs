@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
+    ("PWA-aligned control surface", ControlSurface), ("safe support bundle", SafeSupportBundle), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("untrusted mutation origin rejected", UntrustedMutationOrigin), ("allowed mutation origin accepted", AllowedMutationOrigin), ("non-loopback host rejection", NonLoopbackHost), ("localhost host accepted", LocalhostHost), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
@@ -37,10 +37,18 @@ return failures.Count == 0 ? 0 : 1;
 static async Task ControlSurface() => await WithApp(async client =>
 {
     var html = await client.GetStringAsync("/");
-    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css") && html.Contains("calendarForm") && html.Contains("snapshotRefresh") && html.Contains("upstreamTest"), "control surface was not served");
+    Check(html.Contains("GPOS HELPER CONTROL") && html.Contains("AEGIS COMPANION") && html.Contains("/app.css") && html.Contains("calendarForm") && html.Contains("snapshotRefresh") && html.Contains("upstreamTest") && html.Contains("supportDownload"), "control surface was not served");
     using var css = await client.GetAsync("/app.css"); using var js = await client.GetAsync("/app.js");
     Check(css.IsSuccessStatusCode && css.Content.Headers.ContentType?.MediaType == "text/css", "control surface stylesheet was not served");
     Check(js.IsSuccessStatusCode && js.Content.Headers.ContentType?.MediaType is "text/javascript" or "application/javascript", "control surface script was not served");
+});
+
+static async Task SafeSupportBundle() => await WithApp(async client =>
+{
+    await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
+    var json = await client.GetFromJsonAsync<JsonElement>("/api/v1/support/bundle"); var serialized = json.ToString();
+    Check(json.GetProperty("service").GetString() == "gpos-helper" && json.GetProperty("setup_checks").GetArrayLength() == 7, "support bundle was incomplete");
+    Check(!serialized.Contains("developer@localhost") && !serialized.Contains("session_token") && !serialized.Contains("allowed_origins") && !serialized.Contains("auth_token"), "support bundle exposed identity or credential data");
 });
 
 static async Task SecurityHeaders() => await WithApp(async client =>
