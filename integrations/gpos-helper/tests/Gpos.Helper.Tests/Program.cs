@@ -15,12 +15,12 @@ using Microsoft.Extensions.Options;
 var tests = new List<(string Name, Func<Task> Run)>
 {
     ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
-    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("non-loopback host rejection", NonLoopbackHost), ("localhost host accepted", LocalhostHost), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
+    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("untrusted mutation origin rejected", UntrustedMutationOrigin), ("allowed mutation origin accepted", AllowedMutationOrigin), ("non-loopback host rejection", NonLoopbackHost), ("localhost host accepted", LocalhostHost), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
     ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
-    ("auth-required request", AuthRequired), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration), ("session store is bounded", SessionStoreBounded), ("client flow store is bounded", ClientFlowStoreBounded),
+    ("auth-required request", AuthRequired), ("logout requires authentication", LogoutRequiresAuthentication), ("authenticated logout", AuthenticatedLogout), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration), ("session store is bounded", SessionStoreBounded), ("client flow store is bounded", ClientFlowStoreBounded),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
 };
@@ -124,6 +124,19 @@ static async Task ProductionConfigFailsClosed()
 
 static Task UnknownOrigin() => Cors("https://unknown.example", false);
 static Task AllowedOrigin() => Cors("https://cokkles.github.io", true);
+static async Task UntrustedMutationOrigin() => await WithApp(async client =>
+{
+    using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login"); request.Headers.Add("Origin", "https://attacker.example");
+    using var response = await client.SendAsync(request); var body = await response.Content.ReadAsStringAsync();
+    Check(response.StatusCode == HttpStatusCode.Forbidden && body.Contains("invalid_origin"), "untrusted mutation origin was accepted");
+});
+static async Task AllowedMutationOrigin() => await WithApp(async client =>
+{
+    using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/client/start"); request.Headers.Add("Origin", "https://cokkles.github.io");
+    request.Content = JsonContent.Create(new { returnUrl = "https://cokkles.github.io/aegis-itinerary-project/", codeChallenge = new string('a', 43) });
+    using var response = await client.SendAsync(request);
+    Check(response.StatusCode == HttpStatusCode.OK, "allowlisted mutation origin was rejected");
+});
 static async Task NonLoopbackHost() => await WithApp(async client =>
 {
     using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health"); request.Headers.Host = "attacker.example";
@@ -161,6 +174,14 @@ static async Task Cors(string origin, bool expected) => await WithApp(async clie
 });
 
 static async Task AuthRequired() => await WithApp(async client => Check((await client.GetAsync("/api/v1/aegis/health")).StatusCode == HttpStatusCode.Unauthorized, "protected route did not require auth"));
+static async Task LogoutRequiresAuthentication() => await WithApp(async client => Check((await client.PostAsJsonAsync("/api/v1/auth/logout", new { })).StatusCode == HttpStatusCode.Unauthorized, "unauthenticated logout was accepted"));
+static async Task AuthenticatedLogout() => await WithApp(async client =>
+{
+    using var callback = await client.GetAsync("/api/v1/auth/callback?code=development&state=development");
+    using var response = await client.PostAsJsonAsync("/api/v1/auth/logout", new { });
+    var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+    Check(response.StatusCode == HttpStatusCode.OK && body.GetProperty("authenticated").GetBoolean() == false, "authenticated logout failed");
+});
 static async Task InvalidSession() => await WithApp(async client =>
 {
     client.DefaultRequestHeaders.Add("X-GPOS-Session", "invalid");
