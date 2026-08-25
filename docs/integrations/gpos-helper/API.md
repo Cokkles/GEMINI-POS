@@ -10,6 +10,8 @@ Inbound request bodies default to a 64 KiB ceiling and oversized requests return
 
 Authentication initiation, callback and one-time-code exchange routes share a bounded per-process fixed-window limiter. Excess requests return HTTP 429 without reaching the authentication provider.
 
+Browser-originated non-GET mutations require the local control-surface origin or an explicitly allowlisted PWA origin. Unknown origins terminate with HTTP 403 and `invalid_origin`; non-browser clients may omit `Origin`. Logout requires a valid helper session.
+
 Requests with a non-loopback, non-`localhost` Host header terminate with HTTP 400 and `invalid_host`, independently of CORS decisions.
 
 | Method | Route | Auth | Purpose |
@@ -26,7 +28,7 @@ Requests with a non-loopback, non-`localhost` Host header terminate with HTTP 40
 | POST | `/auth/client/start` | No | Starts a PKCE-bound login for an allowlisted HTTPS PWA return URL. |
 | POST | `/auth/client/exchange` | No | Exchanges a one-minute, single-use client code plus PKCE verifier for a helper-only session token. |
 | GET | `/auth/callback?code=...&state=...` | No | OAuth loopback callback; sets the helper session cookie on success. |
-| POST | `/auth/logout` | Optional | Revokes the local session, attempts bounded Google token revocation, clears its cookie and always deletes locally persisted credentials. |
+| POST | `/auth/logout` | Yes | Revokes the local session, attempts bounded Google token revocation, clears its cookie and always deletes locally persisted credentials. |
 | GET | `/aegis/dashboard` | Yes | Typed AUTH-1 request with upstream action `get_dashboard`. |
 | GET | `/aegis/health` | Yes | Typed AUTH-1 request with upstream action `get_health`. |
 | POST | `/aegis/calendar/query` | Yes | Sends `{question, history}` as `calendar_ai`; input is bounded and the operation is never retried. |
