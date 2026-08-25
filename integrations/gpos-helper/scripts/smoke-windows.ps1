@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactDirectory = (Join-Path $PSScriptRoot '..\dist\win-x64'),
-    [int]$Port = 47931
+    [int]$Port = 47931,
+    [string]$ExpectedVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +22,8 @@ try {
         try { $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/v1/health" -TimeoutSec 2; break } catch { Start-Sleep -Milliseconds 200 }
     }
     if ($null -eq $health -or $health.status -ne 'AVAILABLE') { throw 'Packaged helper did not become available within 15 seconds.' }
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion) -and $health.version -ne $ExpectedVersion) { throw "Packaged helper version $($health.version) did not match expected $ExpectedVersion." }
+    if ([string]::IsNullOrWhiteSpace($health.instance_id)) { throw 'Packaged helper did not report a process instance identifier.' }
     $live = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/v1/live" -TimeoutSec 5
     $ready = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/v1/ready" -TimeoutSec 5
     if ($live.status -ne 'ALIVE' -or $ready.status -ne 'READY') { throw 'Packaged helper probes did not report ALIVE and READY.' }
