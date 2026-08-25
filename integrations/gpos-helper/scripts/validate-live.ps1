@@ -2,6 +2,7 @@
 param(
     [Uri]$HelperUrl = 'http://127.0.0.1:47831',
     [string]$PwaOrigin = 'https://cokkles.github.io',
+    [string]$ExpectedVersion = '0.2.0',
     [switch]$AllowDevelopment
 )
 
@@ -20,6 +21,8 @@ if ($HelperUrl.Scheme -ne 'http' -or $HelperUrl.Host -notin @('127.0.0.1', 'loca
 try {
     $health = GetJson '/api/v1/health'
     if ($health.status -eq 'AVAILABLE') { Pass 'helper health is AVAILABLE' } else { Fail 'helper health is not AVAILABLE' }
+    if ($health.version -eq $ExpectedVersion) { Pass "helper version is $ExpectedVersion" } else { Fail "helper version $($health.version) does not match expected $ExpectedVersion" }
+    if (-not [string]::IsNullOrWhiteSpace($health.instance_id)) { Pass 'helper process instance is identified' } else { Fail 'helper process instance is missing' }
 } catch { Fail ('helper health request failed: ' + $_.Exception.Message) }
 
 try {
