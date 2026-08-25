@@ -64,6 +64,11 @@ async function testUpstream(){
   catch(error){const message=error.name==='AbortError'?'Connection test timed out':error.message;$('upstreamTestResult').className='connection-test failed';$('upstreamTestResult').innerHTML=`<strong>AEGIS connection unavailable</strong><span>${escapeHtml(message)}</span>`}
   finally{button.disabled=false}
 }
+async function downloadSupport(){
+  const button=$('supportDownload');button.disabled=true;
+  try{const result=await api('/api/v1/support/bundle');const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`gpos-helper-support-${new Date().toISOString().replaceAll(':','-')}.json`;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);toast('Safe support report downloaded')}
+  catch(error){toast(`Support report failed: ${error.message}`)}finally{button.disabled=false}
+}
 async function queryCalendar(event){
   event.preventDefault();const question=$('calendarQuestion').value.trim();if(!question)return;
   if(!state.auth?.authenticated){showView('connection');toast('Authenticate before querying AEGIS');return}
@@ -103,6 +108,7 @@ document.querySelectorAll('[data-view-link]').forEach(button=>button.addEventLis
 $('menuButton').addEventListener('click',()=>{$('nav').classList.add('open');$('scrim').classList.add('show')});$('scrim').addEventListener('click',closeNav);
 $('refreshButton').addEventListener('click',()=>refresh(true));$('authButton').addEventListener('click',authenticate);$('authButtonSecondary').addEventListener('click',authenticate);$('logoutButton').addEventListener('click',logout);
 $('upstreamTest').addEventListener('click',testUpstream);
+$('supportDownload').addEventListener('click',downloadSupport);
 $('calendarForm').addEventListener('submit',queryCalendar);document.querySelectorAll('[data-calendar-prompt]').forEach(button=>button.addEventListener('click',()=>{$('calendarQuestion').value=button.dataset.calendarPrompt;$('calendarQuestion').focus()}));
 $('snapshotRefresh').addEventListener('click',loadSnapshot);
 $('activityRefresh').addEventListener('click',()=>loadActivity(true));
