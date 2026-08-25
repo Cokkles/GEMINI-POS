@@ -52,6 +52,16 @@ public partial class Program
 
         app.Use(async (context, next) =>
         {
+            context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
+            context.Response.Headers["X-Frame-Options"] = "DENY";
+            context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+            if (context.Request.Path.StartsWithSegments("/api")) context.Response.Headers.CacheControl = "no-store";
+            await next();
+        });
+        app.Use(async (context, next) =>
+        {
             var watch = Stopwatch.StartNew();
             var requestId = context.TraceIdentifier;
             context.Response.Headers["X-Request-ID"] = requestId;
