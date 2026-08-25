@@ -1,6 +1,6 @@
 # GPOS Helper v0.2.0 Production-Validation Status
 
-Status date: 2026-08-24
+Status date: 2026-08-25
 
 ## Implemented
 
@@ -48,6 +48,7 @@ Status date: 2026-08-24
 - Production configuration is validated both negatively and positively across exact callback, HTTPS browser origin, installed-app client value and required OAuth scope invariants.
 - Google OAuth provider tests cover allowlisted success, encrypted token-package persistence boundary, denied identity, single-use state replay prevention and finite network failure.
 - Authenticated HTTP contract tests prove Dashboard and Calendar requests traverse session validation and the typed Apps Script gateway exactly once, with Calendar remaining mutation-safe.
+- One unified validation command runs helper, browser adapter, AEGIS bridge, Windows package smoke and manifest integrity gates.
 
 ## Validation
 
