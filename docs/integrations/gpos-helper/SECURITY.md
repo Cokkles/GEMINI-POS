@@ -15,6 +15,7 @@
 - The support report is assembled only from safe runtime/readiness state and filtered request metadata; it excludes identities, origins, configured values, payloads and credentials.
 - Browser responses enforce a restrictive content policy, deny framing and unnecessary device capabilities, suppress referrers, and prevent MIME sniffing. API responses are marked `no-store`.
 - Startup validation fails closed unless the listener is loopback and production has HTTPS Apps Script, OAuth client, identity allowlist, loopback callback and platform secret-storage prerequisites.
+- Production also requires explicit HTTPS browser origins, the installed-app client value, required identity scopes, and an exact callback path whose port matches the listener.
 - A random non-secret process instance identifier lets clients detect restarts and discard stale helper sessions without exposing machine identity.
 - Login, callback and one-time-code endpoints use a bounded fixed-window limiter and reject excess local requests with HTTP 429.
 - Helper sessions, pending OAuth states and one-time client grants have hard in-memory capacities and prune expired/oldest entries.
