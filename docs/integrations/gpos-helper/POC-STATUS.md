@@ -40,10 +40,11 @@ Status date: 2026-08-24
 - Authentication initiation, callback and one-time-code exchange routes reject excess loopback traffic with bounded HTTP 429 rate limits.
 - Helper sessions, OAuth state and one-time client grants prune expired entries and evict oldest entries at hard memory bounds.
 - Inbound JSON and upstream response bodies have independently configurable hard byte ceilings with terminal 413/502 behavior.
+- Loopback Host validation rejects DNS-rebinding-style requests addressed through non-local hostnames before routing.
 
 ## Validation
 
-- Offline automated harness: 43/43 passed.
+- Offline automated harness: 45/45 passed.
 - Windows `win-x64`, self-contained, single-file publish: passed.
 - Standalone release manifest verification: passed.
 - Published `gpos-helper.exe` smoke test: `/api/v1/health` returned `AVAILABLE`; `/api/v1/capabilities` returned the bounded capability list.
