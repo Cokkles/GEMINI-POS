@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 var tests = new List<(string Name, Func<Task> Run)>
 {
     ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("instance identity is consistent", InstanceIdentity), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
-    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
+    ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("non-loopback host rejection", NonLoopbackHost), ("localhost host accepted", LocalhostHost), ("PWA session preflight", PwaSessionPreflight), ("authentication rate limit", AuthenticationRateLimit),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
@@ -124,6 +124,18 @@ static async Task ProductionConfigFailsClosed()
 
 static Task UnknownOrigin() => Cors("https://unknown.example", false);
 static Task AllowedOrigin() => Cors("https://cokkles.github.io", true);
+static async Task NonLoopbackHost() => await WithApp(async client =>
+{
+    using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health"); request.Headers.Host = "attacker.example";
+    using var response = await client.SendAsync(request); var body = await response.Content.ReadAsStringAsync();
+    Check(response.StatusCode == HttpStatusCode.BadRequest && body.Contains("invalid_host"), "non-loopback host was accepted");
+});
+static async Task LocalhostHost() => await WithApp(async client =>
+{
+    using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health"); request.Headers.Host = "localhost";
+    using var response = await client.SendAsync(request);
+    Check(response.StatusCode == HttpStatusCode.OK, "localhost host was rejected");
+});
 static async Task PwaSessionPreflight() => await WithApp(async client =>
 {
     using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/aegis/dashboard");
