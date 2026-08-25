@@ -1,5 +1,10 @@
 [CmdletBinding()]
-param([int]$Port = 47831)
+param(
+    [int]$Port = 47831,
+    [string]$ArtifactDirectory = (Join-Path $PSScriptRoot '..\dist\win-x64'),
+    [switch]$Source,
+    [switch]$Preflight
+)
 
 $ErrorActionPreference = 'Stop'
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Port must be between 1024 and 65535.' }
@@ -26,8 +31,29 @@ $env:GPOS_Helper__DevelopmentMode = 'false'
 $env:GPOS_Helper__LaunchBrowser = 'true'
 $env:GPOS_Helper__AllowedOrigins__0 = 'https://cokkles.github.io'
 
-$project = Join-Path $PSScriptRoot '..\src\Gpos.Helper\Gpos.Helper.csproj'
+$launchTarget = $null
+if ($Source) {
+    $project = Join-Path $PSScriptRoot '..\src\Gpos.Helper\Gpos.Helper.csproj'
+    if (-not (Test-Path -LiteralPath $project -PathType Leaf)) { throw 'Helper source project was not found.' }
+    $launchTarget = 'source project'
+} else {
+    & (Join-Path $PSScriptRoot 'verify-package.ps1') -ArtifactDirectory $ArtifactDirectory
+    $ArtifactDirectory = (Resolve-Path -LiteralPath $ArtifactDirectory).Path
+    $executable = Join-Path $ArtifactDirectory 'gpos-helper.exe'
+    if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'Verified package does not contain gpos-helper.exe.' }
+    $launchTarget = 'verified package'
+}
+
+if ($Preflight) {
+    Write-Host "PASS  production preflight completed for $launchTarget"
+    Write-Host 'No helper process was started and sensitive values were not displayed.'
+    return
+}
+
 Write-Host "Starting gpos-helper production mode on http://127.0.0.1:$Port"
+Write-Host "Launch target: $launchTarget"
 Write-Host 'Sensitive configuration values will not be displayed.'
-dotnet run --project $project --no-launch-profile
+if ($Source) { dotnet run --project $project --no-launch-profile }
+else { & $executable }
 exit $LASTEXITCODE
+
