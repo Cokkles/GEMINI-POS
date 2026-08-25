@@ -8,7 +8,7 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 
 | Method | Route | Auth | Purpose |
 |---|---|---:|---|
-| GET | `/health` | No | Availability, version, uptime and safe upstream configuration state. |
+| GET | `/health` | No | Availability, version, process instance/start time, uptime and safe upstream configuration state. |
 | GET | `/live` | No | Lightweight process liveness probe for service managers and containers. |
 | GET | `/ready` | No | Deployment readiness probe; development is ready while a production instance returns 503 until all safe setup checks pass. |
 | GET | `/capabilities` | No | Machine-readable implemented capability IDs. |
@@ -26,6 +26,8 @@ Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie
 | POST | `/aegis/calendar/query` | Yes | Sends `{question, history}` as `calendar_ai`; input is bounded and the operation is never retried. |
 
 Compatibility redirects are provided from `/health`, `/live`, `/ready` and `/capabilities` to the versioned routes.
+
+Every response includes `X-GPOS-Instance`, a random non-secret identifier that changes on process restart. The same value is returned as `instance_id` by health and diagnostics so clients can discard stale in-memory sessions cleanly.
 
 Example Calendar query:
 
