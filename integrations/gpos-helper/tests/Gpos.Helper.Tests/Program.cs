@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
-    ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config),
+    ("PWA-aligned control surface", ControlSurface), ("browser security headers", SecurityHeaders), ("API responses are not cached", ApiNoStore), ("health endpoint", Health), ("liveness and readiness", Probes), ("capability endpoint", Capabilities), ("safe request activity", SafeActivity), ("safe setup readiness", SetupReadiness), ("config loading", Config), ("production configuration fails closed", ProductionConfigFailsClosed),
     ("unknown origin rejection", UnknownOrigin), ("allowed origin", AllowedOrigin), ("PWA session preflight", PwaSessionPreflight),
     ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)),
@@ -102,6 +102,15 @@ static async Task Config() => await WithAppServices((client, app) =>
     Check(value.Port > 0 && value.DevelopmentMode && value.UpstreamMaxRetries == 2, "configuration precedence failed");
     return Task.CompletedTask;
 });
+
+static async Task ProductionConfigFailsClosed()
+{
+    var port = FreePort();
+    var contentRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Gpos.Helper"));
+    await using var app = Gpos.Helper.Program.Build([$"--contentRoot={contentRoot}", $"--Helper:Port={port}", "--Helper:ListenAddress=127.0.0.1", "--Helper:DevelopmentMode=false", "--Helper:LaunchBrowser=false"]);
+    try { await app.StartAsync(); throw new Exception("incomplete production configuration was accepted"); }
+    catch (OptionsValidationException) { }
+}
 
 static Task UnknownOrigin() => Cors("https://unknown.example", false);
 static Task AllowedOrigin() => Cors("https://cokkles.github.io", true);
