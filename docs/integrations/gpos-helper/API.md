@@ -6,6 +6,8 @@ The local PWA-aligned helper control surface is served from `http://127.0.0.1:47
 
 Responses are JSON. Protected routes accept the `HttpOnly` `gpos_session` cookie or `X-GPOS-Session`. Error responses use a finite category such as `auth_required`, `upstream_auth_required`, `timeout`, `malformed_response`, `upstream_unavailable`, or `retry_budget_exhausted`.
 
+Authentication initiation, callback and one-time-code exchange routes share a bounded per-process fixed-window limiter. Excess requests return HTTP 429 without reaching the authentication provider.
+
 | Method | Route | Auth | Purpose |
 |---|---|---:|---|
 | GET | `/health` | No | Availability, version, process instance/start time, uptime and safe upstream configuration state. |
