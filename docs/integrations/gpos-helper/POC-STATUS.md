@@ -33,6 +33,7 @@ Status date: 2026-08-24
 - Control-surface security headers and `no-store` API responses reduce browser embedding, data caching and content-injection exposure.
 - Production startup fails closed on non-loopback binding or incomplete Apps Script, OAuth, allowlist, callback and secret-storage configuration, including direct executable launches.
 - Release packages include a standalone SHA-256 verifier that rejects missing, modified, duplicated, path-traversing and unexpected payload files before launch.
+- Live and packaged release gates verify liveness, readiness, capabilities, browser security policy and API cache protection in addition to basic availability.
 
 ## Validation
 
