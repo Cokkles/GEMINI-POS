@@ -3,7 +3,9 @@ using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
@@ -52,6 +54,17 @@ public partial class Program
         builder.Services.AddHttpClient("apps-script", c => c.Timeout = Timeout.InfiniteTimeSpan);
         builder.Services.AddHttpClient("oauth", c => c.Timeout = TimeSpan.FromSeconds(20));
         builder.Services.AddSingleton<IAppsScriptGateway, AppsScriptGateway>();
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddFixedWindowLimiter("auth", limiter =>
+            {
+                limiter.PermitLimit = 20;
+                limiter.Window = TimeSpan.FromMinutes(1);
+                limiter.QueueLimit = 0;
+                limiter.AutoReplenishment = true;
+            });
+        });
         builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
         {
             if (early.AllowedOrigins.Length > 0) p.WithOrigins(early.AllowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
@@ -89,6 +102,7 @@ public partial class Program
             }
         });
         app.UseCors("frontend");
+        app.UseRateLimiter();
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
@@ -105,7 +119,7 @@ public partial class Program
             var ready = configured.Value.DevelopmentMode || checks.All(x => x.Ready);
             return Results.Json(new { status = ready ? "READY" : "NOT_READY", mode = configured.Value.DevelopmentMode ? "DEVELOPMENT" : "PRODUCTION", failed_checks = checks.Where(x => !x.Ready).Select(x => x.Id) }, statusCode: ready ? 200 : 503);
         });
-        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.readiness", "helper.auth", "helper.background_jobs", "helper.setup", "helper.activity", "aegis.proxy", "calendar.read" } }));
+        api.MapGet("/capabilities", () => Results.Ok(new { api_version = "v1", capabilities = new[] { "helper.health", "helper.readiness", "helper.auth", "helper.auth_rate_limits", "helper.background_jobs", "helper.setup", "helper.activity", "aegis.proxy", "calendar.read" } }));
         api.MapGet("/activity", (RequestActivityStore activity, int? limit, bool? include_routine) => Results.Ok(new { entries = activity.Recent(limit ?? 20, include_routine ?? false), routine_included = include_routine ?? false }));
         api.MapGet("/setup/status", (IOptions<HelperOptions> configured) =>
         {
@@ -130,7 +144,7 @@ public partial class Program
             var url = await auth.BeginLoginAsync(ct);
             if (early.LaunchBrowser && !early.DevelopmentMode && OperatingSystem.IsWindows()) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             return Results.Ok(new { status = "LOGIN_PENDING", authorization_url = url });
-        });
+        }).RequireRateLimiting("auth");
         api.MapPost("/auth/client/start", async (ClientLoginRequest request, IAuthProvider auth, ClientSessionFlowStore flows, CancellationToken ct) =>
         {
             if (!AllowedReturnUrl(request.ReturnUrl, early.AllowedOrigins)) return Results.BadRequest(new { error = "return_origin_not_allowed" });
@@ -140,14 +154,14 @@ public partial class Program
             if (providerState is null || !flows.Prepare(providerState, request.ReturnUrl, request.CodeChallenge)) return Results.BadRequest(new { error = "invalid_client_flow" });
             if (early.LaunchBrowser && !early.DevelopmentMode && OperatingSystem.IsWindows()) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             return Results.Ok(new { status = "LOGIN_PENDING", authorization_url = url, exchange = "/api/v1/auth/client/exchange" });
-        });
+        }).RequireRateLimiting("auth");
         api.MapPost("/auth/client/exchange", (ClientExchangeRequest request, ClientSessionFlowStore flows, HelperSessionStore sessions) =>
         {
             var identity = flows.Exchange(request.Code, request.CodeVerifier);
             if (identity is null) return Results.Json(new { error = "invalid_or_expired_client_code" }, statusCode: 401);
             var session = sessions.Create(identity);
             return Results.Ok(new { session_token = session.Token, expires_at = session.ExpiresAt, identity = new { identity.Email, identity.DisplayName } });
-        });
+        }).RequireRateLimiting("auth");
         api.MapGet("/auth/callback", async (string code, string state, HttpContext ctx, IAuthProvider auth, HelperSessionStore sessions, ClientSessionFlowStore flows, CancellationToken ct) =>
         {
             var result = await auth.CompleteLoginAsync(code, state, ct);
@@ -158,7 +172,7 @@ public partial class Program
             ctx.Response.Cookies.Append("gpos_session", session.Token, new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = !early.DevelopmentMode, Expires = session.ExpiresAt, Path = "/api/v1" });
             if (ctx.Request.GetTypedHeaders().Accept?.Any(x => x.MediaType.Value?.Equals("text/html", StringComparison.OrdinalIgnoreCase) == true) == true) return Results.Redirect("/");
             return Results.Ok(new { authenticated = true, expires_at = session.ExpiresAt, identity = new { result.Identity.Email, result.Identity.DisplayName } });
-        });
+        }).RequireRateLimiting("auth");
         api.MapPost("/auth/logout", async (HttpContext ctx, HelperSessionStore sessions, IGoogleCredentialProvider credentials, CancellationToken ct) =>
         {
             sessions.Revoke(SessionToken(ctx));
