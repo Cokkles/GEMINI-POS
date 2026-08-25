@@ -31,8 +31,11 @@ public partial class Program
             .Validate(o => IPAddress.TryParse(o.ListenAddress, out var address) && IPAddress.IsLoopback(address), "ListenAddress must be a loopback IP address.")
             .Validate(o => o.DevelopmentMode || (Uri.TryCreate(o.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps), "Production requires an HTTPS Apps Script endpoint.")
             .Validate(o => o.DevelopmentMode || !string.IsNullOrWhiteSpace(o.GoogleOAuth.ClientId), "Production requires a Google OAuth client ID.")
+            .Validate(o => o.DevelopmentMode || !string.IsNullOrWhiteSpace(o.GoogleOAuth.ClientSecret), "Production requires a Google OAuth installed-app client value.")
             .Validate(o => o.DevelopmentMode || o.AllowedEmails.Length > 0, "Production requires at least one allowed Google identity.")
-            .Validate(o => o.DevelopmentMode || (Uri.TryCreate(o.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var callback) && IPAddress.IsLoopback(callback)), "Production OAuth callback must use a loopback IP host.")
+            .Validate(o => o.DevelopmentMode || (o.AllowedOrigins.Length > 0 && o.AllowedOrigins.All(value => Uri.TryCreate(value, UriKind.Absolute, out var origin) && origin.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(origin.UserInfo))), "Production requires explicit HTTPS browser origins.")
+            .Validate(o => o.DevelopmentMode || new[] { "openid", "email", "profile" }.All(required => o.GoogleOAuth.Scopes.Contains(required, StringComparer.Ordinal)), "Production requires openid, email and profile OAuth scopes.")
+            .Validate(o => o.DevelopmentMode || (Uri.TryCreate(o.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && redirect.Scheme == Uri.UriSchemeHttp && IPAddress.TryParse(redirect.Host, out var callback) && IPAddress.IsLoopback(callback) && redirect.Port == o.Port && redirect.AbsolutePath == "/api/v1/auth/callback"), "Production OAuth callback must use the configured loopback port and exact callback path.")
             .Validate(o => OperatingSystem.IsWindows() || o.DevelopmentMode || (Directory.Exists(o.SecretStorePath) && File.Exists(o.SecretStoreKeyFile)), "Linux production requires encrypted storage and a mounted key.")
             .ValidateOnStart();
         var early = builder.Configuration.GetSection(HelperOptions.Section).Get<HelperOptions>() ?? new();
@@ -257,7 +260,9 @@ public partial class Program
     {
         var listenIsLoopback = IPAddress.TryParse(value.ListenAddress, out var address) && IPAddress.IsLoopback(address);
         var endpointIsHttps = Uri.TryCreate(value.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
-        var redirectIsLoopback = Uri.TryCreate(value.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var redirectAddress) && IPAddress.IsLoopback(redirectAddress);
+        var originsAreHttps = value.AllowedOrigins.Length > 0 && value.AllowedOrigins.All(origin => Uri.TryCreate(origin, UriKind.Absolute, out var parsed) && parsed.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(parsed.UserInfo));
+        var scopesAreReady = new[] { "openid", "email", "profile" }.All(required => value.GoogleOAuth.Scopes.Contains(required, StringComparer.Ordinal));
+        var redirectIsLoopback = Uri.TryCreate(value.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && redirect.Scheme == Uri.UriSchemeHttp && IPAddress.TryParse(redirect.Host, out var redirectAddress) && IPAddress.IsLoopback(redirectAddress) && redirect.Port == value.Port && redirect.AbsolutePath == "/api/v1/auth/callback";
         var secretStoreReady = OperatingSystem.IsWindows() || value.DevelopmentMode || (Directory.Exists(value.SecretStorePath) && File.Exists(value.SecretStoreKeyFile));
         return new[]
         {
@@ -265,8 +270,11 @@ public partial class Program
             new SetupCheck("loopback_listener", listenIsLoopback, "Listener must remain on loopback."),
             new SetupCheck("apps_script_endpoint", endpointIsHttps, "A secure Apps Script endpoint is required."),
             new SetupCheck("google_oauth_client", !string.IsNullOrWhiteSpace(value.GoogleOAuth.ClientId), "A Desktop OAuth client ID is required."),
+            new SetupCheck("google_oauth_client_value", !string.IsNullOrWhiteSpace(value.GoogleOAuth.ClientSecret), "The installed-app OAuth client value is required at runtime."),
             new SetupCheck("identity_allowlist", value.AllowedEmails.Length > 0, "At least one allowed Google identity is required."),
-            new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use a loopback host."),
+            new SetupCheck("browser_origins", originsAreHttps, "At least one explicit HTTPS browser origin is required."),
+            new SetupCheck("oauth_scopes", scopesAreReady, "OAuth scopes must include openid, email and profile."),
+            new SetupCheck("loopback_callback", redirectIsLoopback, "OAuth callback must use the configured loopback port and exact callback path."),
             new SetupCheck("secret_store", secretStoreReady, OperatingSystem.IsWindows() ? "Windows DPAPI is available." : value.DevelopmentMode ? "Development secrets are memory-only." : "Encrypted storage and mounted key are required.")
         };
     }
