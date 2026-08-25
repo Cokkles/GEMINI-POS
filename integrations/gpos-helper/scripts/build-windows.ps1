@@ -15,6 +15,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (-not $SkipSmoke) { & (Join-Path $PSScriptRoot 'smoke-windows.ps1') -ArtifactDirectory $output }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+@('smoke.stdout.log', 'smoke.stderr.log') | ForEach-Object {
+    $smokeLog = Join-Path $output $_
+    if (Test-Path -LiteralPath $smokeLog -PathType Leaf) { Remove-Item -LiteralPath $smokeLog -Force }
+}
+
 $payload = @(Get-ChildItem -Path $output -File -Recurse | Where-Object { $_.Name -notlike 'smoke.*.log' -and $_.Name -ne 'manifest.json' } | Sort-Object FullName | ForEach-Object {
     $relative = $_.FullName.Substring($output.Length + 1).Replace('\', '/')
     [ordered]@{ path = $relative; bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -22,9 +27,12 @@ $payload = @(Get-ChildItem -Path $output -File -Recurse | Where-Object { $_.Name
 $manifest = [ordered]@{ service = 'gpos-helper'; version = $version; runtime = 'win-x64'; self_contained = $true; single_executable_process = $true; files = $payload }
 $manifestPath = Join-Path $output 'manifest.json'
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+& (Join-Path $PSScriptRoot 'verify-package.ps1') -ArtifactDirectory $output
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $zip = Join-Path (Split-Path $output -Parent) "gpos-helper-$version-win-x64.zip"
 Compress-Archive -Path (Join-Path $output '*') -DestinationPath $zip -Force
 Write-Host "Built executable: $(Join-Path $output 'gpos-helper.exe')"
 Write-Host "Built manifest:   $manifestPath"
 Write-Host "Built package:    $zip"
+
