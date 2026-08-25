@@ -72,9 +72,11 @@ Before launching an extracted or copied package, run `scripts/verify-package.ps1
 ## Build and verify
 
 ```powershell
-.\scripts\build-windows.ps1
+.\scripts\test-all.ps1 -IncludePackage
 Invoke-RestMethod http://127.0.0.1:47831/api/v1/health
 ```
+
+The unified validator runs the 57 helper tests, browser adapter tests, AEGIS bridge tests, Windows publish/smoke checks and package manifest verification. Use `-NoRestore` only after the Windows runtime pack has already been restored and verified locally.
 
 Output: `integrations/gpos-helper/dist/win-x64/gpos-helper.exe`.
 
