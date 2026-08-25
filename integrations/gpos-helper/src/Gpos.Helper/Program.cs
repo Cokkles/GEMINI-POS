@@ -23,7 +23,14 @@ public partial class Program
         builder.Logging.ClearProviders();
         builder.Logging.AddJsonConsole();
         builder.Configuration.AddJsonFile("config/appsettings.json", optional: true, reloadOnChange: true).AddEnvironmentVariables("GPOS_");
-        builder.Services.AddOptions<HelperOptions>().Bind(builder.Configuration.GetSection(HelperOptions.Section)).ValidateDataAnnotations().Validate(o => IPAddress.TryParse(o.ListenAddress, out _), "ListenAddress must be an IP address.").ValidateOnStart();
+        builder.Services.AddOptions<HelperOptions>().Bind(builder.Configuration.GetSection(HelperOptions.Section)).ValidateDataAnnotations()
+            .Validate(o => IPAddress.TryParse(o.ListenAddress, out var address) && IPAddress.IsLoopback(address), "ListenAddress must be a loopback IP address.")
+            .Validate(o => o.DevelopmentMode || (Uri.TryCreate(o.AppsScriptEndpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps), "Production requires an HTTPS Apps Script endpoint.")
+            .Validate(o => o.DevelopmentMode || !string.IsNullOrWhiteSpace(o.GoogleOAuth.ClientId), "Production requires a Google OAuth client ID.")
+            .Validate(o => o.DevelopmentMode || o.AllowedEmails.Length > 0, "Production requires at least one allowed Google identity.")
+            .Validate(o => o.DevelopmentMode || (Uri.TryCreate(o.GoogleOAuth.RedirectUri, UriKind.Absolute, out var redirect) && IPAddress.TryParse(redirect.Host, out var callback) && IPAddress.IsLoopback(callback)), "Production OAuth callback must use a loopback IP host.")
+            .Validate(o => OperatingSystem.IsWindows() || o.DevelopmentMode || (Directory.Exists(o.SecretStorePath) && File.Exists(o.SecretStoreKeyFile)), "Linux production requires encrypted storage and a mounted key.")
+            .ValidateOnStart();
         var early = builder.Configuration.GetSection(HelperOptions.Section).Get<HelperOptions>() ?? new();
         builder.WebHost.UseUrls($"http://{early.ListenAddress}:{early.Port}");
         builder.Services.AddSingleton(TimeProvider.System);
