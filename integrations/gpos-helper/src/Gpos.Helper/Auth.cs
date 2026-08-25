@@ -217,24 +217,32 @@ public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpCl
     {
         if (!_pending.TryRemove(state, out var pending) || pending.ExpiresAt < DateTimeOffset.UtcNow) return new(false, Error: "invalid_or_expired_state");
         var cfg = options.Value.GoogleOAuth;
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/token")
+        try
         {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/token")
             {
-                ["client_id"] = cfg.ClientId, ["client_secret"] = cfg.ClientSecret, ["code"] = code,
-                ["code_verifier"] = pending.Verifier, ["grant_type"] = "authorization_code", ["redirect_uri"] = cfg.RedirectUri
-            })
-        };
-        using var response = await clients.CreateClient("oauth").SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode) return new(false, Error: "oauth_token_exchange_failed");
-        var token = await response.Content.ReadFromJsonAsync<GoogleToken>(cancellationToken: cancellationToken);
-        if (string.IsNullOrWhiteSpace(token?.IdToken)) return new(false, Error: "oauth_id_token_missing");
-        var validation = await clients.CreateClient("oauth").GetFromJsonAsync<GoogleIdentity>("https://oauth2.googleapis.com/tokeninfo?id_token=" + Uri.EscapeDataString(token.IdToken), cancellationToken);
-        if (validation is null || validation.Audience != cfg.ClientId || validation.EmailVerified != "true" || string.IsNullOrWhiteSpace(validation.Subject)) return new(false, Error: "oauth_identity_invalid");
-        if (string.IsNullOrWhiteSpace(validation.Email) || !options.Value.AllowedEmails.Contains(validation.Email, StringComparer.OrdinalIgnoreCase)) return new(false, Error: "identity_not_allowed");
-        var stored = new StoredGoogleToken(token.AccessToken, token.RefreshToken, token.IdToken, DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, token.ExpiresIn)));
-        await secrets.SaveAsync("google-token", JsonSerializer.Serialize(stored), cancellationToken);
-        return new(true, new AuthIdentity(validation.Subject, validation.Email ?? "", validation.Name ?? validation.Email ?? "Google User"));
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_id"] = cfg.ClientId, ["client_secret"] = cfg.ClientSecret, ["code"] = code,
+                    ["code_verifier"] = pending.Verifier, ["grant_type"] = "authorization_code", ["redirect_uri"] = cfg.RedirectUri
+                })
+            };
+            using var response = await clients.CreateClient("oauth").SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode) return new(false, Error: "oauth_token_exchange_failed");
+            var token = await response.Content.ReadFromJsonAsync<GoogleToken>(cancellationToken: cancellationToken);
+            if (string.IsNullOrWhiteSpace(token?.IdToken)) return new(false, Error: "oauth_id_token_missing");
+            using var identityResponse = await clients.CreateClient("oauth").GetAsync("https://oauth2.googleapis.com/tokeninfo?id_token=" + Uri.EscapeDataString(token.IdToken), cancellationToken);
+            if (!identityResponse.IsSuccessStatusCode) return new(false, Error: "oauth_identity_validation_failed");
+            var validation = await identityResponse.Content.ReadFromJsonAsync<GoogleIdentity>(cancellationToken: cancellationToken);
+            if (validation is null || validation.Audience != cfg.ClientId || validation.EmailVerified != "true" || string.IsNullOrWhiteSpace(validation.Subject)) return new(false, Error: "oauth_identity_invalid");
+            if (string.IsNullOrWhiteSpace(validation.Email) || !options.Value.AllowedEmails.Contains(validation.Email, StringComparer.OrdinalIgnoreCase)) return new(false, Error: "identity_not_allowed");
+            var stored = new StoredGoogleToken(token.AccessToken, token.RefreshToken, token.IdToken, DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, token.ExpiresIn)));
+            await secrets.SaveAsync("google-token", JsonSerializer.Serialize(stored), cancellationToken);
+            return new(true, new AuthIdentity(validation.Subject, validation.Email ?? "", validation.Name ?? validation.Email ?? "Google User"));
+        }
+        catch (JsonException) { return new(false, Error: "oauth_response_invalid"); }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return new(false, Error: "oauth_timeout"); }
+        catch (HttpRequestException) { return new(false, Error: "oauth_unavailable"); }
     }
 
     private static string Token(int bytes) => Base64Url(RandomNumberGenerator.GetBytes(bytes));
