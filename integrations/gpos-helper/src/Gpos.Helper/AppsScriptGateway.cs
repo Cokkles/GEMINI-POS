@@ -41,7 +41,12 @@ public sealed class AppsScriptGateway(IHttpClientFactory clients, IOptions<Helpe
                 {
                     retries++; await DelayAsync(retries, cancellationToken); continue;
                 }
-                var text = await response.Content.ReadAsStringAsync(timeout.Token);
+                var text = await ReadBoundedAsync(response.Content, options.Value.MaxUpstreamResponseBytes, timeout.Token);
+                if (text is null)
+                {
+                    Log("upstream_response_too_large", response.StatusCode, watch.ElapsedMilliseconds, retries);
+                    return new(false, 502, null, "upstream_response_too_large", "Upstream response exceeded the configured limit.", retries, watch.ElapsedMilliseconds);
+                }
                 JsonElement? body;
                 try { body = JsonSerializer.Deserialize<JsonElement>(text); }
                 catch (JsonException)
@@ -69,6 +74,21 @@ public sealed class AppsScriptGateway(IHttpClientFactory clients, IOptions<Helpe
     }
 
     private static Task DelayAsync(int retry, CancellationToken token) => Task.Delay(TimeSpan.FromMilliseconds(Math.Min(2000, 100 * Math.Pow(2, retry - 1) + Random.Shared.Next(25, 125))), token);
+    private static async Task<string?> ReadBoundedAsync(HttpContent content, int maximumBytes, CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength > maximumBytes) return null;
+        await using var source = await content.ReadAsStreamAsync(cancellationToken);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        while (true)
+        {
+            var read = await source.ReadAsync(chunk.AsMemory(0, chunk.Length), cancellationToken);
+            if (read == 0) break;
+            if (buffer.Length + read > maximumBytes) return null;
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
+        }
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
     private void Log(string result, HttpStatusCode status, long duration, int retries) => logger.LogInformation("Upstream request service={UpstreamService} result={Result} status={Status} upstream_duration_ms={DurationMs} retry_count={RetryCount}", "apps_script", result, (int)status, duration, retries);
 }
 
