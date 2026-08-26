@@ -1,5 +1,10 @@
 # GPOS Helper Changelog
 
+## Unreleased
+
+- Fixed the control surface request budget so authenticated AEGIS health, dashboard and Calendar reads can use the helper's full bounded upstream window instead of being cancelled by the five-second local-status timeout.
+- Validated the production Google OAuth callback, identity allowlist and local session flow with the intended account.
+
 ## 0.2.0 - 2026-08-25
 
 Production-validation candidate. This release does not claim production credential validation.
