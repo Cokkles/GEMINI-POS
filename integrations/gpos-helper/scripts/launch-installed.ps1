@@ -37,6 +37,8 @@ try {
     $env:GPOS_Helper__Port = [string]$settings.port
     $env:GPOS_Helper__DevelopmentMode = 'false'
     $env:GPOS_Helper__LaunchBrowser = 'false'
+    Set-Item -LiteralPath 'Env:Logging__LogLevel__Microsoft.AspNetCore' -Value 'Warning'
+    Set-Item -LiteralPath 'Env:Logging__LogLevel__System.Net.Http' -Value 'Warning'
 
     New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     $stdout = Join-Path $logDirectory 'gpos-helper.stdout.log'
