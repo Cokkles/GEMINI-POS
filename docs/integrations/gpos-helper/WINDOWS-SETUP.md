@@ -96,5 +96,19 @@ After setting the production environment variables, use:
 
 The shortcut performs the appropriate production preflight when requested, starts the helper in its own PowerShell window, waits for `/api/v1/health` and opens `http://127.0.0.1:47831/`. Stop the helper with `Ctrl+C` in its service window.
 
+## One-time Windows installation
+
+After the production values have been validated and the release package has been built, run:
+
+```powershell
+.\scripts\install-windows.ps1
+```
+
+The installer verifies the package before and after copying it, prompts for the Apps Script endpoint, OAuth web-client values and allowed identity, and writes only the non-secret values as local user configuration. The OAuth client secret is encrypted with Windows DPAPI for the signed-in user and is never placed in the shortcut, command line, repository or plaintext configuration.
+
+The installed application lives at `%LOCALAPPDATA%\Programs\GPOS Helper`. The **GPOS Helper** Desktop and Start Menu shortcuts start the real `gpos-helper.exe` in the background, wait for health and open the dashboard. If it is already running, the shortcut simply opens the dashboard. Use **Stop GPOS Helper** in the Start Menu to stop the background process.
+
+Installation is per-user and does not require Administrator privileges. Keep the release package and installer scripts together when installing or updating.
+
 Foreground execution requires no Administrator privileges. Stop with Ctrl+C for graceful cancellation. Windows Service/tray installation is intentionally deferred.
 
