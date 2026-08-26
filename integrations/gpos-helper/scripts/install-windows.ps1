@@ -79,7 +79,7 @@ if (-not $NoShortcuts) {
     function New-HelperShortcut([string]$Path, [string]$Script, [string]$Description) {
         $shortcut = $shell.CreateShortcut($Path)
         $shortcut.TargetPath = $powerShellExecutable
-        $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Script`""
+        $shortcut.Arguments = "-NoProfile -Sta -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Script`""
         $shortcut.WorkingDirectory = $InstallDirectory
         $shortcut.Description = $Description
         $shortcut.IconLocation = "$(Join-Path $appDirectory 'gpos-helper.exe'),0"
@@ -93,7 +93,7 @@ if (-not $NoShortcuts) {
 
 Write-Host "PASS  GPOS Helper installed at $InstallDirectory" -ForegroundColor Green
 Write-Host 'The OAuth client secret is protected for the current Windows user with DPAPI.'
-Write-Host 'Use the GPOS Helper Desktop or Start Menu shortcut from now on.'
+Write-Host 'Use the GPOS Helper Desktop or Start Menu shortcut from now on. The running helper is controlled from its notification-area icon.'
 
 if (-not $NoStart) { & $launchScript }
 
