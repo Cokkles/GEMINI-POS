@@ -32,6 +32,8 @@ try {
     $root = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/" -TimeoutSec 5 -UseBasicParsing
     if ($root.StatusCode -ne 200 -or $root.Content -notmatch 'GPOS HELPER CONTROL') { throw 'Packaged control surface was not served.' }
     if ([string]$root.Headers['Content-Security-Policy'] -notmatch "frame-ancestors 'none'" -or $root.Headers['X-Content-Type-Options'] -ne 'nosniff') { throw 'Packaged control surface security headers were incomplete.' }
+    $script = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/app.js" -TimeoutSec 5 -UseBasicParsing
+    if ($script.StatusCode -ne 200 -or $script.Content -notmatch 'UPSTREAM_TIMEOUT_MS=20000') { throw 'Packaged control surface contained a stale upstream request budget.' }
     $auth = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/v1/auth/status" -TimeoutSec 5 -UseBasicParsing
     if ([string]$auth.Headers['Cache-Control'] -notmatch '(?i)no-store') { throw 'Packaged API response was cacheable.' }
     Write-Host 'PASS  packaged executable probes, capabilities, security policy and control surface'
