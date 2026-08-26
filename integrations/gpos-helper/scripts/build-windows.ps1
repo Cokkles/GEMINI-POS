@@ -7,10 +7,20 @@ $project = Join-Path $root 'src\Gpos.Helper\Gpos.Helper.csproj'
 $output = Join-Path $root 'dist\win-x64'
 [xml]$projectXml = Get-Content -Raw $project
 $version = [string]$projectXml.Project.PropertyGroup.Version
+
+if (Test-Path -LiteralPath $output) {
+    $resolvedOutput = (Resolve-Path -LiteralPath $output).Path
+    $expectedOutput = [System.IO.Path]::GetFullPath((Join-Path $root 'dist\win-x64'))
+    if ($resolvedOutput -ne $expectedOutput -or -not $resolvedOutput.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean unexpected publish directory: $resolvedOutput"
+    }
+    Remove-Item -LiteralPath $resolvedOutput -Recurse -Force
+}
+
 $publishArguments = @('publish', $project, '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=None', '-o', $output)
 if ($NoRestore) { $publishArguments += '--no-restore' }
 dotnet @publishArguments
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) { throw "Windows publish failed with exit code $LASTEXITCODE." }
 
 if (-not $SkipSmoke) { & (Join-Path $PSScriptRoot 'smoke-windows.ps1') -ArtifactDirectory $output -ExpectedVersion $version }
 
