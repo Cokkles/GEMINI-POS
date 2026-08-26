@@ -1,11 +1,14 @@
 const $=id=>document.getElementById(id);
 const state={health:null,auth:null,capabilities:null,diagnostics:null,setup:null,instanceId:null};
+const LOCAL_TIMEOUT_MS=5000;
+const UPSTREAM_TIMEOUT_MS=20000;
 
 async function api(path,options={}){
+  const {timeoutMs=LOCAL_TIMEOUT_MS,...requestOptions}=options;
   const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),5000);
+  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    const response=await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json',...(options.headers||{})},...options,signal:controller.signal});
+    const response=await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json',...(requestOptions.headers||{})},...requestOptions,signal:controller.signal});
     const body=await response.json();
     if(!response.ok)throw new Error(body.message||body.error||`HTTP ${response.status}`);
     return body;
@@ -60,7 +63,7 @@ async function logout(){try{await api('/api/v1/auth/logout',{method:'POST'});awa
 async function testUpstream(){
   if(!state.auth?.authenticated){showView('connection');toast('Authenticate before testing AEGIS');return}
   const button=$('upstreamTest');button.disabled=true;$('upstreamTestResult').className='connection-test loading';$('upstreamTestResult').innerHTML='<strong>Testing AEGIS connection.</strong><span>One finite read-only health request is in progress.</span>';
-  try{const result=await api('/api/v1/aegis/health');$('upstreamTestResult').className='connection-test';$('upstreamTestResult').innerHTML=`<strong>AEGIS connection available</strong><span>${escapeHtml(summaryValue(result))}</span>`;toast('AEGIS connection verified')}
+  try{const result=await api('/api/v1/aegis/health',{timeoutMs:UPSTREAM_TIMEOUT_MS});$('upstreamTestResult').className='connection-test';$('upstreamTestResult').innerHTML=`<strong>AEGIS connection available</strong><span>${escapeHtml(summaryValue(result))}</span>`;toast('AEGIS connection verified')}
   catch(error){const message=error.name==='AbortError'?'Connection test timed out':error.message;$('upstreamTestResult').className='connection-test failed';$('upstreamTestResult').innerHTML=`<strong>AEGIS connection unavailable</strong><span>${escapeHtml(message)}</span>`}
   finally{button.disabled=false}
 }
@@ -74,7 +77,7 @@ async function queryCalendar(event){
   if(!state.auth?.authenticated){showView('connection');toast('Authenticate before querying AEGIS');return}
   const submit=$('calendarSubmit');submit.disabled=true;text('calendarState','ASKING');$('calendarResponse').className='calendar-response loading';$('calendarResponse').innerHTML='<strong>Checking your calendar.</strong><span>The request will stop automatically if the upstream service does not respond.</span>';
   try{
-    const result=await api('/api/v1/aegis/calendar/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,history:[]})});
+    const result=await api('/api/v1/aegis/calendar/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,history:[]}),timeoutMs:UPSTREAM_TIMEOUT_MS});
     text('calendarState','COMPLETE');$('calendarResponse').className='calendar-response';$('calendarResponse').innerHTML=`<pre>${escapeHtml(JSON.stringify(result,null,2))}</pre>`;
   }catch(error){
     const message=error.name==='AbortError'?'Calendar request timed out. Please try again.':error.message;text('calendarState','UNAVAILABLE');$('calendarResponse').className='calendar-response failed';$('calendarResponse').innerHTML=`<strong>Calendar unavailable</strong><span>${escapeHtml(message)}</span>`;
@@ -84,7 +87,7 @@ async function loadSnapshot(){
   if(!state.auth?.authenticated){showView('connection');toast('Authenticate before loading AEGIS');return}
   const button=$('snapshotRefresh');button.disabled=true;text('snapshotState','LOADING');$('snapshotResult').className='snapshot-result loading';$('snapshotResult').innerHTML='<strong>Loading AEGIS snapshot.</strong><span>This request has a finite timeout and will not retry forever.</span>';
   try{
-    const result=await api('/api/v1/aegis/dashboard');const entries=result&&typeof result==='object'&&!Array.isArray(result)?Object.entries(result):[];
+    const result=await api('/api/v1/aegis/dashboard',{timeoutMs:UPSTREAM_TIMEOUT_MS});const entries=result&&typeof result==='object'&&!Array.isArray(result)?Object.entries(result):[];
     text('snapshotState','CURRENT');$('snapshotMetrics').innerHTML=(entries.length?entries.slice(0,4):[['state','available']]).map(([key,value])=>`<article class="metric"><small>${escapeHtml(String(key).replaceAll('_',' '))}</small><strong>${escapeHtml(summaryValue(value))}</strong><span>AEGIS response</span></article>`).join('');
     $('snapshotResult').className='snapshot-result';$('snapshotResult').innerHTML=`<pre>${escapeHtml(JSON.stringify(result,null,2))}</pre>`;
   }catch(error){
