@@ -22,7 +22,9 @@ try {
     if ($running.status -eq 'AVAILABLE') { Start-Process $dashboardUrl; return }
 } catch { }
 
-$secureSecret = Get-Content -LiteralPath $secretPath -Raw | ConvertTo-SecureString
+$protectedSecret = (Get-Content -LiteralPath $secretPath -Raw).Trim()
+if ([string]::IsNullOrWhiteSpace($protectedSecret)) { throw 'Protected OAuth client secret was empty. Run install-windows.ps1 again.' }
+$secureSecret = ConvertTo-SecureString $protectedSecret
 $plainSecret = [System.Net.NetworkCredential]::new('', $secureSecret).Password
 try {
     $env:GPOS_Helper__AppsScriptEndpoint = [string]$settings.apps_script_endpoint
