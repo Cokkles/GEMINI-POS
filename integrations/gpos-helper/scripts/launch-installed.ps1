@@ -9,6 +9,53 @@ $configPath = Join-Path $configDirectory 'production.json'
 $secretPath = Join-Path $configDirectory 'oauth-client-secret.dpapi'
 $logDirectory = Join-Path $configDirectory 'logs'
 
+function Show-HelperTray([System.Diagnostics.Process]$HelperProcess, [string]$DashboardUrl, [string]$ExecutablePath) {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+    $menu = [System.Windows.Forms.ContextMenuStrip]::new()
+    $openItem = $menu.Items.Add('Open Dashboard')
+    $null = $menu.Items.Add('-')
+    $exitItem = $menu.Items.Add('Exit GPOS Helper')
+    $tray = [System.Windows.Forms.NotifyIcon]::new()
+    $timer = [System.Windows.Forms.Timer]::new()
+
+    try {
+        $tray.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($ExecutablePath)
+        $tray.Text = 'GPOS Helper - running'
+        $tray.ContextMenuStrip = $menu
+        $tray.Visible = $true
+
+        $openDashboard = { Start-Process $DashboardUrl }
+        $openItem.add_Click($openDashboard)
+        $tray.add_DoubleClick($openDashboard)
+        $exitItem.add_Click({
+            if (-not $HelperProcess.HasExited) {
+                Stop-Process -Id $HelperProcess.Id -ErrorAction SilentlyContinue
+            }
+            [System.Windows.Forms.Application]::ExitThread()
+        })
+
+        $timer.Interval = 2000
+        $timer.add_Tick({
+            if ($HelperProcess.HasExited) {
+                $tray.Visible = $false
+                [System.Windows.Forms.Application]::ExitThread()
+            }
+        })
+        $timer.Start()
+        [System.Windows.Forms.Application]::Run()
+    }
+    finally {
+        $timer.Stop()
+        $timer.Dispose()
+        $tray.Visible = $false
+        $tray.Dispose()
+        $menu.Dispose()
+    }
+}
+
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'Installed gpos-helper.exe was not found. Run install-windows.ps1 again.' }
 if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { throw 'Installed production configuration was not found. Run install-windows.ps1 again.' }
 if (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) { throw 'Protected OAuth client secret was not found. Run install-windows.ps1 again.' }
@@ -19,7 +66,12 @@ $healthUrl = "${dashboardUrl}api/v1/health"
 
 try {
     $running = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
-    if ($running.status -eq 'AVAILABLE') { Start-Process $dashboardUrl; return }
+    if ($running.status -eq 'AVAILABLE') {
+        $process = Get-Process gpos-helper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $executable } | Select-Object -First 1
+        Start-Process $dashboardUrl
+        if ($null -ne $process) { Show-HelperTray $process $dashboardUrl $executable }
+        return
+    }
 } catch { }
 
 $protectedSecret = (Get-Content -LiteralPath $secretPath -Raw).Trim()
@@ -65,4 +117,4 @@ if ($null -eq $health -or $health.status -ne 'AVAILABLE') {
 }
 
 Start-Process $dashboardUrl
-
+Show-HelperTray $process $dashboardUrl $executable
