@@ -42,6 +42,9 @@ static async Task ControlSurface() => await WithApp(async client =>
     using var css = await client.GetAsync("/app.css"); using var js = await client.GetAsync("/app.js");
     Check(css.IsSuccessStatusCode && css.Content.Headers.ContentType?.MediaType == "text/css", "control surface stylesheet was not served");
     Check(js.IsSuccessStatusCode && js.Content.Headers.ContentType?.MediaType is "text/javascript" or "application/javascript", "control surface script was not served");
+    var script = await js.Content.ReadAsStringAsync();
+    Check(script.Contains("const LOCAL_TIMEOUT_MS=5000") && script.Contains("const UPSTREAM_TIMEOUT_MS=20000"), "control surface timeout budgets were missing");
+    Check(script.Split("timeoutMs:UPSTREAM_TIMEOUT_MS").Length - 1 == 3, "AEGIS control surface operations did not use the upstream timeout budget");
 });
 
 static async Task SafeSupportBundle() => await WithApp(async client =>
