@@ -4,6 +4,7 @@
 
 - Added a per-user Windows installer that verifies and copies the packaged executable, stores non-secret production settings locally, protects the OAuth client secret with Windows DPAPI, and creates one-click Desktop/Start Menu launch and stop shortcuts.
 - Fixed installed-launcher DPAPI decoding by writing ciphertext without a trailing line ending and tolerating line endings from installations made before the correction.
+- Added a protected installed-secret update command and suppressed verbose ASP.NET/HTTP framework logs in one-click mode so OAuth callback query values are not retained in installed log files.
 - Fixed the control surface request budget so authenticated AEGIS health, dashboard and Calendar reads can use the helper's full bounded upstream window instead of being cancelled by the five-second local-status timeout.
 - Made Windows publishing clean its strictly validated artifact directory and added a packaged JavaScript freshness gate so stale dashboard assets cannot pass release smoke validation.
 - Validated the production Google OAuth callback, identity allowlist and local session flow with the intended account.
