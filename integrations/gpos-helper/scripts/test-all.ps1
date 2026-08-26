@@ -11,6 +11,10 @@ $helperProject = Join-Path $root 'src\Gpos.Helper\Gpos.Helper.csproj'
 $clientTest = Join-Path $root 'client\gpos-helper-client.test.mjs'
 $bridgeTest = Join-Path $root 'client\gpos-helper-aegis-bridge.test.mjs'
 
+if ($IncludePackage -and $NoRestore) {
+    & (Join-Path $PSScriptRoot 'build-windows.ps1') -NoRestore
+}
+
 dotnet run --configuration Release --project $helperTests
 if ($LASTEXITCODE -ne 0) { throw "Helper tests failed with exit code $LASTEXITCODE." }
 
@@ -20,11 +24,9 @@ if ($LASTEXITCODE -ne 0) { throw "Browser client tests failed with exit code $LA
 node $bridgeTest
 if ($LASTEXITCODE -ne 0) { throw "AEGIS bridge tests failed with exit code $LASTEXITCODE." }
 
-if ($IncludePackage) {
-    if (-not $NoRestore) {
-        dotnet restore $helperProject -r win-x64 -p:NuGetAudit=false
-        if ($LASTEXITCODE -ne 0) { throw "Windows runtime restore failed with exit code $LASTEXITCODE." }
-    }
+if ($IncludePackage -and -not $NoRestore) {
+    dotnet restore $helperProject -r win-x64 -p:NuGetAudit=false
+    if ($LASTEXITCODE -ne 0) { throw "Windows runtime restore failed with exit code $LASTEXITCODE." }
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -NoRestore
 }
 
