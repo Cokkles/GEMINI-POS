@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fixed the control surface request budget so authenticated AEGIS health, dashboard and Calendar reads can use the helper's full bounded upstream window instead of being cancelled by the five-second local-status timeout.
+- Made Windows publishing clean its strictly validated artifact directory and added a packaged JavaScript freshness gate so stale dashboard assets cannot pass release smoke validation.
 - Validated the production Google OAuth callback, identity allowlist and local session flow with the intended account.
 
 ## 0.2.0 - 2026-08-25
