@@ -10,6 +10,14 @@ Quick start:
 
 This starts development mode in its own PowerShell window, waits for health and opens the dashboard. Use `.\scripts\start-helper.ps1 -Mode Production` after setting the production environment variables.
 
+Install the verified Windows package for one-click use:
+
+```powershell
+.\scripts\install-windows.ps1
+```
+
+The one-time installer prompts for production settings, protects the OAuth client secret with Windows DPAPI, copies the real `gpos-helper.exe` under the current user's local Programs directory, and creates Desktop and Start Menu shortcuts. After installation, opening **GPOS Helper** starts the executable hidden and opens the dashboard; no PowerShell setup commands are needed again.
+
 Build the self-contained executable:
 
 ```powershell
