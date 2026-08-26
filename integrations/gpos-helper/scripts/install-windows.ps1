@@ -63,7 +63,7 @@ $settings = [ordered]@{
     port = $Port
 }
 $settings | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $configDirectory 'production.json') -Encoding utf8
-$protectedSecret | Set-Content -LiteralPath (Join-Path $configDirectory 'oauth-client-secret.dpapi') -Encoding ascii
+$protectedSecret | Set-Content -LiteralPath (Join-Path $configDirectory 'oauth-client-secret.dpapi') -Encoding ascii -NoNewline
 $protectedSecret = $null
 
 $launchScript = Join-Path $InstallDirectory 'launch-installed.ps1'
