@@ -54,6 +54,7 @@ Copy-Item -Path (Join-Path $ArtifactDirectory '*') -Destination $appDirectory -R
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'launch-installed.ps1') -Destination $InstallDirectory -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'stop-installed.ps1') -Destination $InstallDirectory -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'update-installed-secret.ps1') -Destination $InstallDirectory -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'import-installed-oauth-client.ps1') -Destination $InstallDirectory -Force
 & (Join-Path $PSScriptRoot 'verify-package.ps1') -ArtifactDirectory $appDirectory
 
 $settings = [ordered]@{
