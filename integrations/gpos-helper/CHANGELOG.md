@@ -8,6 +8,7 @@
 - Added a Windows notification-area controller with Open Dashboard and Exit GPOS Helper actions.
 - Report only allowlisted Google OAuth token-exchange error categories so production credential failures can be diagnosed without exposing codes, tokens, secrets or provider descriptions.
 - Added a local-only Desktop OAuth client JSON importer that updates the installed client pair together and protects the client value with Windows DPAPI.
+- Reused the canonical AEGIS PWA mark as the Windows executable and notification-area icon, and added a windowless launcher to eliminate console flashes.
 - Fixed the control surface request budget so authenticated AEGIS health, dashboard and Calendar reads can use the helper's full bounded upstream window instead of being cancelled by the five-second local-status timeout.
 - Made Windows publishing clean its strictly validated artifact directory and added a packaged JavaScript freshness gate so stale dashboard assets cannot pass release smoke validation.
 - Validated the production Google OAuth callback, identity allowlist and local session flow with the intended account.
