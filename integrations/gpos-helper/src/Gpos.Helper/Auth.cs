@@ -183,7 +183,11 @@ public sealed class DevelopmentAuthProvider : IAuthProvider
             : new AuthResult(false, Error: "invalid_development_callback"));
 }
 
-public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpClientFactory clients, ISecretStore secrets) : IAuthProvider
+public sealed class GoogleOAuthProvider(
+    IOptions<HelperOptions> options,
+    IHttpClientFactory clients,
+    ISecretStore secrets,
+    ILogger<GoogleOAuthProvider> logger) : IAuthProvider
 {
     private const int PendingCapacity = 100;
     private sealed record Pending(string Verifier, DateTimeOffset ExpiresAt);
@@ -228,7 +232,27 @@ public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpCl
                 })
             };
             using var response = await clients.CreateClient("oauth").SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode) return new(false, Error: "oauth_token_exchange_failed");
+            if (!response.IsSuccessStatusCode)
+            {
+                var category = "unknown";
+                try
+                {
+                    var failure = await response.Content.ReadFromJsonAsync<GoogleOAuthError>(cancellationToken: cancellationToken);
+                    category = failure?.Error switch
+                    {
+                        "invalid_client" => "invalid_client",
+                        "invalid_grant" => "invalid_grant",
+                        "redirect_uri_mismatch" => "redirect_uri_mismatch",
+                        "unauthorized_client" => "unauthorized_client",
+                        "invalid_request" => "invalid_request",
+                        "access_denied" => "access_denied",
+                        _ => "unknown"
+                    };
+                }
+                catch (JsonException) { }
+                logger.LogWarning("Google OAuth token exchange failed category={Category} status={Status}", category, (int)response.StatusCode);
+                return new(false, Error: $"oauth_token_exchange_{category}");
+            }
             var token = await response.Content.ReadFromJsonAsync<GoogleToken>(cancellationToken: cancellationToken);
             if (string.IsNullOrWhiteSpace(token?.IdToken)) return new(false, Error: "oauth_id_token_missing");
             using var identityResponse = await clients.CreateClient("oauth").GetAsync("https://oauth2.googleapis.com/tokeninfo?id_token=" + Uri.EscapeDataString(token.IdToken), cancellationToken);
@@ -248,6 +272,7 @@ public sealed class GoogleOAuthProvider(IOptions<HelperOptions> options, IHttpCl
     private static string Token(int bytes) => Base64Url(RandomNumberGenerator.GetBytes(bytes));
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     private sealed record GoogleToken([property: JsonPropertyName("access_token")] string? AccessToken, [property: JsonPropertyName("refresh_token")] string? RefreshToken, [property: JsonPropertyName("id_token")] string? IdToken, [property: JsonPropertyName("expires_in")] int ExpiresIn);
+    private sealed record GoogleOAuthError([property: JsonPropertyName("error")] string? Error);
     private sealed record GoogleIdentity([property: JsonPropertyName("sub")] string Subject, [property: JsonPropertyName("aud")] string Audience, [property: JsonPropertyName("email")] string? Email, [property: JsonPropertyName("email_verified")] string? EmailVerified, [property: JsonPropertyName("name")] string? Name);
 }
 
