@@ -20,7 +20,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("authenticated dashboard route", AuthenticatedDashboardRoute), ("authenticated Calendar route", AuthenticatedCalendarRoute), ("upstream Apps Script success", UpstreamSuccess), ("upstream Apps Script timeout", UpstreamTimeout),
     ("upstream 429", () => RetryStatus(HttpStatusCode.TooManyRequests)), ("upstream 503", () => RetryStatus(HttpStatusCode.ServiceUnavailable)), ("oversized request rejected", OversizedRequest), ("oversized upstream response rejected", OversizedUpstreamResponse),
     ("retry budget exhaustion", RetryBudget), ("mutation is not retried", MutationNotRetried), ("malformed upstream JSON", MalformedJson),
-    ("Google OAuth allowlisted login", GoogleOAuthAllowlisted), ("Google OAuth denied identity", GoogleOAuthDeniedIdentity), ("Google OAuth network failure", GoogleOAuthUnavailable), ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
+    ("Google OAuth allowlisted login", GoogleOAuthAllowlisted), ("Google OAuth denied identity", GoogleOAuthDeniedIdentity), ("Google OAuth safe failure category", GoogleOAuthSafeFailureCategory), ("Google OAuth network failure", GoogleOAuthUnavailable), ("fresh Google credential is reused", FreshCredential), ("expired Google credential refreshes", CredentialRefresh), ("failed Google refresh fails closed", CredentialRefreshFailure), ("Google credential revokes", CredentialRevocation), ("failed revoke clears local credential", CredentialRevocationFailure), ("portable secrets are encrypted", PortableSecrets),
     ("auth-required request", AuthRequired), ("logout requires authentication", LogoutRequiresAuthentication), ("authenticated logout", AuthenticatedLogout), ("development session", DevelopmentSession), ("PWA client session exchange", ClientSessionExchange), ("client origin rejection", ClientOriginRejection), ("invalid session", InvalidSession), ("session expiration", SessionExpiration), ("session store is bounded", SessionStoreBounded), ("client flow store is bounded", ClientFlowStoreBounded),
     ("secret redaction", Redaction), ("no token appears in logs", NoTokenLogging), ("cancellation", Cancellation),
     ("graceful shutdown", GracefulShutdown), ("background worker does not busy-loop", WorkerBounded)
@@ -382,6 +382,15 @@ static async Task GoogleOAuthDeniedIdentity()
     Check(!result.Success && result.Error == "identity_not_allowed" && await store.GetAsync("google-token", default) is null, "denied Google identity was accepted or persisted");
 }
 
+static async Task GoogleOAuthSafeFailureCategory()
+{
+    var store = new MemorySecretStore();
+    var handler = new SequenceHandler(SequenceHandler.Json(HttpStatusCode.Unauthorized, "{\"error\":\"invalid_client\",\"error_description\":\"sensitive provider detail\"}"));
+    var provider = OAuthProvider(store, handler); var login = await provider.BeginLoginAsync(default); var state = QueryHelpers.ParseQuery(new Uri(login).Query)["state"].Single()!;
+    var result = await provider.CompleteLoginAsync("authorization-code", state, default);
+    Check(!result.Success && result.Error == "oauth_token_exchange_invalid_client" && !result.Error.Contains("sensitive"), "Google OAuth failure category was not safely exposed");
+}
+
 static async Task GoogleOAuthUnavailable()
 {
     var store = new MemorySecretStore(); var handler = new SequenceHandler((_, _) => throw new HttpRequestException("simulated outage"));
@@ -482,7 +491,8 @@ static GoogleOAuthProvider OAuthProvider(MemorySecretStore store, HttpMessageHan
         GoogleOAuth = new GoogleOAuthOptions { ClientId = "client-id", ClientSecret = "client-value", RedirectUri = "http://127.0.0.1:47831/api/v1/auth/callback" }
     }),
     new SingleClientFactory(new HttpClient(handler)),
-    store);
+    store,
+    NullLogger<GoogleOAuthProvider>.Instance);
 
 static string[] ProductionArgs(int port, string origin, string store, string key)
 {
