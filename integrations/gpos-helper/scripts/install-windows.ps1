@@ -52,6 +52,7 @@ New-Item -ItemType Directory -Path $appDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
 Copy-Item -Path (Join-Path $ArtifactDirectory '*') -Destination $appDirectory -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'launch-installed.ps1') -Destination $InstallDirectory -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'launch-installed.vbs') -Destination $InstallDirectory -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'stop-installed.ps1') -Destination $InstallDirectory -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'update-installed-secret.ps1') -Destination $InstallDirectory -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'import-installed-oauth-client.ps1') -Destination $InstallDirectory -Force
@@ -71,24 +72,29 @@ $protectedSecret = $null
 $launchScript = Join-Path $InstallDirectory 'launch-installed.ps1'
 $stopScript = Join-Path $InstallDirectory 'stop-installed.ps1'
 if (-not $NoShortcuts) {
-    $powerShellExecutable = (Get-Process -Id $PID).Path
+    $windowlessLauncher = Join-Path $env:SystemRoot 'System32\wscript.exe'
     $desktop = [Environment]::GetFolderPath('Desktop')
     $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'GPOS Helper'
     New-Item -ItemType Directory -Path $startMenu -Force | Out-Null
     $shell = New-Object -ComObject WScript.Shell
 
-    function New-HelperShortcut([string]$Path, [string]$Script, [string]$Description) {
+    function New-HelperShortcut([string]$Path, [string]$Script, [string]$Description, [switch]$Windowless) {
         $shortcut = $shell.CreateShortcut($Path)
-        $shortcut.TargetPath = $powerShellExecutable
-        $shortcut.Arguments = "-NoProfile -Sta -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Script`""
+        if ($Windowless) {
+            $shortcut.TargetPath = $windowlessLauncher
+            $shortcut.Arguments = "`"$Script`""
+        } else {
+            $shortcut.TargetPath = (Get-Process -Id $PID).Path
+            $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Script`""
+        }
         $shortcut.WorkingDirectory = $InstallDirectory
         $shortcut.Description = $Description
         $shortcut.IconLocation = "$(Join-Path $appDirectory 'gpos-helper.exe'),0"
         $shortcut.Save()
     }
 
-    New-HelperShortcut (Join-Path $desktop 'GPOS Helper.lnk') $launchScript 'Open the GPOS Helper dashboard'
-    New-HelperShortcut (Join-Path $startMenu 'GPOS Helper.lnk') $launchScript 'Open the GPOS Helper dashboard'
+    New-HelperShortcut (Join-Path $desktop 'GPOS Helper.lnk') (Join-Path $InstallDirectory 'launch-installed.vbs') 'Open the GPOS Helper dashboard' -Windowless
+    New-HelperShortcut (Join-Path $startMenu 'GPOS Helper.lnk') (Join-Path $InstallDirectory 'launch-installed.vbs') 'Open the GPOS Helper dashboard' -Windowless
     New-HelperShortcut (Join-Path $startMenu 'Stop GPOS Helper.lnk') $stopScript 'Stop the local GPOS Helper service'
 }
 
