@@ -7,6 +7,8 @@
     <RootNamespace>Gpos.Helper</RootNamespace>
     <Version>0.2.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationIcon Condition="'$(RuntimeIdentifier)' == 'win-x64'">Assets\aegis-mark.ico</ApplicationIcon>
+    <OutputType Condition="'$(RuntimeIdentifier)' == 'win-x64'">WinExe</OutputType>
   </PropertyGroup>
 </Project>
 
