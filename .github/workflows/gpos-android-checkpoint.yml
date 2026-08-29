@@ -13,6 +13,10 @@ on:
       - '.github/workflows/gpos-android-checkpoint.yml'
   workflow_dispatch:
 
+concurrency:
+  group: gpos-android-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
