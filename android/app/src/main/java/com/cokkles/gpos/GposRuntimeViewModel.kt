@@ -46,8 +46,15 @@ class GposRuntimeViewModel(
 
     fun refreshBackendAndRestoreSession() {
         viewModelScope.launch {
-            loadCachedDashboard()
-            loadCachedBriefing()
+            val storedCredential = credentialStore.read()
+            if (storedCredential != null) {
+                loadCachedDashboard()
+                loadCachedBriefing()
+            } else {
+                cacheDao.clear()
+                _uiState.update { it.copy(dashboard = null, briefing = null) }
+            }
+
             _uiState.update {
                 it.copy(
                     backend = it.backend.copy(checking = true, error = null),
@@ -188,11 +195,7 @@ class GposRuntimeViewModel(
 
     fun refreshDashboard() {
         viewModelScope.launch {
-            val credential = credentialStore.read()
-            if (credential == null) {
-                loadCachedDashboard()
-                return@launch
-            }
+            val credential = credentialStore.read() ?: return@launch
 
             runCatching {
                 val json = backend.readDashboard(credential.idToken)
@@ -233,11 +236,7 @@ class GposRuntimeViewModel(
 
     fun refreshLatestHorizon() {
         viewModelScope.launch {
-            val credential = credentialStore.read()
-            if (credential == null) {
-                loadCachedBriefing()
-                return@launch
-            }
+            val credential = credentialStore.read() ?: return@launch
 
             runCatching {
                 val json = backend.readLatestHorizon(credential.idToken)
@@ -277,7 +276,8 @@ class GposRuntimeViewModel(
     private suspend fun restoreSession() {
         val credential = credentialStore.read()
         if (credential == null) {
-            _uiState.update { it.copy(auth = AuthState.SignedOut) }
+            cacheDao.clear()
+            _uiState.update { it.copy(auth = AuthState.SignedOut, dashboard = null, briefing = null) }
             return
         }
 
@@ -356,6 +356,7 @@ class GposRuntimeViewModel(
     }
 
     private suspend fun loadCachedDashboard(error: String? = null): Boolean {
+        if (credentialStore.read() == null) return false
         val cached = cacheDao.read(DASHBOARD_CACHE_KEY) ?: return false
         val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
         val snapshot = runCatching { DashboardPayloadMapper.map(json) }.getOrNull() ?: return false
@@ -378,6 +379,7 @@ class GposRuntimeViewModel(
     }
 
     private suspend fun loadCachedBriefing(error: String? = null): Boolean {
+        if (credentialStore.read() == null) return false
         val cached = cacheDao.read(HORIZON_CACHE_KEY) ?: return false
         val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
         val plainText = json.optString("plain_text").trim()
@@ -425,11 +427,13 @@ class GposRuntimeViewModel(
         }
     }
 
-    private fun isAuthenticationFailure(error: Throwable): Boolean =
-        (error is AegisBackendException && error.code in AUTH_FAILURE_CODES) ||
-            error.safeMessage().contains("authentication", ignoreCase = true) ||
-            error.safeMessage().contains("token", ignoreCase = true) &&
-            error.safeMessage().contains("rejected", ignoreCase = true)
+    private fun isAuthenticationFailure(error: Throwable): Boolean {
+        val message = error.safeMessage().lowercase()
+        return (error is AegisBackendException && error.code in AUTH_FAILURE_CODES) ||
+            message.contains("authentication") ||
+            message.contains("identity token") ||
+            message.contains("not authorized")
+    }
 
     private companion object {
         const val DATABASE_NAME = "gpos-cache.db"
