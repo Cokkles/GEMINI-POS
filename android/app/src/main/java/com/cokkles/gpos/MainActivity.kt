@@ -33,8 +33,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -44,6 +46,8 @@ import androidx.navigation.compose.rememberNavController
 import com.cokkles.gpos.domain.CanonicalSnapshot
 import com.cokkles.gpos.domain.PreviewFixtures
 import com.cokkles.gpos.domain.TaskPriority
+import com.cokkles.gpos.platform.connectivity.AndroidConnectivityObserver
+import com.cokkles.gpos.platform.connectivity.ConnectivityState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -147,9 +151,7 @@ private fun GposApp() {
 @Composable
 private fun HomeScreen(snapshot: CanonicalSnapshot) {
     ScreenList {
-        item {
-            PreviewBanner()
-        }
+        item { PreviewBanner() }
         item {
             Text("Android A0", style = MaterialTheme.typography.headlineSmall)
             Text(
@@ -210,11 +212,12 @@ private fun CalendarScreen(snapshot: CanonicalSnapshot) {
                 ListItem(
                     headlineContent = { Text(event.title) },
                     supportingContent = {
+                        val endsAt = event.endsAt
                         Text(
-                            if (event.endsAt == null) {
+                            if (endsAt == null) {
                                 formatTime(event.startsAt)
                             } else {
-                                "${formatTime(event.startsAt)} → ${formatTime(event.endsAt)}"
+                                "${formatTime(event.startsAt)} → ${formatTime(endsAt)}"
                             },
                         )
                     },
@@ -255,10 +258,11 @@ private fun FollowUpsScreen(snapshot: CanonicalSnapshot) {
                 ListItem(
                     headlineContent = { Text(followUp.title) },
                     supportingContent = {
+                        val dueAt = followUp.dueAt
                         Text(
                             when {
                                 followUp.overdue -> "Overdue"
-                                followUp.dueAt != null -> "Due ${formatTime(followUp.dueAt)}"
+                                dueAt != null -> "Due ${formatTime(dueAt)}"
                                 else -> "No due time"
                             },
                         )
@@ -301,6 +305,10 @@ private fun AegisScreen() {
 
 @Composable
 private fun SystemScreen(snapshot: CanonicalSnapshot) {
+    val context = LocalContext.current
+    val connectivityObserver = remember(context) { AndroidConnectivityObserver(context) }
+    val connectivity = remember { connectivityObserver.current() }
+
     ScreenList {
         item { PreviewBanner() }
         item { Text("System", style = MaterialTheme.typography.headlineSmall) }
@@ -314,6 +322,12 @@ private fun SystemScreen(snapshot: CanonicalSnapshot) {
             SummaryCard(
                 title = "Backend reachable: ${snapshot.system.backendReachable}",
                 detail = "Expected false in deterministic A0 preview mode.",
+            )
+        }
+        item {
+            SummaryCard(
+                title = "Device connectivity: ${connectivityLabel(connectivity)}",
+                detail = "Read from Android network capabilities only; this status check does not contact GPOS.",
             )
         }
     }
@@ -378,3 +392,9 @@ private fun ScreenList(content: androidx.compose.foundation.lazy.LazyListScope.(
 }
 
 private fun formatTime(value: Instant): String = timeFormatter.format(value)
+
+private fun connectivityLabel(state: ConnectivityState): String = when (state) {
+    ConnectivityState.Unknown -> "UNKNOWN"
+    ConnectivityState.Offline -> "OFFLINE"
+    is ConnectivityState.Online -> if (state.validated) "ONLINE / VALIDATED" else "ONLINE / UNVALIDATED"
+}
