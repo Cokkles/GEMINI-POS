@@ -6,34 +6,33 @@ import androidx.compose.ui.test.performClick
 import org.junit.Rule
 import org.junit.Test
 
-class A0NavigationSmokeTest {
+class AndroidNavigationSmokeTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val composeRule = createAndroidComposeRule<GposActivity>()
 
     @Test
-    fun primaryAndMoreDestinationsRenderWhileRuntimeIntegrationIsReadOnly() {
-        composeRule.onNodeWithText("Android 0.1").assertExists()
-        composeRule.onNodeWithText("0.1 Data Status").assertExists()
+    fun canonicalReadOnlyShellNavigatesWithoutMutationDependency() {
         composeRule.onNodeWithText("Quote of the day").assertExists()
+        composeRule.onNodeWithText("GPOS Android 0.2.0-dev").assertExists()
 
         composeRule.onNodeWithText("Briefing").performClick()
-        composeRule.onNodeWithText("Daily Executive Briefing").assertExists()
+        composeRule.onNodeWithText("Refresh briefing").assertExists()
 
         composeRule.onNodeWithText("Calendar").performClick()
-        composeRule.onNodeWithText("Agenda").assertExists()
+        composeRule.onNodeWithText("Refresh calendar").assertExists()
 
         composeRule.onNodeWithText("Tasks").performClick()
-        composeRule.onNodeWithText("Validate Android checkpoint").assertExists()
+        composeRule.onNodeWithText("Read-only in 0.2").assertExists()
 
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("More GPOS").assertExists()
 
         composeRule.onNodeWithText("Follow-ups").performClick()
-        composeRule.onNodeWithText("Review next Android integration increment").assertExists()
+        composeRule.onNodeWithText("Canonical integration pending").assertExists()
 
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("Finances").performClick()
-        composeRule.onNodeWithText("Finance surface ready for canonical summary").assertExists()
+        composeRule.onNodeWithText("SENTINEL-FIN remains canonical authority.", substring = true).assertExists()
 
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("Ask AEGIS").performClick()
