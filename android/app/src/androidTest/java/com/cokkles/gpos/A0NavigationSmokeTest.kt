@@ -13,7 +13,7 @@ class A0NavigationSmokeTest {
     @Test
     fun primaryAndMoreDestinationsRenderWhileRuntimeIntegrationIsReadOnly() {
         composeRule.onNodeWithText("Android 0.1").assertExists()
-        composeRule.onNodeWithText("0.1 Preview Data").assertExists()
+        composeRule.onNodeWithText("0.1 Data Status").assertExists()
         composeRule.onNodeWithText("Quote of the day").assertExists()
 
         composeRule.onNodeWithText("Briefing").performClick()
