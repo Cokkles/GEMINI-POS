@@ -29,11 +29,15 @@ sealed interface AuthState {
         val user: AuthenticatedUser,
         val expiresAtEpochMs: Long?,
     ) : AuthState
-    data class OfflineRestored(
+
+    open class Error(
+        open val message: String,
+    ) : AuthState
+
+    class OfflineRestored(
         val expiresAtEpochMs: Long?,
         val reason: String,
-    ) : AuthState
-    data class Error(val message: String) : AuthState
+    ) : Error("Offline session restored from secure local state. $reason")
 }
 
 enum class RuntimeDataSource {
