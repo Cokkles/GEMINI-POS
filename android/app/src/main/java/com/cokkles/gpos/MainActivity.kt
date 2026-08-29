@@ -52,6 +52,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cokkles.gpos.data.remote.AuthState
+import com.cokkles.gpos.data.remote.BriefingRuntimeState
 import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.domain.CanonicalSnapshot
 import com.cokkles.gpos.domain.PreviewFixtures
@@ -111,6 +112,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onRefreshBackend = runtimeViewModel::refreshBackendAndRestoreSession,
                     onRefreshProtectedReads = runtimeViewModel::refreshProtectedReads,
+                    onRefreshBriefing = runtimeViewModel::refreshLatestHorizon,
                 )
             }
         }
@@ -151,6 +153,7 @@ private fun GposApp(
     onSignOutRequested: () -> Unit,
     onRefreshBackend: () -> Unit,
     onRefreshProtectedReads: () -> Unit,
+    onRefreshBriefing: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -196,7 +199,13 @@ private fun GposApp(
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(home.route) { HomeScreen(previewSnapshot, runtimeState) }
-            composable(briefing.route) { BriefingScreen(previewSnapshot) }
+            composable(briefing.route) {
+                BriefingScreen(
+                    snapshot = previewSnapshot,
+                    liveBriefing = runtimeState.briefing,
+                    onRefreshBriefing = onRefreshBriefing,
+                )
+            }
             composable(calendar.route) { CalendarScreen(previewSnapshot) }
             composable(tasks.route) { TasksScreen(previewSnapshot) }
             composable(more.route) {
@@ -215,6 +224,7 @@ private fun GposApp(
                     onSignOutRequested = onSignOutRequested,
                     onRefreshBackend = onRefreshBackend,
                     onRefreshProtectedReads = onRefreshProtectedReads,
+                    onRefreshBriefing = onRefreshBriefing,
                 )
             }
         }
@@ -224,14 +234,15 @@ private fun GposApp(
 @Composable
 private fun HomeScreen(snapshot: CanonicalSnapshot, runtimeState: RuntimeUiState) {
     val dailyQuote = remember { quoteFor(LocalDate.now()) }
+    val runtimeBriefing = runtimeState.briefing
 
     ScreenList {
         item { DailyInspirationCard(dailyQuote.text, dailyQuote.attribution) }
-        item { PreviewBanner() }
+        item { PreviewBanner(runtimeBriefing != null) }
         item {
             Text("Android 0.1", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Independent mobile client • AUTH-1 connectivity foundation • offline-capable shell",
+                "Independent mobile client • AUTH-1 connectivity • offline HORIZON cache",
                 modifier = Modifier.padding(top = 6.dp),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -245,10 +256,17 @@ private fun HomeScreen(snapshot: CanonicalSnapshot, runtimeState: RuntimeUiState
             )
         }
         item {
-            SummaryCard(
-                title = snapshot.briefing?.title ?: "Briefing unavailable",
-                detail = snapshot.briefing?.summary ?: "No briefing fixture loaded.",
-            )
+            if (runtimeBriefing != null) {
+                SummaryCard(
+                    title = "HORIZON • ${runtimeBriefing.source.name}",
+                    detail = briefingPreview(runtimeBriefing.plainText),
+                )
+            } else {
+                SummaryCard(
+                    title = snapshot.briefing?.title ?: "Briefing unavailable",
+                    detail = snapshot.briefing?.summary ?: "No briefing fixture loaded.",
+                )
+            }
         }
         item {
             SummaryCard(
@@ -259,29 +277,69 @@ private fun HomeScreen(snapshot: CanonicalSnapshot, runtimeState: RuntimeUiState
         item {
             SummaryCard(
                 title = "Sync posture",
-                detail = "AUTH-1 discovery and authenticated health/dashboard checks may be live. Screen content remains deterministic fixture data until canonical response mapping is validated. Remote mutation remains disabled.",
+                detail = "HORIZON may render LIVE/CACHED/STALE after authentication. Calendar, Tasks, Follow-ups and Finances remain deterministic fixtures until their production response mappings are validated. Remote mutation remains disabled.",
             )
         }
     }
 }
 
 @Composable
-private fun BriefingScreen(snapshot: CanonicalSnapshot) {
+private fun BriefingScreen(
+    snapshot: CanonicalSnapshot,
+    liveBriefing: BriefingRuntimeState?,
+    onRefreshBriefing: () -> Unit,
+) {
     ScreenList {
-        item { PreviewBanner() }
-        item {
-            val value = snapshot.briefing
-            Text(value?.title ?: "No briefing", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                value?.summary ?: "No canonical briefing fixture is available.",
-                modifier = Modifier.padding(top = 10.dp),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                "Generated ${formatTime(snapshot.generatedAt)} • ${value?.canonicalVersion ?: "version unknown"}",
-                modifier = Modifier.padding(top = 14.dp),
-                style = MaterialTheme.typography.labelMedium,
-            )
+        item { PreviewBanner(liveBriefing != null) }
+        if (liveBriefing != null) {
+            item {
+                Text("Latest HORIZON", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "${liveBriefing.source.name} • ${formatTime(Instant.ofEpochMilli(liveBriefing.fetchedAtEpochMs))}",
+                    modifier = Modifier.padding(top = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        liveBriefing.plainText,
+                        modifier = Modifier.padding(18.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
+            liveBriefing.error?.let { error ->
+                item {
+                    SummaryCard(
+                        title = "Using last-known-good briefing",
+                        detail = error,
+                    )
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = onRefreshBriefing,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Refresh HORIZON")
+                }
+            }
+        } else {
+            item {
+                val value = snapshot.briefing
+                Text(value?.title ?: "No briefing", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    value?.summary ?: "No canonical briefing fixture is available.",
+                    modifier = Modifier.padding(top = 10.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    "Fixture generated ${formatTime(snapshot.generatedAt)} • ${value?.canonicalVersion ?: "version unknown"}",
+                    modifier = Modifier.padding(top = 14.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
         }
     }
 }
@@ -289,7 +347,7 @@ private fun BriefingScreen(snapshot: CanonicalSnapshot) {
 @Composable
 private fun CalendarScreen(snapshot: CanonicalSnapshot) {
     ScreenList {
-        item { PreviewBanner() }
+        item { PreviewBanner(false) }
         item { Text("Agenda", style = MaterialTheme.typography.headlineSmall) }
         items(snapshot.calendar) { event ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -315,7 +373,7 @@ private fun CalendarScreen(snapshot: CanonicalSnapshot) {
 @Composable
 private fun TasksScreen(snapshot: CanonicalSnapshot) {
     ScreenList {
-        item { PreviewBanner() }
+        item { PreviewBanner(false) }
         item { Text("Tasks", style = MaterialTheme.typography.headlineSmall) }
         items(snapshot.tasks) { task ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -335,7 +393,7 @@ private fun TasksScreen(snapshot: CanonicalSnapshot) {
 @Composable
 private fun FollowUpsScreen(snapshot: CanonicalSnapshot) {
     ScreenList {
-        item { PreviewBanner() }
+        item { PreviewBanner(false) }
         item { Text("Follow-ups", style = MaterialTheme.typography.headlineSmall) }
         items(snapshot.followUps) { followUp ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -361,7 +419,7 @@ private fun FollowUpsScreen(snapshot: CanonicalSnapshot) {
 @Composable
 private fun FinancesScreen(snapshot: CanonicalSnapshot) {
     ScreenList {
-        item { PreviewBanner() }
+        item { PreviewBanner(false) }
         item { Text("Finances", style = MaterialTheme.typography.headlineSmall) }
         item {
             val value = snapshot.finances
@@ -376,12 +434,12 @@ private fun FinancesScreen(snapshot: CanonicalSnapshot) {
 @Composable
 private fun AegisScreen() {
     ScreenList {
-        item { PreviewBanner() }
+        item { PreviewBanner(false) }
         item { Text("Ask AEGIS", style = MaterialTheme.typography.headlineSmall) }
         item {
             SummaryCard(
                 title = "Conversation surface reserved",
-                detail = "Android 0.1 does not invoke model generation. Authentication and read-only backend plumbing are being established before conversational requests are enabled.",
+                detail = "Android 0.1 does not invoke model generation. Authentication and read-only backend plumbing are established before conversational requests are enabled.",
             )
         }
     }
@@ -397,13 +455,14 @@ private fun SystemScreen(
     onSignOutRequested: () -> Unit,
     onRefreshBackend: () -> Unit,
     onRefreshProtectedReads: () -> Unit,
+    onRefreshBriefing: () -> Unit,
 ) {
     val context = LocalContext.current
     val connectivityObserver = remember(context) { AndroidConnectivityObserver(context) }
     val connectivity = remember { connectivityObserver.current() }
 
     ScreenList {
-        item { PreviewBanner() }
+        item { PreviewBanner(runtimeState.briefing != null) }
         item { Text("System", style = MaterialTheme.typography.headlineSmall) }
         item {
             Text("Appearance", style = MaterialTheme.typography.titleMedium)
@@ -460,6 +519,22 @@ private fun SystemScreen(
                     title = "Protected read check",
                     detail = status,
                 )
+            }
+        }
+        runtimeState.briefing?.let { value ->
+            item {
+                SummaryCard(
+                    title = "HORIZON cache: ${value.source.name}",
+                    detail = "Last-known-good briefing from ${formatTime(Instant.ofEpochMilli(value.fetchedAtEpochMs))}.",
+                )
+            }
+            item {
+                OutlinedButton(
+                    onClick = onRefreshBriefing,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Refresh HORIZON briefing")
+                }
             }
         }
         runtimeState.backend.error?.let { error ->
@@ -609,12 +684,18 @@ private fun DailyInspirationCard(text: String, attribution: String?) {
 }
 
 @Composable
-private fun PreviewBanner() {
+private fun PreviewBanner(hasLiveOrCachedBriefing: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
         ListItem(
-            headlineContent = { Text("0.1 Preview Data") },
+            headlineContent = { Text("0.1 Data Status") },
             supportingContent = {
-                Text("Canonical screen content is fixture-backed • auth/connectivity may be live • no canonical mutation")
+                Text(
+                    if (hasLiveOrCachedBriefing) {
+                        "HORIZON is live/cached • remaining canonical screens are fixture-backed • no canonical mutation"
+                    } else {
+                        "Canonical screens are fixture-backed • auth/connectivity may be live • no canonical mutation"
+                    },
+                )
             },
         )
     }
@@ -641,6 +722,13 @@ private fun ScreenList(content: androidx.compose.foundation.lazy.LazyListScope.(
 }
 
 private fun formatTime(value: Instant): String = timeFormatter.format(value)
+
+private fun briefingPreview(text: String): String =
+    text.lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        ?.take(240)
+        ?: "Canonical HORIZON briefing loaded."
 
 private fun connectivityLabel(state: ConnectivityState): String = when (state) {
     ConnectivityState.Unknown -> "UNKNOWN"
