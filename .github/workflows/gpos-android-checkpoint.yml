@@ -41,12 +41,6 @@ jobs:
       - name: Install stable Android SDK 36
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
 
-      - name: Restore checkpoint debug signing identity
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: gpos-android-checkpoint-debug-signing-v1
-
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -55,15 +49,15 @@ jobs:
       - name: Validate and assemble checkpoint APKs
         run: gradle -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
-      - name: Record signing certificate fingerprints
+      - name: Verify deterministic checkpoint certificate
         run: |
           {
             echo "package=com.cokkles.gpos"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
               | sed -n '/Signer #1 certificate SHA-1 digest:/p;/Signer #1 certificate SHA-256 digest:/p'
           } | tee android/app/build/outputs/apk/debug/signing-fingerprint.txt
-          grep -q 'SHA-1 digest:' android/app/build/outputs/apk/debug/signing-fingerprint.txt
-          grep -q 'SHA-256 digest:' android/app/build/outputs/apk/debug/signing-fingerprint.txt
+          grep -qi 'd2a0806649d000b1b84fff45a9c6df768dfc31ea' android/app/build/outputs/apk/debug/signing-fingerprint.txt
+          grep -qi 'a6cc789c3d294886dab55da142105aaab0df20b40c3718140325a87da461f8ac' android/app/build/outputs/apk/debug/signing-fingerprint.txt
 
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
