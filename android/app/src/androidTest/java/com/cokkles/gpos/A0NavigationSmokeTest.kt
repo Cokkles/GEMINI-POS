@@ -11,9 +11,10 @@ class A0NavigationSmokeTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun primaryAndMoreDestinationsRenderWithoutBackendDependency() {
-        composeRule.onNodeWithText("Android A0").assertExists()
-        composeRule.onNodeWithText("A0 Preview Data").assertExists()
+    fun primaryAndMoreDestinationsRenderWhileRuntimeIntegrationIsReadOnly() {
+        composeRule.onNodeWithText("Android 0.1").assertExists()
+        composeRule.onNodeWithText("0.1 Preview Data").assertExists()
+        composeRule.onNodeWithText("Quote of the day").assertExists()
 
         composeRule.onNodeWithText("Briefing").performClick()
         composeRule.onNodeWithText("Daily Executive Briefing").assertExists()
@@ -40,6 +41,7 @@ class A0NavigationSmokeTest {
 
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("System").performClick()
-        composeRule.onNodeWithText("Backend reachable: false").assertExists()
+        composeRule.onNodeWithText("Appearance").assertExists()
+        composeRule.onNodeWithText("Backend & authentication").assertExists()
     }
 }
