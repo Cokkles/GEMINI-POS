@@ -3,24 +3,36 @@ package com.cokkles.gpos
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.Room
+import com.cokkles.gpos.data.local.CanonicalSnapshotEntity
+import com.cokkles.gpos.data.local.GposDatabase
 import com.cokkles.gpos.data.remote.AegisBackendClient
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.remote.BackendRuntimeState
+import com.cokkles.gpos.data.remote.BriefingRuntimeState
+import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import com.cokkles.gpos.platform.security.CredentialStore
 import com.cokkles.gpos.platform.security.StoredCredential
+import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class GposRuntimeViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     private val backend = AegisBackendClient()
     private val credentialStore: CredentialStore = AndroidKeystoreCredentialStore(application)
+    private val cacheDao = Room.databaseBuilder(
+        application,
+        GposDatabase::class.java,
+        DATABASE_NAME,
+    ).build().canonicalSnapshotDao()
 
     private val _uiState = MutableStateFlow(RuntimeUiState())
     val uiState: StateFlow<RuntimeUiState> = _uiState.asStateFlow()
@@ -31,6 +43,7 @@ class GposRuntimeViewModel(
 
     fun refreshBackendAndRestoreSession() {
         viewModelScope.launch {
+            loadCachedBriefing()
             _uiState.update {
                 it.copy(
                     backend = it.backend.copy(checking = true, error = null),
@@ -99,6 +112,7 @@ class GposRuntimeViewModel(
                         )
                     }
                     refreshProtectedReads()
+                    refreshLatestHorizon()
                 }
                 .onFailure { error ->
                     credentialStore.clear()
@@ -144,14 +158,46 @@ class GposRuntimeViewModel(
                     it.copy(backend = it.backend.copy(lastProtectedRead = summary, error = null))
                 }
             }.onFailure { error ->
-                val message = error.safeMessage()
-                if (message.contains("authentication", ignoreCase = true)) {
-                    credentialStore.clear()
-                    _uiState.update { it.copy(auth = AuthState.Error(message)) }
+                handleProtectedFailure(error)
+            }
+        }
+    }
+
+    fun refreshLatestHorizon() {
+        viewModelScope.launch {
+            val credential = credentialStore.read()
+            if (credential == null) {
+                loadCachedBriefing()
+                return@launch
+            }
+
+            runCatching {
+                val json = backend.readLatestHorizon(credential.idToken)
+                val plainText = json.optString("plain_text").trim()
+                if (plainText.isBlank()) {
+                    throw IllegalStateException("Canonical HORIZON response contained no plain_text briefing.")
                 }
-                _uiState.update {
-                    it.copy(backend = it.backend.copy(lastProtectedRead = "Protected read failed", error = message))
-                }
+                val fetchedAt = parseBackendTime(json) ?: System.currentTimeMillis()
+                cacheDao.replace(
+                    CanonicalSnapshotEntity(
+                        cacheKey = HORIZON_CACHE_KEY,
+                        contractVersion = HORIZON_CONTRACT,
+                        fetchedAtEpochMs = fetchedAt,
+                        staleAfterEpochMs = fetchedAt + HORIZON_FRESHNESS_MS,
+                        payloadVersion = json.optString("version").takeIf { it.isNotBlank() },
+                        payloadJson = json.toString(),
+                    ),
+                )
+                BriefingRuntimeState(
+                    plainText = plainText,
+                    source = RuntimeDataSource.LIVE,
+                    fetchedAtEpochMs = fetchedAt,
+                )
+            }.onSuccess { briefing ->
+                _uiState.update { it.copy(briefing = briefing) }
+            }.onFailure { error ->
+                val cached = loadCachedBriefing(error.safeMessage())
+                if (!cached) handleProtectedFailure(error)
             }
         }
     }
@@ -187,11 +233,67 @@ class GposRuntimeViewModel(
                     )
                 }
                 refreshProtectedReads()
+                refreshLatestHorizon()
             }
             .onFailure {
                 credentialStore.clear()
                 _uiState.update { state -> state.copy(auth = AuthState.SignedOut) }
             }
+    }
+
+    private suspend fun loadCachedBriefing(error: String? = null): Boolean {
+        val cached = cacheDao.read(HORIZON_CACHE_KEY) ?: return false
+        val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
+        val plainText = json.optString("plain_text").trim()
+        if (plainText.isBlank()) return false
+        val source = if (cached.staleAfterEpochMs < System.currentTimeMillis()) {
+            RuntimeDataSource.STALE
+        } else {
+            RuntimeDataSource.CACHED
+        }
+        _uiState.update {
+            it.copy(
+                briefing = BriefingRuntimeState(
+                    plainText = plainText,
+                    source = source,
+                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
+                    error = error,
+                ),
+            )
+        }
+        return true
+    }
+
+    private fun handleProtectedFailure(error: Throwable) {
+        val message = error.safeMessage()
+        viewModelScope.launch {
+            if (message.contains("authentication", ignoreCase = true)) {
+                credentialStore.clear()
+                _uiState.update { it.copy(auth = AuthState.Error(message)) }
+            }
+            _uiState.update {
+                it.copy(backend = it.backend.copy(lastProtectedRead = "Protected read failed", error = message))
+            }
+        }
+    }
+
+    private fun parseBackendTime(json: JSONObject): Long? {
+        val values = listOf(
+            json.optString("fetched_at"),
+            json.optString("generated_at"),
+            json.optString("last_updated"),
+        )
+        return values.firstNotNullOfOrNull { value ->
+            value.takeIf { it.isNotBlank() }
+                ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+        }
+    }
+
+    private companion object {
+        const val DATABASE_NAME = "gpos-cache.db"
+        const val HORIZON_CACHE_KEY = "latest_horizon"
+        const val HORIZON_CONTRACT = "AUTH-1/get_latest_horizon/plain_text"
+        const val HORIZON_FRESHNESS_MS = 24L * 60L * 60L * 1000L
     }
 }
 
