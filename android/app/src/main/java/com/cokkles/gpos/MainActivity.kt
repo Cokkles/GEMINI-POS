@@ -3,6 +3,7 @@ package com.cokkles.gpos
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +30,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -41,16 +44,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cokkles.gpos.data.remote.AuthState
+import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.domain.CanonicalSnapshot
 import com.cokkles.gpos.domain.PreviewFixtures
 import com.cokkles.gpos.domain.TaskPriority
 import com.cokkles.gpos.platform.connectivity.AndroidConnectivityObserver
 import com.cokkles.gpos.platform.connectivity.ConnectivityState
+import com.cokkles.gpos.platform.security.GoogleSignInCoordinator
 import com.cokkles.gpos.ui.home.quoteFor
 import com.cokkles.gpos.ui.theme.GposTheme
 import com.cokkles.gpos.ui.theme.GposThemeOption
@@ -59,13 +67,19 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val runtimeViewModel: GposRuntimeViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val googleSignInCoordinator = GoogleSignInCoordinator(this)
+
         setContent {
             val themePreferences = remember { ThemePreferences(applicationContext) }
             var selectedTheme by remember { mutableStateOf(themePreferences.load()) }
+            val runtimeState by runtimeViewModel.uiState.collectAsStateWithLifecycle()
 
             GposTheme(selectedTheme) {
                 GposApp(
@@ -74,6 +88,29 @@ class MainActivity : ComponentActivity() {
                         selectedTheme = theme
                         themePreferences.save(theme)
                     },
+                    runtimeState = runtimeState,
+                    onSignInRequested = {
+                        lifecycleScope.launch {
+                            runCatching {
+                                googleSignInCoordinator.requestIdToken(
+                                    BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID,
+                                )
+                            }.onSuccess(runtimeViewModel::authenticateWithIdToken)
+                                .onFailure { error ->
+                                    runtimeViewModel.reportAuthFailure(
+                                        error.message ?: "Google Sign-In could not be completed.",
+                                    )
+                                }
+                        }
+                    },
+                    onSignOutRequested = {
+                        lifecycleScope.launch {
+                            googleSignInCoordinator.clearProviderState()
+                            runtimeViewModel.signOut()
+                        }
+                    },
+                    onRefreshBackend = runtimeViewModel::refreshBackendAndRestoreSession,
+                    onRefreshProtectedReads = runtimeViewModel::refreshProtectedReads,
                 )
             }
         }
@@ -109,6 +146,11 @@ private val timeFormatter = DateTimeFormatter.ofPattern("MMM d • h:mm a")
 private fun GposApp(
     selectedTheme: GposThemeOption,
     onThemeSelected: (GposThemeOption) -> Unit,
+    runtimeState: RuntimeUiState,
+    onSignInRequested: () -> Unit,
+    onSignOutRequested: () -> Unit,
+    onRefreshBackend: () -> Unit,
+    onRefreshProtectedReads: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -153,7 +195,7 @@ private fun GposApp(
             startDestination = home.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(home.route) { HomeScreen(previewSnapshot) }
+            composable(home.route) { HomeScreen(previewSnapshot, runtimeState) }
             composable(briefing.route) { BriefingScreen(previewSnapshot) }
             composable(calendar.route) { CalendarScreen(previewSnapshot) }
             composable(tasks.route) { TasksScreen(previewSnapshot) }
@@ -168,6 +210,11 @@ private fun GposApp(
                     snapshot = previewSnapshot,
                     selectedTheme = selectedTheme,
                     onThemeSelected = onThemeSelected,
+                    runtimeState = runtimeState,
+                    onSignInRequested = onSignInRequested,
+                    onSignOutRequested = onSignOutRequested,
+                    onRefreshBackend = onRefreshBackend,
+                    onRefreshProtectedReads = onRefreshProtectedReads,
                 )
             }
         }
@@ -175,18 +222,26 @@ private fun GposApp(
 }
 
 @Composable
-private fun HomeScreen(snapshot: CanonicalSnapshot) {
+private fun HomeScreen(snapshot: CanonicalSnapshot, runtimeState: RuntimeUiState) {
     val dailyQuote = remember { quoteFor(LocalDate.now()) }
 
     ScreenList {
         item { DailyInspirationCard(dailyQuote.text, dailyQuote.attribution) }
         item { PreviewBanner() }
         item {
-            Text("Android A0", style = MaterialTheme.typography.headlineSmall)
+            Text("Android 0.1", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Independent mobile client • canonical data boundary • offline-capable foundation",
+                "Independent mobile client • AUTH-1 connectivity foundation • offline-capable shell",
                 modifier = Modifier.padding(top = 6.dp),
                 style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        item {
+            SummaryCard(
+                title = if (runtimeState.backend.reachable) "GPOS backend discovered" else "GPOS backend not yet reachable",
+                detail = runtimeState.backend.authConfig?.let { config ->
+                    "${config.authVersion} • backend ${config.backendVersion} • enforcement ${if (config.enforcementRequired) "ON" else "OFF"}"
+                } ?: runtimeState.backend.error ?: "Checking AUTH-1 configuration.",
             )
         }
         item {
@@ -204,7 +259,7 @@ private fun HomeScreen(snapshot: CanonicalSnapshot) {
         item {
             SummaryCard(
                 title = "Sync posture",
-                detail = "Local preview only. Production transport, authentication and background sync remain disabled.",
+                detail = "AUTH-1 discovery and authenticated health/dashboard checks may be live. Screen content remains deterministic fixture data until canonical response mapping is validated. Remote mutation remains disabled.",
             )
         }
     }
@@ -326,7 +381,7 @@ private fun AegisScreen() {
         item {
             SummaryCard(
                 title = "Conversation surface reserved",
-                detail = "A0 does not invoke models or generation. The UI route exists so authentication, request contracts and cost controls can be added deliberately later.",
+                detail = "Android 0.1 does not invoke model generation. Authentication and read-only backend plumbing are being established before conversational requests are enabled.",
             )
         }
     }
@@ -337,6 +392,11 @@ private fun SystemScreen(
     snapshot: CanonicalSnapshot,
     selectedTheme: GposThemeOption,
     onThemeSelected: (GposThemeOption) -> Unit,
+    runtimeState: RuntimeUiState,
+    onSignInRequested: () -> Unit,
+    onSignOutRequested: () -> Unit,
+    onRefreshBackend: () -> Unit,
+    onRefreshProtectedReads: () -> Unit,
 ) {
     val context = LocalContext.current
     val connectivityObserver = remember(context) { AndroidConnectivityObserver(context) }
@@ -371,22 +431,132 @@ private fun SystemScreen(
             }
         }
         item {
+            Text("Backend & authentication", style = MaterialTheme.typography.titleMedium)
+        }
+        item {
+            val config = runtimeState.backend.authConfig
             SummaryCard(
-                title = "Compatibility: ${snapshot.system.compatibilityState.name}",
-                detail = snapshot.system.message ?: "No system status message.",
+                title = when {
+                    runtimeState.backend.checking -> "Backend: checking"
+                    runtimeState.backend.reachable -> "Backend: reachable"
+                    else -> "Backend: unavailable"
+                },
+                detail = config?.let {
+                    "${it.authVersion} • backend ${it.backendVersion} • allowlist ${if (it.allowlistConfigured) "configured" else "missing"} • enforcement ${if (it.enforcementRequired) "ON" else "OFF"}"
+                } ?: runtimeState.backend.error ?: "Public AUTH-1 discovery has not completed.",
             )
         }
         item {
+            AuthenticationCard(
+                authState = runtimeState.auth,
+                onSignInRequested = onSignInRequested,
+                onSignOutRequested = onSignOutRequested,
+                onRefreshProtectedReads = onRefreshProtectedReads,
+            )
+        }
+        runtimeState.backend.lastProtectedRead?.let { status ->
+            item {
+                SummaryCard(
+                    title = "Protected read check",
+                    detail = status,
+                )
+            }
+        }
+        runtimeState.backend.error?.let { error ->
+            item {
+                SummaryCard(
+                    title = "Backend notice",
+                    detail = error,
+                )
+            }
+        }
+        item {
+            OutlinedButton(
+                onClick = onRefreshBackend,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Recheck backend / session")
+            }
+        }
+        item {
             SummaryCard(
-                title = "Backend reachable: ${snapshot.system.backendReachable}",
-                detail = "Expected false in deterministic A0 preview mode.",
+                title = "Fixture compatibility: ${snapshot.system.compatibilityState.name}",
+                detail = snapshot.system.message ?: "No fixture system status message.",
             )
         }
         item {
             SummaryCard(
                 title = "Device connectivity: ${connectivityLabel(connectivity)}",
-                detail = "Read from Android network capabilities only; this status check does not contact GPOS.",
+                detail = "Read from Android network capabilities. AUTH-1 status above is the separate real backend reachability check.",
             )
+        }
+    }
+}
+
+@Composable
+private fun AuthenticationCard(
+    authState: AuthState,
+    onSignInRequested: () -> Unit,
+    onSignOutRequested: () -> Unit,
+    onRefreshProtectedReads: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            when (authState) {
+                AuthState.Restoring -> {
+                    Text("Authentication", style = MaterialTheme.typography.titleMedium)
+                    Text("Restoring protected session…", modifier = Modifier.padding(top = 6.dp))
+                }
+
+                AuthState.SignedOut -> {
+                    Text("Signed out", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Sign in with an authorized Google account to validate protected GPOS reads.",
+                        modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+                    )
+                    Button(onClick = onSignInRequested, modifier = Modifier.fillMaxWidth()) {
+                        Text("Sign in with Google")
+                    }
+                }
+
+                AuthState.Authenticating -> {
+                    Text("Authenticating…", style = MaterialTheme.typography.titleMedium)
+                    Text("Validating Google identity with AUTH-1.", modifier = Modifier.padding(top = 6.dp))
+                }
+
+                is AuthState.Authenticated -> {
+                    Text("Authenticated", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        authState.user.email,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+                    )
+                    Button(
+                        onClick = onRefreshProtectedReads,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Refresh secure reads")
+                    }
+                    OutlinedButton(
+                        onClick = onSignOutRequested,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                    ) {
+                        Text("Sign out")
+                    }
+                }
+
+                is AuthState.Error -> {
+                    Text("Authentication needs attention", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        authState.message,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
+                    )
+                    Button(onClick = onSignInRequested, modifier = Modifier.fillMaxWidth()) {
+                        Text("Try Google sign-in")
+                    }
+                }
+            }
         }
     }
 }
@@ -442,9 +612,9 @@ private fun DailyInspirationCard(text: String, attribution: String?) {
 private fun PreviewBanner() {
     Card(modifier = Modifier.fillMaxWidth()) {
         ListItem(
-            headlineContent = { Text("A0 Preview Data") },
+            headlineContent = { Text("0.1 Preview Data") },
             supportingContent = {
-                Text("Deterministic local fixture • no live backend request • no canonical mutation")
+                Text("Canonical screen content is fixture-backed • auth/connectivity may be live • no canonical mutation")
             },
         )
     }
