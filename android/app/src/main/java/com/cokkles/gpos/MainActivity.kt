@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,6 +41,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cokkles.gpos.domain.CanonicalSnapshot
+import com.cokkles.gpos.domain.PreviewFixtures
+import com.cokkles.gpos.domain.TaskPriority
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,6 +79,9 @@ private val more = GposDestination("more", "More", "Additional GPOS areas", Icon
 private val primaryDestinations = listOf(home, briefing, calendar, tasks, more)
 private val secondaryDestinations = listOf(followups, finances, aegis, system)
 private val allDestinations = primaryDestinations + secondaryDestinations
+private val previewSnapshot = PreviewFixtures.snapshot
+private val timeFormatter = DateTimeFormatter.ofPattern("MMM d • h:mm a")
+    .withZone(ZoneId.systemDefault())
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,66 +129,199 @@ private fun GposApp() {
             startDestination = home.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(home.route) { HomeScreen() }
-            composable(briefing.route) { PlaceholderScreen(briefing) }
-            composable(calendar.route) { PlaceholderScreen(calendar) }
-            composable(tasks.route) { PlaceholderScreen(tasks) }
+            composable(home.route) { HomeScreen(previewSnapshot) }
+            composable(briefing.route) { BriefingScreen(previewSnapshot) }
+            composable(calendar.route) { CalendarScreen(previewSnapshot) }
+            composable(tasks.route) { TasksScreen(previewSnapshot) }
             composable(more.route) {
-                MoreScreen(
-                    onNavigate = { route -> navController.navigate(route) },
-                )
+                MoreScreen(onNavigate = { route -> navController.navigate(route) })
             }
-            secondaryDestinations.forEach { destination ->
-                composable(destination.route) { PlaceholderScreen(destination) }
+            composable(followups.route) { FollowUpsScreen(previewSnapshot) }
+            composable(finances.route) { FinancesScreen(previewSnapshot) }
+            composable(aegis.route) { AegisScreen() }
+            composable(system.route) { SystemScreen(previewSnapshot) }
+        }
+    }
+}
+
+@Composable
+private fun HomeScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item {
+            PreviewBanner()
+        }
+        item {
+            Text("Android A0", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Independent mobile client • canonical data boundary • offline-capable foundation",
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        item {
+            SummaryCard(
+                title = snapshot.briefing?.title ?: "Briefing unavailable",
+                detail = snapshot.briefing?.summary ?: "No briefing fixture loaded.",
+            )
+        }
+        item {
+            SummaryCard(
+                title = "Today",
+                detail = "${snapshot.calendar.size} calendar items • ${snapshot.tasks.count { it.status.name != "COMPLETED" }} open tasks • ${snapshot.followUps.size} follow-up",
+            )
+        }
+        item {
+            SummaryCard(
+                title = "Sync posture",
+                detail = "Local preview only. Production transport, authentication and background sync remain disabled.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun BriefingScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item { PreviewBanner() }
+        item {
+            val value = snapshot.briefing
+            Text(value?.title ?: "No briefing", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                value?.summary ?: "No canonical briefing fixture is available.",
+                modifier = Modifier.padding(top = 10.dp),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                "Generated ${formatTime(snapshot.generatedAt)} • ${value?.canonicalVersion ?: "version unknown"}",
+                modifier = Modifier.padding(top = 14.dp),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item { PreviewBanner() }
+        item { Text("Agenda", style = MaterialTheme.typography.headlineSmall) }
+        items(snapshot.calendar) { event ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                ListItem(
+                    headlineContent = { Text(event.title) },
+                    supportingContent = {
+                        Text(
+                            if (event.endsAt == null) {
+                                formatTime(event.startsAt)
+                            } else {
+                                "${formatTime(event.startsAt)} → ${formatTime(event.endsAt)}"
+                            },
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Outlined.Event, contentDescription = null) },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HomeScreen() {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Text(
-                text = "Android A0 Foundation",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Text(
-                text = "Independent mobile client • canonical backend • read automatically, mutate explicitly",
-                modifier = Modifier.padding(top = 6.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        item {
-            Card {
+private fun TasksScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item { PreviewBanner() }
+        item { Text("Tasks", style = MaterialTheme.typography.headlineSmall) }
+        items(snapshot.tasks) { task ->
+            Card(modifier = Modifier.fillMaxWidth()) {
                 ListItem(
-                    headlineContent = { Text("Backend integration") },
-                    supportingContent = { Text("Not active in A0-B. No Windows Desktop or Helper dependency.") },
+                    headlineContent = { Text(task.title) },
+                    supportingContent = {
+                        val priority = if (task.priority == TaskPriority.NORMAL) "" else " • ${task.priority.name}"
+                        Text("${task.status.name.replace('_', ' ')}$priority")
+                    },
+                    leadingContent = { Icon(Icons.Outlined.CheckCircle, contentDescription = null) },
                 )
             }
         }
-        item {
-            Card {
+    }
+}
+
+@Composable
+private fun FollowUpsScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item { PreviewBanner() }
+        item { Text("Follow-ups", style = MaterialTheme.typography.headlineSmall) }
+        items(snapshot.followUps) { followUp ->
+            Card(modifier = Modifier.fillMaxWidth()) {
                 ListItem(
-                    headlineContent = { Text("Next foundation work") },
-                    supportingContent = { Text("Authentication, versioned API boundary, cache freshness, background sync and notifications.") },
+                    headlineContent = { Text(followUp.title) },
+                    supportingContent = {
+                        Text(
+                            when {
+                                followUp.overdue -> "Overdue"
+                                followUp.dueAt != null -> "Due ${formatTime(followUp.dueAt)}"
+                                else -> "No due time"
+                            },
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Outlined.Notifications, contentDescription = null) },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun FinancesScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item { PreviewBanner() }
+        item { Text("Finances", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            val value = snapshot.finances
+            SummaryCard(
+                title = value?.headline ?: "No finance summary",
+                detail = value?.detail ?: "Canonical finance data is not loaded.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun AegisScreen() {
+    ScreenList {
+        item { PreviewBanner() }
+        item { Text("Ask AEGIS", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            SummaryCard(
+                title = "Conversation surface reserved",
+                detail = "A0 does not invoke models or generation. The UI route exists so authentication, request contracts and cost controls can be added deliberately later.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemScreen(snapshot: CanonicalSnapshot) {
+    ScreenList {
+        item { PreviewBanner() }
+        item { Text("System", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            SummaryCard(
+                title = "Compatibility: ${snapshot.system.compatibilityState.name}",
+                detail = snapshot.system.message ?: "No system status message.",
+            )
+        }
+        item {
+            SummaryCard(
+                title = "Backend reachable: ${snapshot.system.backendReachable}",
+                detail = "Expected false in deterministic A0 preview mode.",
+            )
         }
     }
 }
 
 @Composable
 private fun MoreScreen(onNavigate: (String) -> Unit) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    ScreenList {
         item {
             Text("More GPOS", style = MaterialTheme.typography.headlineSmall)
             Text(
@@ -188,7 +331,10 @@ private fun MoreScreen(onNavigate: (String) -> Unit) {
             )
         }
         items(secondaryDestinations) { destination ->
-            Card(onClick = { onNavigate(destination.route) }) {
+            Card(
+                onClick = { onNavigate(destination.route) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 ListItem(
                     headlineContent = { Text(destination.title) },
                     supportingContent = { Text(destination.subtitle) },
@@ -200,27 +346,35 @@ private fun MoreScreen(onNavigate: (String) -> Unit) {
 }
 
 @Composable
-private fun PlaceholderScreen(destination: GposDestination) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-    ) {
-        Icon(destination.icon, contentDescription = null)
-        Text(
-            destination.title,
-            modifier = Modifier.padding(top = 16.dp),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        Text(
-            destination.subtitle,
-            modifier = Modifier.padding(top = 8.dp),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            "A0 placeholder — backend integration is intentionally not active yet.",
-            modifier = Modifier.padding(top = 20.dp),
-            style = MaterialTheme.typography.bodyMedium,
+private fun PreviewBanner() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = { Text("A0 Preview Data") },
+            supportingContent = {
+                Text("Deterministic local fixture • no live backend request • no canonical mutation")
+            },
         )
     }
 }
+
+@Composable
+private fun SummaryCard(title: String, detail: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = { Text(title) },
+            supportingContent = { Text(detail) },
+        )
+    }
+}
+
+@Composable
+private fun ScreenList(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = content,
+    )
+}
+
+private fun formatTime(value: Instant): String = timeFormatter.format(value)
