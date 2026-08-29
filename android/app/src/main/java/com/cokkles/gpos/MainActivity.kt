@@ -28,12 +28,15 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -48,7 +51,12 @@ import com.cokkles.gpos.domain.PreviewFixtures
 import com.cokkles.gpos.domain.TaskPriority
 import com.cokkles.gpos.platform.connectivity.AndroidConnectivityObserver
 import com.cokkles.gpos.platform.connectivity.ConnectivityState
+import com.cokkles.gpos.ui.home.quoteFor
+import com.cokkles.gpos.ui.theme.GposTheme
+import com.cokkles.gpos.ui.theme.GposThemeOption
+import com.cokkles.gpos.ui.theme.ThemePreferences
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -56,8 +64,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                GposApp()
+            val themePreferences = remember { ThemePreferences(applicationContext) }
+            var selectedTheme by remember { mutableStateOf(themePreferences.load()) }
+
+            GposTheme(selectedTheme) {
+                GposApp(
+                    selectedTheme = selectedTheme,
+                    onThemeSelected = { theme ->
+                        selectedTheme = theme
+                        themePreferences.save(theme)
+                    },
+                )
             }
         }
     }
@@ -89,7 +106,10 @@ private val timeFormatter = DateTimeFormatter.ofPattern("MMM d • h:mm a")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GposApp() {
+private fun GposApp(
+    selectedTheme: GposThemeOption,
+    onThemeSelected: (GposThemeOption) -> Unit,
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: home.route
@@ -143,14 +163,23 @@ private fun GposApp() {
             composable(followups.route) { FollowUpsScreen(previewSnapshot) }
             composable(finances.route) { FinancesScreen(previewSnapshot) }
             composable(aegis.route) { AegisScreen() }
-            composable(system.route) { SystemScreen(previewSnapshot) }
+            composable(system.route) {
+                SystemScreen(
+                    snapshot = previewSnapshot,
+                    selectedTheme = selectedTheme,
+                    onThemeSelected = onThemeSelected,
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun HomeScreen(snapshot: CanonicalSnapshot) {
+    val dailyQuote = remember { quoteFor(LocalDate.now()) }
+
     ScreenList {
+        item { DailyInspirationCard(dailyQuote.text, dailyQuote.attribution) }
         item { PreviewBanner() }
         item {
             Text("Android A0", style = MaterialTheme.typography.headlineSmall)
@@ -304,7 +333,11 @@ private fun AegisScreen() {
 }
 
 @Composable
-private fun SystemScreen(snapshot: CanonicalSnapshot) {
+private fun SystemScreen(
+    snapshot: CanonicalSnapshot,
+    selectedTheme: GposThemeOption,
+    onThemeSelected: (GposThemeOption) -> Unit,
+) {
     val context = LocalContext.current
     val connectivityObserver = remember(context) { AndroidConnectivityObserver(context) }
     val connectivity = remember { connectivityObserver.current() }
@@ -312,6 +345,31 @@ private fun SystemScreen(snapshot: CanonicalSnapshot) {
     ScreenList {
         item { PreviewBanner() }
         item { Text("System", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Theme changes apply immediately and are saved on this device.",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        items(GposThemeOption.entries) { option ->
+            Card(
+                onClick = { onThemeSelected(option) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                ListItem(
+                    headlineContent = { Text(option.displayName) },
+                    supportingContent = { Text(option.description) },
+                    leadingContent = {
+                        RadioButton(
+                            selected = option == selectedTheme,
+                            onClick = { onThemeSelected(option) },
+                        )
+                    },
+                )
+            }
+        }
         item {
             SummaryCard(
                 title = "Compatibility: ${snapshot.system.compatibilityState.name}",
@@ -353,6 +411,27 @@ private fun MoreScreen(onNavigate: (String) -> Unit) {
                     headlineContent = { Text(destination.title) },
                     supportingContent = { Text(destination.subtitle) },
                     leadingContent = { Icon(destination.icon, contentDescription = null) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyInspirationCard(text: String, attribution: String?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Text("Quote of the day", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "“$text”",
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (!attribution.isNullOrBlank()) {
+                Text(
+                    "— $attribution",
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
