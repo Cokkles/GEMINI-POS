@@ -30,7 +30,19 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    signingConfigs {
+        create("checkpoint") {
+            storeFile = rootProject.file("keystore/gpos-checkpoint-debug.keystore")
+            storePassword = "gpos-checkpoint"
+            keyAlias = "gpos-checkpoint"
+            keyPassword = "gpos-checkpoint"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("checkpoint")
+        }
         release {
             isMinifyEnabled = false
         }
