@@ -41,6 +41,12 @@ jobs:
       - name: Install stable Android SDK 36
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
 
+      - name: Restore checkpoint debug signing identity
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: gpos-android-checkpoint-debug-signing-v1
+
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -49,18 +55,26 @@ jobs:
       - name: Validate and assemble checkpoint APKs
         run: gradle -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
+      - name: Record signing certificate fingerprint
+        run: |
+          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk \
+            | sed -n '/SHA256:/p' \
+            | tee android/app/build/outputs/apk/debug/signing-fingerprint.txt
+
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: gpos-android-a0-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: gpos-android-0.1-debug
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/signing-fingerprint.txt
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload Android instrumentation APK
         uses: actions/upload-artifact@v4
         with:
-          name: gpos-android-a0-androidTest
+          name: gpos-android-0.1-androidTest
           path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
