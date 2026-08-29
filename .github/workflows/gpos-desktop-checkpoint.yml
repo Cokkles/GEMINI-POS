@@ -1,0 +1,50 @@
+name: GPOS Desktop Checkpoint
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'integrations/gpos-helper/**'
+      - 'docs/gpos-desktop/**'
+      - '.github/workflows/gpos-desktop-checkpoint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-checkpoint:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: integrations/gpos-helper
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Test
+        shell: pwsh
+        run: ./scripts/test-all.ps1
+
+      - name: Build self-contained Windows checkpoint
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+
+      - name: Verify package
+        shell: pwsh
+        run: ./scripts/verify-package.ps1
+
+      - name: Upload checkpoint artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpos-desktop-windows-checkpoint
+          path: integrations/gpos-helper/artifacts/windows/**
+          if-no-files-found: error
+          retention-days: 14
