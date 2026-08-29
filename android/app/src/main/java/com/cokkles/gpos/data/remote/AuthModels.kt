@@ -32,6 +32,19 @@ sealed interface AuthState {
     data class Error(val message: String) : AuthState
 }
 
+enum class RuntimeDataSource {
+    LIVE,
+    CACHED,
+    STALE,
+}
+
+data class BriefingRuntimeState(
+    val plainText: String,
+    val source: RuntimeDataSource,
+    val fetchedAtEpochMs: Long,
+    val error: String? = null,
+)
+
 data class BackendRuntimeState(
     val checking: Boolean = false,
     val reachable: Boolean = false,
@@ -43,4 +56,5 @@ data class BackendRuntimeState(
 data class RuntimeUiState(
     val backend: BackendRuntimeState = BackendRuntimeState(),
     val auth: AuthState = AuthState.Restoring,
+    val briefing: BriefingRuntimeState? = null,
 )
