@@ -12,8 +12,19 @@ android {
         applicationId = "com.cokkles.gpos"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.1-a0"
+        versionCode = 2
+        versionName = "0.1.0-dev"
+
+        buildConfigField(
+            "String",
+            "GPOS_BACKEND_URL",
+            "\"https://script.google.com/macros/s/AKfycbw4Rj-zD7L9TCi3ldYobavsKDiyUJ3hLJWhOUuu5PVc83NnzKc7xTdVzNykSgt3h5zSfA/exec\"",
+        )
+        buildConfigField(
+            "String",
+            "GPOS_GOOGLE_SERVER_CLIENT_ID",
+            "\"441009275873-qnf9c9n1o3l9tl9c76t2821hm8tectfl.apps.googleusercontent.com\"",
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -59,6 +70,12 @@ dependencies {
 
     implementation("androidx.room:room-runtime:2.8.4")
     ksp("androidx.room:room-compiler:2.8.4")
+
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
+
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
