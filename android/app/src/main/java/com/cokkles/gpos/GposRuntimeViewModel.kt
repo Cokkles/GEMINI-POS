@@ -7,6 +7,7 @@ import androidx.room.Room
 import com.cokkles.gpos.data.local.CanonicalSnapshotEntity
 import com.cokkles.gpos.data.local.GposDatabase
 import com.cokkles.gpos.data.remote.AegisBackendClient
+import com.cokkles.gpos.data.remote.AegisBackendException
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.remote.BackendRuntimeState
 import com.cokkles.gpos.data.remote.BriefingRuntimeState
@@ -56,20 +57,31 @@ class GposRuntimeViewModel(
 
             val configResult = runCatching { backend.getAuthConfig() }
             val config = configResult.getOrNull()
+            val configError = configResult.exceptionOrNull()?.safeMessage()
             _uiState.update { state ->
                 state.copy(
                     backend = BackendRuntimeState(
                         checking = false,
                         reachable = config != null,
                         authConfig = config,
-                        error = configResult.exceptionOrNull()?.safeMessage(),
+                        error = configError,
                         lastProtectedRead = state.backend.lastProtectedRead,
                     ),
                 )
             }
 
-            if (config == null || !config.configured) {
-                _uiState.update { it.copy(auth = AuthState.SignedOut) }
+            if (config == null) {
+                if (!restoreOfflineSession(configError ?: "Backend discovery is unavailable.")) {
+                    _uiState.update { it.copy(auth = AuthState.SignedOut) }
+                }
+                return@launch
+            }
+
+            if (!config.configured) {
+                clearPrivateSession()
+                _uiState.update {
+                    it.copy(auth = AuthState.Error("AEGIS authentication is not configured on the backend."))
+                }
                 return@launch
             }
 
@@ -77,6 +89,7 @@ class GposRuntimeViewModel(
                 config.clientId != null &&
                 config.clientId != BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID
             ) {
+                clearPrivateSession()
                 _uiState.update {
                     it.copy(
                         auth = AuthState.Error(
@@ -117,8 +130,10 @@ class GposRuntimeViewModel(
                     refreshCanonicalReads()
                 }
                 .onFailure { error ->
-                    credentialStore.clear()
-                    _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+                    viewModelScope.launch {
+                        if (isAuthenticationFailure(error)) clearPrivateSession() else credentialStore.clear()
+                        _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+                    }
                 }
         }
     }
@@ -131,14 +146,11 @@ class GposRuntimeViewModel(
         viewModelScope.launch {
             val credential = credentialStore.read()
             credential?.idToken?.let { backend.logout(it) }
-            credentialStore.clear()
-            cacheDao.clear()
+            clearPrivateSession()
             _uiState.update {
                 it.copy(
                     auth = AuthState.SignedOut,
                     backend = it.backend.copy(lastProtectedRead = null),
-                    briefing = null,
-                    dashboard = null,
                 )
             }
         }
@@ -209,8 +221,12 @@ class GposRuntimeViewModel(
                     )
                 }
             }.onFailure { error ->
-                val cached = loadCachedDashboard(error.safeMessage())
-                if (!cached) handleProtectedFailure(error)
+                if (isAuthenticationFailure(error)) {
+                    handleProtectedFailure(error)
+                } else {
+                    val cached = loadCachedDashboard(error.safeMessage())
+                    if (!cached) handleProtectedFailure(error)
+                }
             }
         }
     }
@@ -248,8 +264,12 @@ class GposRuntimeViewModel(
             }.onSuccess { briefing ->
                 _uiState.update { it.copy(briefing = briefing) }
             }.onFailure { error ->
-                val cached = loadCachedBriefing(error.safeMessage())
-                if (!cached) handleProtectedFailure(error)
+                if (isAuthenticationFailure(error)) {
+                    handleProtectedFailure(error)
+                } else {
+                    val cached = loadCachedBriefing(error.safeMessage())
+                    if (!cached) handleProtectedFailure(error)
+                }
             }
         }
     }
@@ -263,33 +283,76 @@ class GposRuntimeViewModel(
 
         val expiry = credential.expiresAtEpochMs
         if (expiry != null && expiry <= System.currentTimeMillis()) {
-            credentialStore.clear()
+            clearPrivateSession()
             _uiState.update { it.copy(auth = AuthState.SignedOut) }
             return
         }
 
-        runCatching { backend.validateSession(credential.idToken) }
-            .onSuccess { session ->
-                credentialStore.replace(
-                    StoredCredential(
-                        idToken = credential.idToken,
+        val result = runCatching { backend.validateSession(credential.idToken) }
+        val session = result.getOrNull()
+        if (session != null) {
+            credentialStore.replace(
+                StoredCredential(
+                    idToken = credential.idToken,
+                    expiresAtEpochMs = session.expiresAtEpochMs,
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    auth = AuthState.Authenticated(
+                        user = session.user,
                         expiresAtEpochMs = session.expiresAtEpochMs,
                     ),
                 )
-                _uiState.update {
-                    it.copy(
-                        auth = AuthState.Authenticated(
-                            user = session.user,
-                            expiresAtEpochMs = session.expiresAtEpochMs,
-                        ),
-                    )
-                }
-                refreshCanonicalReads()
             }
-            .onFailure {
-                credentialStore.clear()
-                _uiState.update { state -> state.copy(auth = AuthState.SignedOut) }
+            refreshCanonicalReads()
+            return
+        }
+
+        val error = result.exceptionOrNull() ?: return
+        if (isAuthenticationFailure(error)) {
+            clearPrivateSession()
+            _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+        } else {
+            _uiState.update {
+                it.copy(
+                    auth = AuthState.OfflineRestored(
+                        expiresAtEpochMs = credential.expiresAtEpochMs,
+                        reason = error.safeMessage(),
+                    ),
+                    backend = it.backend.copy(error = error.safeMessage()),
+                )
             }
+        }
+    }
+
+    private suspend fun restoreOfflineSession(reason: String): Boolean {
+        val credential = credentialStore.read() ?: return false
+        val expiry = credential.expiresAtEpochMs
+        if (expiry != null && expiry <= System.currentTimeMillis()) {
+            clearPrivateSession()
+            return false
+        }
+        _uiState.update {
+            it.copy(
+                auth = AuthState.OfflineRestored(
+                    expiresAtEpochMs = expiry,
+                    reason = reason,
+                ),
+            )
+        }
+        return true
+    }
+
+    private suspend fun clearPrivateSession() {
+        credentialStore.clear()
+        cacheDao.clear()
+        _uiState.update {
+            it.copy(
+                briefing = null,
+                dashboard = null,
+            )
+        }
     }
 
     private suspend fun loadCachedDashboard(error: String? = null): Boolean {
@@ -340,8 +403,8 @@ class GposRuntimeViewModel(
     private fun handleProtectedFailure(error: Throwable) {
         val message = error.safeMessage()
         viewModelScope.launch {
-            if (message.contains("authentication", ignoreCase = true)) {
-                credentialStore.clear()
+            if (isAuthenticationFailure(error)) {
+                clearPrivateSession()
                 _uiState.update { it.copy(auth = AuthState.Error(message)) }
             }
             _uiState.update {
@@ -362,6 +425,12 @@ class GposRuntimeViewModel(
         }
     }
 
+    private fun isAuthenticationFailure(error: Throwable): Boolean =
+        (error is AegisBackendException && error.code in AUTH_FAILURE_CODES) ||
+            error.safeMessage().contains("authentication", ignoreCase = true) ||
+            error.safeMessage().contains("token", ignoreCase = true) &&
+            error.safeMessage().contains("rejected", ignoreCase = true)
+
     private companion object {
         const val DATABASE_NAME = "gpos-cache.db"
         const val DASHBOARD_CACHE_KEY = "dashboard_v1"
@@ -370,6 +439,7 @@ class GposRuntimeViewModel(
         const val HORIZON_CACHE_KEY = "latest_horizon"
         const val HORIZON_CONTRACT = "AUTH-1/get_latest_horizon/plain_text"
         const val HORIZON_FRESHNESS_MS = 24L * 60L * 60L * 1000L
+        val AUTH_FAILURE_CODES = setOf("AEGIS_AUTH_REQUIRED", "AEGIS_AUTH_FAILED")
     }
 }
 
