@@ -68,7 +68,7 @@ jobs:
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: gpos-android-0.1-debug
+          name: gpos-android-0.2-debug
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/apk/debug/signing-fingerprint.txt
@@ -78,7 +78,7 @@ jobs:
       - name: Upload Android instrumentation APK
         uses: actions/upload-artifact@v4
         with:
-          name: gpos-android-0.1-androidTest
+          name: gpos-android-0.2-androidTest
           path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
