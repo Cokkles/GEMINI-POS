@@ -59,9 +59,11 @@ jobs:
         run: |
           {
             echo "package=com.cokkles.gpos"
-            keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk \
-              | sed -n '/SHA1:/p;/SHA256:/p'
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
+              | sed -n '/Signer #1 certificate SHA-1 digest:/p;/Signer #1 certificate SHA-256 digest:/p'
           } | tee android/app/build/outputs/apk/debug/signing-fingerprint.txt
+          grep -q 'SHA-1 digest:' android/app/build/outputs/apk/debug/signing-fingerprint.txt
+          grep -q 'SHA-256 digest:' android/app/build/outputs/apk/debug/signing-fingerprint.txt
 
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
