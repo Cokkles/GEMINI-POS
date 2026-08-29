@@ -29,6 +29,10 @@ sealed interface AuthState {
         val user: AuthenticatedUser,
         val expiresAtEpochMs: Long?,
     ) : AuthState
+    data class OfflineRestored(
+        val expiresAtEpochMs: Long?,
+        val reason: String,
+    ) : AuthState
     data class Error(val message: String) : AuthState
 }
 
