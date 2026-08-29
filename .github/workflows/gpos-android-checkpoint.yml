@@ -46,13 +46,21 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Validate and assemble debug APK
-        run: gradle -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Validate and assemble checkpoint APKs
+        run: gradle -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
           name: gpos-android-a0-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Android instrumentation APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpos-android-a0-androidTest
+          path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
