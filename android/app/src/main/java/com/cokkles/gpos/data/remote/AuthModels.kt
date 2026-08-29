@@ -45,6 +45,13 @@ data class BriefingRuntimeState(
     val error: String? = null,
 )
 
+data class DashboardRuntimeState(
+    val snapshot: DashboardSnapshot,
+    val source: RuntimeDataSource,
+    val fetchedAtEpochMs: Long,
+    val error: String? = null,
+)
+
 data class BackendRuntimeState(
     val checking: Boolean = false,
     val reachable: Boolean = false,
@@ -57,4 +64,5 @@ data class RuntimeUiState(
     val backend: BackendRuntimeState = BackendRuntimeState(),
     val auth: AuthState = AuthState.Restoring,
     val briefing: BriefingRuntimeState? = null,
+    val dashboard: DashboardRuntimeState? = null,
 )
