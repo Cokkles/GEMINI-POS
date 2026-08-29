@@ -10,6 +10,8 @@ import com.cokkles.gpos.data.remote.AegisBackendClient
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.remote.BackendRuntimeState
 import com.cokkles.gpos.data.remote.BriefingRuntimeState
+import com.cokkles.gpos.data.remote.DashboardPayloadMapper
+import com.cokkles.gpos.data.remote.DashboardRuntimeState
 import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
@@ -43,6 +45,7 @@ class GposRuntimeViewModel(
 
     fun refreshBackendAndRestoreSession() {
         viewModelScope.launch {
+            loadCachedDashboard()
             loadCachedBriefing()
             _uiState.update {
                 it.copy(
@@ -111,8 +114,7 @@ class GposRuntimeViewModel(
                             ),
                         )
                     }
-                    refreshProtectedReads()
-                    refreshLatestHorizon()
+                    refreshCanonicalReads()
                 }
                 .onFailure { error ->
                     credentialStore.clear()
@@ -130,13 +132,22 @@ class GposRuntimeViewModel(
             val credential = credentialStore.read()
             credential?.idToken?.let { backend.logout(it) }
             credentialStore.clear()
+            cacheDao.clear()
             _uiState.update {
                 it.copy(
                     auth = AuthState.SignedOut,
                     backend = it.backend.copy(lastProtectedRead = null),
+                    briefing = null,
+                    dashboard = null,
                 )
             }
         }
+    }
+
+    fun refreshCanonicalReads() {
+        refreshProtectedReads()
+        refreshDashboard()
+        refreshLatestHorizon()
     }
 
     fun refreshProtectedReads() {
@@ -149,16 +160,57 @@ class GposRuntimeViewModel(
 
             runCatching {
                 val health = backend.readHealth(credential.idToken)
-                val dashboard = backend.readDashboard(credential.idToken)
+                val capabilities = backend.readCapabilities(credential.idToken)
                 val healthStatus = health.optString("status", "success")
-                val dashboardStatus = dashboard.optString("status", "success")
-                "Health: $healthStatus • Dashboard: $dashboardStatus"
+                val capabilityStatus = capabilities.optString("status", "success")
+                "Health: $healthStatus • Capabilities: $capabilityStatus"
             }.onSuccess { summary ->
                 _uiState.update {
                     it.copy(backend = it.backend.copy(lastProtectedRead = summary, error = null))
                 }
             }.onFailure { error ->
                 handleProtectedFailure(error)
+            }
+        }
+    }
+
+    fun refreshDashboard() {
+        viewModelScope.launch {
+            val credential = credentialStore.read()
+            if (credential == null) {
+                loadCachedDashboard()
+                return@launch
+            }
+
+            runCatching {
+                val json = backend.readDashboard(credential.idToken)
+                val snapshot = DashboardPayloadMapper.map(json)
+                val fetchedAt = System.currentTimeMillis()
+                cacheDao.replace(
+                    CanonicalSnapshotEntity(
+                        cacheKey = DASHBOARD_CACHE_KEY,
+                        contractVersion = DASHBOARD_CONTRACT,
+                        fetchedAtEpochMs = fetchedAt,
+                        staleAfterEpochMs = fetchedAt + DASHBOARD_FRESHNESS_MS,
+                        payloadVersion = json.optString("version").takeIf { it.isNotBlank() },
+                        payloadJson = json.toString(),
+                    ),
+                )
+                DashboardRuntimeState(
+                    snapshot = snapshot,
+                    source = RuntimeDataSource.LIVE,
+                    fetchedAtEpochMs = fetchedAt,
+                )
+            }.onSuccess { dashboard ->
+                _uiState.update {
+                    it.copy(
+                        dashboard = dashboard,
+                        backend = it.backend.copy(error = null),
+                    )
+                }
+            }.onFailure { error ->
+                val cached = loadCachedDashboard(error.safeMessage())
+                if (!cached) handleProtectedFailure(error)
             }
         }
     }
@@ -232,13 +284,34 @@ class GposRuntimeViewModel(
                         ),
                     )
                 }
-                refreshProtectedReads()
-                refreshLatestHorizon()
+                refreshCanonicalReads()
             }
             .onFailure {
                 credentialStore.clear()
                 _uiState.update { state -> state.copy(auth = AuthState.SignedOut) }
             }
+    }
+
+    private suspend fun loadCachedDashboard(error: String? = null): Boolean {
+        val cached = cacheDao.read(DASHBOARD_CACHE_KEY) ?: return false
+        val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
+        val snapshot = runCatching { DashboardPayloadMapper.map(json) }.getOrNull() ?: return false
+        val source = if (cached.staleAfterEpochMs < System.currentTimeMillis()) {
+            RuntimeDataSource.STALE
+        } else {
+            RuntimeDataSource.CACHED
+        }
+        _uiState.update {
+            it.copy(
+                dashboard = DashboardRuntimeState(
+                    snapshot = snapshot,
+                    source = source,
+                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
+                    error = error,
+                ),
+            )
+        }
+        return true
     }
 
     private suspend fun loadCachedBriefing(error: String? = null): Boolean {
@@ -291,6 +364,9 @@ class GposRuntimeViewModel(
 
     private companion object {
         const val DATABASE_NAME = "gpos-cache.db"
+        const val DASHBOARD_CACHE_KEY = "dashboard_v1"
+        const val DASHBOARD_CONTRACT = "AUTH-1/get_dashboard/pwa-bounded-v1"
+        const val DASHBOARD_FRESHNESS_MS = 30L * 60L * 1000L
         const val HORIZON_CACHE_KEY = "latest_horizon"
         const val HORIZON_CONTRACT = "AUTH-1/get_latest_horizon/plain_text"
         const val HORIZON_FRESHNESS_MS = 24L * 60L * 60L * 1000L
