@@ -12,8 +12,8 @@ android {
         applicationId = "com.cokkles.gpos"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.0-dev"
+        versionCode = 4
+        versionName = "0.2.5-dev"
 
         buildConfigField(
             "String",
@@ -24,6 +24,16 @@ android {
             "String",
             "GPOS_GOOGLE_SERVER_CLIENT_ID",
             "\"441009275873-qnf9c9n1o3l9tl9c76t2821hm8tectfl.apps.googleusercontent.com\"",
+        )
+        buildConfigField(
+            "String",
+            "GPOS_CHECKPOINT_CERT_SHA1",
+            "\"D2:A0:80:66:49:D0:00:B1:B8:4F:FF:45:A9:C6:DF:76:8D:FC:31:EA\"",
+        )
+        buildConfigField(
+            "String",
+            "GPOS_ANDROID_PACKAGE",
+            "\"com.cokkles.gpos\"",
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
