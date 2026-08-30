@@ -135,6 +135,18 @@ internal object AegisCommandPayloads {
             .put("action", ACK_NOTIFICATION)
             .put("notificationId", id)
     }
+
+    fun parseNotificationAcknowledgement(
+        json: JSONObject,
+        requestedNotificationId: String,
+    ): NotificationAcknowledgementResult {
+        val returnedId = json.optString("notificationId").trim()
+        val idMatches = returnedId.isNotBlank() && returnedId == requestedNotificationId
+        return NotificationAcknowledgementResult(
+            notificationId = requestedNotificationId,
+            acknowledged = json.optString("status").equals("success", ignoreCase = true) && idMatches,
+        )
+    }
 }
 
 internal fun JSONObject.requiredString(key: String): String =
