@@ -73,4 +73,6 @@ data class RuntimeUiState(
     val auth: AuthState = AuthState.Restoring,
     val briefing: BriefingRuntimeState? = null,
     val dashboard: DashboardRuntimeState? = null,
+    val finance: FinanceRuntimeState? = null,
+    val notifications: NotificationsRuntimeState? = null,
 )
