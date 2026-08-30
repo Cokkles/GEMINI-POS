@@ -49,7 +49,9 @@ class DashboardPayloadMapperTest {
         assertEquals("cal-2", mapped.tomorrowEvents.single().id)
         assertEquals(2, mapped.tasks.size)
         assertEquals("task-1", mapped.tasks.first().id)
+        assertEquals("task-1", mapped.tasks.first().canonicalId)
         assertNotEquals("", mapped.tasks.last().id)
+        assertNull(mapped.tasks.last().canonicalId)
 
         assertEquals("# HORIZON\nCurrent briefing body", mapped.briefingPlainText)
         assertEquals("scheduled", mapped.horizonMode)
