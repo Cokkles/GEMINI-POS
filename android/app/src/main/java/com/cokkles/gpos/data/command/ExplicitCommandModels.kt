@@ -75,6 +75,30 @@ data class TaskCommandRuntimeState(
         get() = stagedCanonicalIds.isNotEmpty() && progress == CommandProgress.IDLE
 }
 
+enum class CalendarCommandProgress {
+    IDLE,
+    RESOLVING,
+    READY_TO_CONFIRM,
+    CREATING,
+}
+
+data class CalendarCommandRuntimeState(
+    val sourceText: String? = null,
+    val proposal: ResolvedCalendarEvent? = null,
+    val progress: CalendarCommandProgress = CalendarCommandProgress.IDLE,
+    val lastMessage: String? = null,
+    val error: String? = null,
+) {
+    val canCreate: Boolean
+        get() = proposal != null && progress == CalendarCommandProgress.READY_TO_CONFIRM
+}
+
+data class NotificationCommandRuntimeState(
+    val submittingIds: Set<String> = emptySet(),
+    val lastAcknowledgedId: String? = null,
+    val error: String? = null,
+)
+
 internal object AegisCommandPayloads {
     const val COMPLETE_TASKS = "mark_done"
     const val RESOLVE_CALENDAR = "resolve_calendar_event"
