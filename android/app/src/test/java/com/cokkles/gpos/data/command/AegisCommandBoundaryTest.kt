@@ -1,6 +1,7 @@
 package com.cokkles.gpos.data.command
 
 import java.lang.reflect.Modifier
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -54,6 +55,26 @@ class AegisCommandBoundaryTest {
         assertThrows(IllegalArgumentException::class.java) {
             AegisCommandPayloads.acknowledgeNotification(" ")
         }
+    }
+
+    @Test
+    fun `notification acknowledgement requires success status and matching id`() {
+        val success = AegisCommandPayloads.parseNotificationAcknowledgement(
+            JSONObject("{\"status\":\"success\",\"notificationId\":\"n-1\"}"),
+            "n-1",
+        )
+        val notFound = AegisCommandPayloads.parseNotificationAcknowledgement(
+            JSONObject("{\"status\":\"not_found\",\"notificationId\":\"n-1\"}"),
+            "n-1",
+        )
+        val mismatched = AegisCommandPayloads.parseNotificationAcknowledgement(
+            JSONObject("{\"status\":\"success\",\"notificationId\":\"n-2\"}"),
+            "n-1",
+        )
+
+        assertTrue(success.acknowledged)
+        assertFalse(notFound.acknowledged)
+        assertFalse(mismatched.acknowledged)
     }
 
     @Test
