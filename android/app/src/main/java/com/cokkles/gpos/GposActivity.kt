@@ -1,8 +1,13 @@
 package com.cokkles.gpos
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -20,6 +26,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
@@ -39,6 +46,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -58,16 +67,26 @@ import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.remote.DashboardEvent
 import com.cokkles.gpos.data.remote.DashboardRuntimeState
 import com.cokkles.gpos.data.remote.DashboardTask
+import com.cokkles.gpos.data.remote.FinanceRuntimeState
+import com.cokkles.gpos.data.remote.FinanceTransaction
+import com.cokkles.gpos.data.remote.NotificationSeverity
+import com.cokkles.gpos.data.remote.NotificationsRuntimeState
 import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.RuntimeUiState
+import com.cokkles.gpos.data.remote.ServerNotification
 import com.cokkles.gpos.platform.connectivity.AndroidConnectivityObserver
 import com.cokkles.gpos.platform.connectivity.ConnectivityState
+import com.cokkles.gpos.platform.notifications.DeepLinkRouter
+import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
+import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 import com.cokkles.gpos.platform.security.GoogleSignInCoordinator
+import com.cokkles.gpos.platform.sync.CanonicalSyncScheduler
 import com.cokkles.gpos.ui.briefing.HorizonDocumentParser
 import com.cokkles.gpos.ui.home.quoteFor
 import com.cokkles.gpos.ui.theme.GposTheme
 import com.cokkles.gpos.ui.theme.GposThemeOption
 import com.cokkles.gpos.ui.theme.ThemePreferences
+import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -76,9 +95,21 @@ import kotlinx.coroutines.launch
 
 class GposActivity : ComponentActivity() {
     private val runtimeViewModel: GposRuntimeViewModel by viewModels()
+    private val pendingDeepLink = mutableStateOf<GposDeepLinkTarget?>(null)
+    private val notificationPermissionGranted = mutableStateOf(false)
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        notificationPermissionGranted.value = granted
+        if (granted) GposNotificationPublisher(this).ensureChannels()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDeepLink.value = DeepLinkRouter.resolve(intent?.data)
+        notificationPermissionGranted.value = hasNotificationPermission()
+        GposNotificationPublisher(this).ensureChannels()
         val googleSignInCoordinator = GoogleSignInCoordinator(this)
 
         setContent {
@@ -87,13 +118,17 @@ class GposActivity : ComponentActivity() {
             val runtimeState by runtimeViewModel.uiState.collectAsStateWithLifecycle()
 
             GposTheme(selectedTheme) {
-                GposApp02(
+                GposApp025(
                     selectedTheme = selectedTheme,
                     onThemeSelected = { theme ->
                         selectedTheme = theme
                         themePreferences.save(theme)
                     },
                     runtimeState = runtimeState,
+                    deepLinkTarget = pendingDeepLink.value,
+                    onDeepLinkConsumed = { pendingDeepLink.value = null },
+                    notificationPermissionGranted = notificationPermissionGranted.value,
+                    onNotificationPermissionRequested = ::requestNotificationPermission,
                     onSignInRequested = {
                         lifecycleScope.launch {
                             runCatching {
@@ -120,6 +155,27 @@ class GposActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDeepLink.value = DeepLinkRouter.resolve(intent.data)
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionGranted.value = true
+            return
+        }
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun hasNotificationPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
 }
 
 private data class Destination(
@@ -129,29 +185,36 @@ private data class Destination(
     val icon: ImageVector,
 )
 
-private val home02 = Destination("home", "Home", "Canonical mobile overview", Icons.Outlined.Home)
-private val briefing02 = Destination("briefing", "Briefing", "Latest canonical HORIZON", Icons.Outlined.Description)
-private val calendar02 = Destination("calendar", "Calendar", "Read-only canonical schedule", Icons.Outlined.Event)
-private val tasks02 = Destination("tasks", "Tasks", "Read-only canonical tasks", Icons.Outlined.CheckCircle)
-private val more02 = Destination("more", "More", "Additional GPOS areas", Icons.Outlined.MoreHoriz)
-private val followups02 = Destination("followups", "Follow-ups", "Contract integration pending", Icons.Outlined.Notifications)
-private val finances02 = Destination("finances", "Finances", "SENTINEL-FIN integration pending", Icons.Outlined.AccountBalanceWallet)
-private val aegis02 = Destination("aegis", "Ask AEGIS", "Conversation surface", Icons.Outlined.Forum)
-private val system02 = Destination("system", "System", "Status, authentication and appearance", Icons.Outlined.Settings)
+private val home = Destination("home", "Home", "Canonical mobile overview", Icons.Outlined.Home)
+private val briefing = Destination("briefing", "Briefing", "Latest canonical HORIZON", Icons.Outlined.Description)
+private val calendar = Destination("calendar", "Calendar", "Read-only canonical schedule", Icons.Outlined.Event)
+private val tasks = Destination("tasks", "Tasks", "Read-only canonical tasks", Icons.Outlined.CheckCircle)
+private val more = Destination("more", "More", "Additional GPOS areas", Icons.Outlined.MoreHoriz)
+private val notifications = Destination("notifications", "Notifications", "Read-only server alerts", Icons.Outlined.Notifications)
+private val finances = Destination("finances", "Finances", "Recent SENTINEL-FIN activity", Icons.Outlined.AccountBalanceWallet)
+private val insights = Destination("insights", "Insights", "HORIZON-derived insight sections", Icons.Outlined.Lightbulb)
+private val followups = Destination("followups", "Follow-ups", "Dedicated contract pending", Icons.Outlined.Notifications)
+private val aegis = Destination("aegis", "Ask AEGIS", "Conversation contract pending", Icons.Outlined.Forum)
+private val system = Destination("system", "System", "Status, authentication and appearance", Icons.Outlined.Settings)
 
-private val primary02 = listOf(home02, briefing02, calendar02, tasks02, more02)
-private val secondary02 = listOf(followups02, finances02, aegis02, system02)
-private val all02 = primary02 + secondary02
+private val primaryDestinations = listOf(home, briefing, calendar, tasks, more)
+private val secondaryDestinations = listOf(notifications, finances, insights, followups, aegis, system)
+private val allDestinations = primaryDestinations + secondaryDestinations
 
-private val dateTimeFormatter02 = DateTimeFormatter.ofPattern("MMM d • h:mm a")
+private val dateTimeFormatter = DateTimeFormatter.ofPattern("MMM d • h:mm a")
     .withZone(ZoneId.systemDefault())
+private val currencyFormatter: NumberFormat = NumberFormat.getCurrencyInstance()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GposApp02(
+private fun GposApp025(
     selectedTheme: GposThemeOption,
     onThemeSelected: (GposThemeOption) -> Unit,
     runtimeState: RuntimeUiState,
+    deepLinkTarget: GposDeepLinkTarget?,
+    onDeepLinkConsumed: () -> Unit,
+    notificationPermissionGranted: Boolean,
+    onNotificationPermissionRequested: () -> Unit,
     onSignInRequested: () -> Unit,
     onSignOutRequested: () -> Unit,
     onRefreshBackend: () -> Unit,
@@ -159,9 +222,16 @@ private fun GposApp02(
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route ?: home02.route
-    val currentDestination = all02.firstOrNull { it.route == currentRoute } ?: home02
-    val selectedPrimaryRoute = if (secondary02.any { it.route == currentRoute }) more02.route else currentRoute
+    val currentRoute = backStackEntry?.destination?.route ?: home.route
+    val currentDestination = allDestinations.firstOrNull { it.route == currentRoute } ?: home
+    val selectedPrimaryRoute = if (secondaryDestinations.any { it.route == currentRoute }) more.route else currentRoute
+
+    LaunchedEffect(deepLinkTarget) {
+        deepLinkTarget?.let { target ->
+            navController.navigate(target.route) { launchSingleTop = true }
+            onDeepLinkConsumed()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -181,14 +251,12 @@ private fun GposApp02(
         },
         bottomBar = {
             NavigationBar {
-                primary02.forEach { destination ->
+                primaryDestinations.forEach { destination ->
                     NavigationBarItem(
                         selected = selectedPrimaryRoute == destination.route,
                         onClick = {
                             navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
@@ -202,42 +270,42 @@ private fun GposApp02(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = home02.route,
+            startDestination = home.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(home02.route) {
-                HomeScreen02(runtimeState, onRefreshCanonical)
+            composable(home.route) { HomeScreen(runtimeState, onRefreshCanonical) }
+            composable(briefing.route) { BriefingScreen(runtimeState, onRefreshCanonical) }
+            composable(calendar.route) { CalendarScreen(runtimeState.dashboard, onRefreshCanonical) }
+            composable(tasks.route) { TasksScreen(runtimeState.dashboard, onRefreshCanonical) }
+            composable(more.route) {
+                MoreScreen(onNavigate = { route -> navController.navigate(route) })
             }
-            composable(briefing02.route) {
-                BriefingScreen02(runtimeState, onRefreshCanonical)
+            composable(notifications.route) {
+                NotificationsScreen(runtimeState.notifications, onRefreshCanonical)
             }
-            composable(calendar02.route) {
-                CalendarScreen02(runtimeState.dashboard, onRefreshCanonical)
+            composable(finances.route) {
+                FinanceScreen(runtimeState.finance, onRefreshCanonical)
             }
-            composable(tasks02.route) {
-                TasksScreen02(runtimeState.dashboard, onRefreshCanonical)
-            }
-            composable(more02.route) {
-                MoreScreen02(onNavigate = navController::navigate)
-            }
-            composable(followups02.route) {
-                PendingContractScreen02(
+            composable(insights.route) { InsightsScreen(runtimeState) }
+            composable(followups.route) {
+                PendingContractScreen(
                     title = "Follow-ups",
-                    detail = "0.2 does not invent a follow-up feed from HORIZON prose. This surface will switch to canonical data when a bounded backend contract is proven.",
+                    detail = "No dedicated bounded Follow-ups contract has been proven yet. Android will not manufacture follow-ups from HORIZON prose or Gmail heuristics.",
                 )
             }
-            composable(finances02.route) {
-                PendingContractScreen02(
-                    title = "Finances",
-                    detail = "SENTINEL-FIN remains canonical authority. Android will not infer financial state from briefing text; the dedicated finance read contract is the next integration gate.",
+            composable(aegis.route) {
+                PendingContractScreen(
+                    title = "Ask AEGIS",
+                    detail = "The conversation/query transport remains gated until its mobile authentication, cost, and mutation semantics are explicitly reviewed.",
                 )
             }
-            composable(aegis02.route) { AegisScreen02() }
-            composable(system02.route) {
-                SystemScreen02(
+            composable(system.route) {
+                SystemScreen(
                     runtimeState = runtimeState,
                     selectedTheme = selectedTheme,
                     onThemeSelected = onThemeSelected,
+                    notificationPermissionGranted = notificationPermissionGranted,
+                    onNotificationPermissionRequested = onNotificationPermissionRequested,
                     onSignInRequested = onSignInRequested,
                     onSignOutRequested = onSignOutRequested,
                     onRefreshBackend = onRefreshBackend,
@@ -249,32 +317,28 @@ private fun GposApp02(
 }
 
 @Composable
-private fun HomeScreen02(
-    runtimeState: RuntimeUiState,
-    onRefreshCanonical: () -> Unit,
-) {
+private fun HomeScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () -> Unit) {
     val quote = remember { quoteFor(LocalDate.now()) }
     val dashboard = runtimeState.dashboard
     val nextEvent = dashboard?.snapshot?.todayEvents?.firstOrNull()
         ?: dashboard?.snapshot?.tomorrowEvents?.firstOrNull()
-    val briefingText = runtimeState.briefing?.plainText
-        ?: dashboard?.snapshot?.briefingPlainText
+    val taskCount = dashboard?.snapshot?.tasks?.size
+    val finance = runtimeState.finance?.snapshot
+    val activeAlerts = runtimeState.notifications?.snapshot?.active.orEmpty()
+    val briefingText = runtimeState.briefing?.plainText ?: dashboard?.snapshot?.briefingPlainText
 
-    ScreenList02 {
-        item { DailyInspirationCard02(quote.text, quote.attribution) }
+    ScreenList {
+        item { DailyInspirationCard(quote.text, quote.attribution) }
         item {
             Text(
                 LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")),
                 style = MaterialTheme.typography.headlineSmall,
             )
-            Text(
-                "GPOS Android ${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Text("GPOS Android ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
         }
         item {
-            DataSourceCard02(
-                label = "Dashboard",
+            DataSourceCard(
+                label = "Canonical dashboard",
                 source = dashboard?.source,
                 fetchedAtEpochMs = dashboard?.fetchedAtEpochMs,
                 error = dashboard?.error,
@@ -282,240 +346,249 @@ private fun HomeScreen02(
         }
 
         if (dashboard == null) {
-            item {
-                CanonicalEmptyCard02(
-                    title = "Canonical dashboard not loaded",
-                    detail = authHint02(runtimeState.auth),
-                )
-            }
+            item { SummaryCard("Canonical data not loaded", authHint(runtimeState.auth)) }
         } else {
             item {
-                SummaryCard02(
-                    title = nextEvent?.let { "Next: ${it.title}" } ?: "No scheduled events returned",
-                    detail = nextEvent?.let { event ->
+                SummaryCard(
+                    nextEvent?.let { "Next: ${it.title}" } ?: "Calendar clear",
+                    nextEvent?.let { event ->
                         "${if (event.day.name == "TODAY") "Today" else "Tomorrow"} • ${event.timeLabel}${event.note?.let { " • $it" }.orEmpty()}"
-                    } ?: "The bounded calendar feed currently contains no today/tomorrow events.",
+                    } ?: "No today/tomorrow events were returned.",
                 )
             }
             item {
-                val tasks = dashboard.snapshot.tasks
-                SummaryCard02(
-                    title = "${tasks.size} active task${if (tasks.size == 1) "" else "s"}",
-                    detail = tasks.take(3).joinToString(" • ") { it.title }
+                SummaryCard(
+                    "${taskCount ?: 0} active task${if (taskCount == 1) "" else "s"}",
+                    dashboard.snapshot.tasks.take(3).joinToString(" • ") { it.title }
                         .ifBlank { "No active Google Tasks returned." },
-                )
-            }
-            item {
-                val status = dashboard.snapshot.horizonLastSuccessAtEpochMs
-                    ?.let { "Last successful HORIZON ${formatTime02(it)}" }
-                    ?: "No HORIZON generation timestamp returned"
-                SummaryCard02(
-                    title = "HORIZON ${dashboard.snapshot.horizonMode ?: "status"}",
-                    detail = status,
                 )
             }
         }
 
         item {
-            SummaryCard02(
-                title = if (briefingText.isNullOrBlank()) "Briefing unavailable" else "Briefing available",
+            val purchase = finance?.summary?.purchaseTotal
+            val credits = finance?.summary?.creditTotal
+            SummaryCard(
+                title = if (purchase == null) "Finance not loaded" else "72h purchases ${currencyFormatter.format(purchase)}",
+                detail = when {
+                    finance == null -> "SENTINEL-FIN recent activity will appear after authenticated canonical refresh."
+                    else -> "${finance.transactions.size} transaction${if (finance.transactions.size == 1) "" else "s"} • credits ${credits?.let(currencyFormatter::format) ?: "—"}"
+                },
+            )
+        }
+        item {
+            SummaryCard(
+                title = when {
+                    activeAlerts.isEmpty() -> "No active server alerts"
+                    else -> "${activeAlerts.size} active server alert${if (activeAlerts.size == 1) "" else "s"}"
+                },
+                detail = if (activeAlerts.any { it.severity == NotificationSeverity.CRITICAL }) {
+                    "Critical attention is present. Open More → Notifications."
+                } else {
+                    "Read-only notification state from AEGIS."
+                },
+            )
+        }
+        item {
+            SummaryCard(
+                title = if (briefingText.isNullOrBlank()) "Briefing unavailable" else "HORIZON briefing available",
                 detail = briefingText
                     ?.lineSequence()
                     ?.map(String::trim)
                     ?.firstOrNull { it.isNotBlank() && !it.startsWith("#") }
-                    ?: "Sign in and refresh to retrieve the canonical HORIZON briefing.",
+                    ?: "Sign in and refresh to retrieve the canonical briefing.",
             )
         }
         item {
             Button(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) {
-                Text("Refresh canonical data")
+                Text("Refresh all canonical reads")
             }
         }
     }
 }
 
 @Composable
-private fun BriefingScreen02(
-    runtimeState: RuntimeUiState,
-    onRefreshCanonical: () -> Unit,
-) {
-    val briefing = runtimeState.briefing
+private fun BriefingScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () -> Unit) {
+    val briefingState = runtimeState.briefing
     val fallbackText = runtimeState.dashboard?.snapshot?.briefingPlainText
-    val raw = briefing?.plainText ?: fallbackText
+    val raw = briefingState?.plainText ?: fallbackText
     val document = remember(raw) { raw?.let(HorizonDocumentParser::parse) }
 
-    ScreenList02 {
+    ScreenList {
         item {
-            DataSourceCard02(
-                label = "HORIZON",
-                source = briefing?.source ?: runtimeState.dashboard?.source,
-                fetchedAtEpochMs = briefing?.fetchedAtEpochMs ?: runtimeState.dashboard?.fetchedAtEpochMs,
-                error = briefing?.error,
+            DataSourceCard(
+                "HORIZON",
+                briefingState?.source ?: runtimeState.dashboard?.source,
+                briefingState?.fetchedAtEpochMs ?: runtimeState.dashboard?.fetchedAtEpochMs,
+                briefingState?.error,
             )
         }
         if (raw.isNullOrBlank() || document == null) {
-            item {
-                CanonicalEmptyCard02(
-                    title = "No canonical briefing loaded",
-                    detail = authHint02(runtimeState.auth),
-                )
-            }
+            item { SummaryCard("No canonical briefing loaded", authHint(runtimeState.auth)) }
         } else {
-            item {
-                Text(
-                    document.title ?: "Daily Executive Briefing",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-            }
+            item { Text(document.title ?: "Daily Executive Briefing", style = MaterialTheme.typography.headlineSmall) }
             if (document.preamble.isNotEmpty()) {
-                item {
-                    BriefingTextCard02(
-                        title = "Overview",
-                        lines = document.preamble,
-                    )
-                }
+                item { BriefingTextCard("Overview", document.preamble) }
             }
             items(document.sections) { section ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Text(section.title, style = MaterialTheme.typography.titleMedium)
-                        section.lines
-                            .map(HorizonDocumentParser::displayLine)
+                        section.lines.map(HorizonDocumentParser::displayLine)
                             .filter(String::isNotBlank)
-                            .forEach { line ->
-                                Text(
-                                    "• $line",
-                                    modifier = Modifier.padding(top = 8.dp),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
+                            .forEach { Text("• $it", modifier = Modifier.padding(top = 8.dp)) }
                         section.subsections.forEach { subsection ->
-                            Text(
-                                subsection.title,
-                                modifier = Modifier.padding(top = 14.dp),
-                                style = MaterialTheme.typography.titleSmall,
-                            )
-                            subsection.lines
-                                .map(HorizonDocumentParser::displayLine)
+                            Text(subsection.title, modifier = Modifier.padding(top = 14.dp), style = MaterialTheme.typography.titleSmall)
+                            subsection.lines.map(HorizonDocumentParser::displayLine)
                                 .filter(String::isNotBlank)
-                                .forEach { line ->
-                                    Text(
-                                        "• $line",
-                                        modifier = Modifier.padding(top = 6.dp),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
+                                .forEach { Text("• $it", modifier = Modifier.padding(top = 6.dp)) }
                         }
                     }
                 }
             }
         }
         item {
-            OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) {
-                Text("Refresh briefing")
-            }
+            OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh briefing") }
         }
     }
 }
 
 @Composable
-private fun CalendarScreen02(
-    dashboard: DashboardRuntimeState?,
-    onRefreshCanonical: () -> Unit,
-) {
-    ScreenList02 {
-        item {
-            DataSourceCard02(
-                label = "Calendar",
-                source = dashboard?.source,
-                fetchedAtEpochMs = dashboard?.fetchedAtEpochMs,
-                error = dashboard?.error,
-            )
-        }
+private fun CalendarScreen(dashboard: DashboardRuntimeState?, onRefreshCanonical: () -> Unit) {
+    ScreenList {
+        item { DataSourceCard("Calendar", dashboard?.source, dashboard?.fetchedAtEpochMs, dashboard?.error) }
         if (dashboard == null) {
-            item {
-                CanonicalEmptyCard02(
-                    title = "Calendar not loaded",
-                    detail = "Authenticate in System, then refresh canonical data.",
-                )
-            }
+            item { SummaryCard("Calendar not loaded", "Authenticate in System, then refresh canonical data.") }
         } else {
             item { Text("Today", style = MaterialTheme.typography.headlineSmall) }
             if (dashboard.snapshot.todayEvents.isEmpty()) {
-                item { SummaryCard02("No events today", "No today events were returned by the canonical dashboard feed.") }
+                item { SummaryCard("No events today", "No today events were returned by the canonical dashboard feed.") }
             } else {
-                items(dashboard.snapshot.todayEvents) { EventCard02(it) }
+                items(dashboard.snapshot.todayEvents) { EventCard(it) }
             }
             item { Text("Tomorrow", style = MaterialTheme.typography.headlineSmall) }
             if (dashboard.snapshot.tomorrowEvents.isEmpty()) {
-                item { SummaryCard02("No events tomorrow", "No tomorrow events were returned by the canonical dashboard feed.") }
+                item { SummaryCard("No events tomorrow", "No tomorrow events were returned by the canonical dashboard feed.") }
             } else {
-                items(dashboard.snapshot.tomorrowEvents) { EventCard02(it) }
+                items(dashboard.snapshot.tomorrowEvents) { EventCard(it) }
             }
         }
-        item {
-            OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) {
-                Text("Refresh calendar")
-            }
-        }
+        item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh calendar") } }
     }
 }
 
 @Composable
-private fun TasksScreen02(
-    dashboard: DashboardRuntimeState?,
-    onRefreshCanonical: () -> Unit,
-) {
-    ScreenList02 {
+private fun TasksScreen(dashboard: DashboardRuntimeState?, onRefreshCanonical: () -> Unit) {
+    ScreenList {
+        item { DataSourceCard("Tasks", dashboard?.source, dashboard?.fetchedAtEpochMs, dashboard?.error) }
         item {
-            DataSourceCard02(
-                label = "Tasks",
-                source = dashboard?.source,
-                fetchedAtEpochMs = dashboard?.fetchedAtEpochMs,
-                error = dashboard?.error,
-            )
-        }
-        item {
-            SummaryCard02(
-                title = "Read-only in 0.2",
-                detail = "Task completion and edits remain disabled until mutation authorization, confirmation and retry semantics are validated.",
-            )
+            Text("Active Google Tasks", style = MaterialTheme.typography.headlineSmall)
+            Text("Read-only in 0.2.5. Completion/editing remains disabled.", modifier = Modifier.padding(top = 4.dp))
         }
         if (dashboard == null) {
+            item { SummaryCard("Tasks not loaded", "Authenticate in System, then refresh canonical data.") }
+        } else if (dashboard.snapshot.tasks.isEmpty()) {
+            item { SummaryCard("No active tasks", "The canonical dashboard returned no active Google Tasks.") }
+        } else {
+            items(dashboard.snapshot.tasks) { TaskCard(it) }
+        }
+        item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh tasks") } }
+    }
+}
+
+@Composable
+private fun FinanceScreen(finance: FinanceRuntimeState?, onRefreshCanonical: () -> Unit) {
+    ScreenList {
+        item { DataSourceCard("SENTINEL-FIN", finance?.source, finance?.fetchedAtEpochMs, finance?.error) }
+        item { Text("Recent activity", style = MaterialTheme.typography.headlineSmall) }
+        if (finance == null) {
+            item { SummaryCard("Finance not loaded", "Authenticate and refresh to read the bounded recent-finance contract.") }
+        } else {
             item {
-                CanonicalEmptyCard02(
-                    title = "Tasks not loaded",
-                    detail = "Authenticate in System, then refresh canonical data.",
+                val summary = finance.snapshot.summary
+                SummaryCard(
+                    "${finance.snapshot.hours}h purchases ${summary.purchaseTotal?.let(currencyFormatter::format) ?: "—"}",
+                    "Credits ${summary.creditTotal?.let(currencyFormatter::format) ?: "—"} • ${finance.snapshot.transactions.size} transaction${if (finance.snapshot.transactions.size == 1) "" else "s"}",
                 )
             }
-        } else if (dashboard.snapshot.tasks.isEmpty()) {
-            item { SummaryCard02("No active tasks", "The canonical dashboard returned no active Google Tasks.") }
+            if (finance.snapshot.transactions.isEmpty()) {
+                item { SummaryCard("No recent activity", "No qualifying finance activity was returned for this window.") }
+            } else {
+                items(finance.snapshot.transactions) { FinanceTransactionCard(it) }
+            }
+        }
+        item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh finance") } }
+    }
+}
+
+@Composable
+private fun NotificationsScreen(state: NotificationsRuntimeState?, onRefreshCanonical: () -> Unit) {
+    ScreenList {
+        item { DataSourceCard("Notifications", state?.source, state?.fetchedAtEpochMs, state?.error) }
+        item {
+            Text("Server notifications", style = MaterialTheme.typography.headlineSmall)
+            Text("Read-only in this checkpoint. Acknowledgement remains a future explicit mutation.", modifier = Modifier.padding(top = 4.dp))
+        }
+        if (state == null) {
+            item { SummaryCard("Notifications not loaded", "Authenticate and refresh to read current server alerts.") }
+        } else if (state.snapshot.active.isEmpty()) {
+            item { SummaryCard("All clear", "No unacknowledged server notifications were returned.") }
         } else {
-            items(dashboard.snapshot.tasks) { TaskCard02(it) }
+            items(state.snapshot.active) { NotificationCard(it) }
+        }
+        item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh notifications") } }
+    }
+}
+
+@Composable
+private fun InsightsScreen(runtimeState: RuntimeUiState) {
+    val raw = runtimeState.briefing?.plainText ?: runtimeState.dashboard?.snapshot?.briefingPlainText
+    val document = remember(raw) { raw?.let(HorizonDocumentParser::parse) }
+    val sections = document?.sections.orEmpty().filter { section ->
+        val title = section.title.lowercase()
+        listOf("news", "newspaper", "insight", "things to consider", "strategic").any(title::contains)
+    }
+
+    ScreenList {
+        item {
+            DataSourceCard(
+                "HORIZON insights",
+                runtimeState.briefing?.source ?: runtimeState.dashboard?.source,
+                runtimeState.briefing?.fetchedAtEpochMs ?: runtimeState.dashboard?.fetchedAtEpochMs,
+                runtimeState.briefing?.error,
+            )
         }
         item {
-            OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) {
-                Text("Refresh tasks")
+            Text("News & insights", style = MaterialTheme.typography.headlineSmall)
+            Text("This view is a mobile projection of matching canonical HORIZON sections; it does not trigger RSS or Gemini refresh.", modifier = Modifier.padding(top = 4.dp))
+        }
+        if (sections.isEmpty()) {
+            item { SummaryCard("No matching HORIZON sections", "The current briefing did not expose a news/insight/strategic section.") }
+        } else {
+            items(sections) { section ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Text(section.title, style = MaterialTheme.typography.titleMedium)
+                        (section.lines + section.subsections.flatMap { it.lines })
+                            .map(HorizonDocumentParser::displayLine)
+                            .filter(String::isNotBlank)
+                            .forEach { Text("• $it", modifier = Modifier.padding(top = 8.dp)) }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MoreScreen02(onNavigate: (String) -> Unit) {
-    ScreenList02 {
+private fun MoreScreen(onNavigate: (String) -> Unit) {
+    ScreenList {
         item {
             Text("More GPOS", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Additional first-class mobile surfaces",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Text("Additional mobile surfaces", modifier = Modifier.padding(top = 4.dp))
         }
-        items(secondary02) { destination ->
-            Card(
-                onClick = { onNavigate(destination.route) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+        items(secondaryDestinations) { destination ->
+            Card(onClick = { onNavigate(destination.route) }, modifier = Modifier.fillMaxWidth()) {
                 ListItem(
                     headlineContent = { Text(destination.title) },
                     supportingContent = { Text(destination.subtitle) },
@@ -527,127 +600,114 @@ private fun MoreScreen02(onNavigate: (String) -> Unit) {
 }
 
 @Composable
-private fun PendingContractScreen02(title: String, detail: String) {
-    ScreenList02 {
+private fun PendingContractScreen(title: String, detail: String) {
+    ScreenList {
         item { Text(title, style = MaterialTheme.typography.headlineSmall) }
-        item { SummaryCard02("Canonical integration pending", detail) }
+        item { SummaryCard("Integration intentionally gated", detail) }
+        item { SummaryCard("Safety boundary", "READ AUTOMATICALLY. MUTATE EXPLICITLY. No production write is exposed from this screen.") }
     }
 }
 
 @Composable
-private fun AegisScreen02() {
-    ScreenList02 {
-        item { Text("Ask AEGIS", style = MaterialTheme.typography.headlineSmall) }
-        item {
-            SummaryCard02(
-                "Conversation surface reserved",
-                "0.2 remains read-oriented. Model invocation and conversational mutation controls stay disabled until the shared request/cost/confirmation contract is reviewed.",
-            )
-        }
-    }
-}
-
-@Composable
-private fun SystemScreen02(
+private fun SystemScreen(
     runtimeState: RuntimeUiState,
     selectedTheme: GposThemeOption,
     onThemeSelected: (GposThemeOption) -> Unit,
+    notificationPermissionGranted: Boolean,
+    onNotificationPermissionRequested: () -> Unit,
     onSignInRequested: () -> Unit,
     onSignOutRequested: () -> Unit,
     onRefreshBackend: () -> Unit,
     onRefreshCanonical: () -> Unit,
 ) {
     val context = LocalContext.current
-    val connectivityObserver = remember(context) { AndroidConnectivityObserver(context) }
-    val connectivity = remember { connectivityObserver.current() }
+    val connectivity = remember(context) { AndroidConnectivityObserver(context).current() }
+    val config = runtimeState.backend.authConfig
 
-    ScreenList02 {
+    ScreenList {
         item { Text("System", style = MaterialTheme.typography.headlineSmall) }
         item {
-            SummaryCard02(
-                title = "GPOS Android ${BuildConfig.VERSION_NAME}",
-                detail = "Native direct client • read automatically • mutate explicitly",
+            SummaryCard(
+                if (runtimeState.backend.reachable) "Backend reachable" else "Backend unavailable",
+                config?.let { "${it.authVersion} • backend ${it.backendVersion} • enforcement ${if (it.enforcementRequired) "ON" else "OFF"}" }
+                    ?: runtimeState.backend.error ?: "AUTH-1 discovery has not completed.",
             )
         }
-        item { Text("Appearance", style = MaterialTheme.typography.titleMedium) }
-        items(GposThemeOption.entries) { option ->
-            Card(
-                onClick = { onThemeSelected(option) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                ListItem(
-                    headlineContent = { Text(option.displayName) },
-                    supportingContent = { Text(option.description) },
-                    leadingContent = {
-                        RadioButton(
-                            selected = option == selectedTheme,
-                            onClick = { onThemeSelected(option) },
-                        )
-                    },
-                )
+        item { AuthenticationCard(runtimeState.auth, onSignInRequested, onSignOutRequested) }
+        item {
+            SummaryCard(
+                "Android OAuth registration",
+                "Package ${BuildConfig.GPOS_ANDROID_PACKAGE} • checkpoint SHA-1 ${BuildConfig.GPOS_CHECKPOINT_CERT_SHA1} • server/web client ${BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID}. If Google fails before AUTH-1, verify an Android OAuth client with this package + SHA-1 in the same Cloud project.",
+            )
+        }
+        item {
+            SummaryCard(
+                "Device connectivity: ${connectivityLabel(connectivity)}",
+                "OS network capability only; backend reachability is tracked separately above.",
+            )
+        }
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text("Background refresh", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Automatically scheduled after a valid session: every ${CanonicalSyncScheduler.REPEAT_MINUTES} minutes when network is connected and battery is not low. Uses read-only dashboard, finance, notifications, and stale HORIZON reads only.",
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
             }
         }
-        item { Text("Backend & authentication", style = MaterialTheme.typography.titleMedium) }
         item {
-            val config = runtimeState.backend.authConfig
-            SummaryCard02(
-                title = when {
-                    runtimeState.backend.checking -> "Backend: checking"
-                    runtimeState.backend.reachable -> "Backend: reachable"
-                    else -> "Backend: unavailable"
-                },
-                detail = config?.let {
-                    "${it.authVersion} • backend ${it.backendVersion} • enforcement ${if (it.enforcementRequired) "ON" else "OFF"}"
-                } ?: runtimeState.backend.error ?: "AUTH-1 discovery has not completed.",
-            )
-        }
-        item { AuthenticationCard02(runtimeState.auth, onSignInRequested, onSignOutRequested) }
-        item {
-            SummaryCard02(
-                title = "Device connectivity: ${connectivityLabel02(connectivity)}",
-                detail = "OS network capability only; this indicator does not itself call GPOS.",
-            )
-        }
-        item {
-            DataSourceCard02(
-                label = "Dashboard cache",
-                source = runtimeState.dashboard?.source,
-                fetchedAtEpochMs = runtimeState.dashboard?.fetchedAtEpochMs,
-                error = runtimeState.dashboard?.error,
-            )
-        }
-        item {
-            DataSourceCard02(
-                label = "HORIZON cache",
-                source = runtimeState.briefing?.source,
-                fetchedAtEpochMs = runtimeState.briefing?.fetchedAtEpochMs,
-                error = runtimeState.briefing?.error,
-            )
-        }
-        item {
-            SummaryCard02(
-                title = runtimeState.backend.lastProtectedRead ?: "Protected reads not checked",
-                detail = runtimeState.backend.error ?: "Health and capability checks are read-only.",
-            )
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedButton(onClick = onRefreshBackend, modifier = Modifier.weight(1f)) {
-                    Text("Backend")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text("Local notifications", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (notificationPermissionGranted) {
+                            "Permission granted. Background critical alerts use privacy-safe generic lock-screen text."
+                        } else {
+                            "Permission not granted. GPOS will not post Android notifications until you enable it."
+                        },
+                        modifier = Modifier.padding(top = 6.dp, bottom = 10.dp),
+                    )
+                    if (!notificationPermissionGranted) {
+                        Button(onClick = onNotificationPermissionRequested) { Text("Enable notifications") }
+                    }
                 }
-                Button(onClick = onRefreshCanonical, modifier = Modifier.weight(1f)) {
-                    Text("Canonical")
-                }
+            }
+        }
+        item { DataSourceCard("Dashboard cache", runtimeState.dashboard?.source, runtimeState.dashboard?.fetchedAtEpochMs, runtimeState.dashboard?.error) }
+        item { DataSourceCard("HORIZON cache", runtimeState.briefing?.source, runtimeState.briefing?.fetchedAtEpochMs, runtimeState.briefing?.error) }
+        item { DataSourceCard("Finance cache", runtimeState.finance?.source, runtimeState.finance?.fetchedAtEpochMs, runtimeState.finance?.error) }
+        item { DataSourceCard("Notifications cache", runtimeState.notifications?.source, runtimeState.notifications?.fetchedAtEpochMs, runtimeState.notifications?.error) }
+        item {
+            SummaryCard(
+                runtimeState.backend.lastProtectedRead ?: "Protected reads not checked",
+                runtimeState.backend.error ?: "Health and capability checks are read-only.",
+            )
+        }
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onRefreshBackend, modifier = Modifier.weight(1f)) { Text("Backend") }
+                Button(onClick = onRefreshCanonical, modifier = Modifier.weight(1f)) { Text("Canonical") }
+            }
+        }
+        item { Text("Appearance", style = MaterialTheme.typography.headlineSmall) }
+        items(GposThemeOption.entries) { option ->
+            Card(onClick = { onThemeSelected(option) }, modifier = Modifier.fillMaxWidth()) {
+                ListItem(
+                    headlineContent = { Text(option.label) },
+                    supportingContent = { Text(option.description) },
+                    leadingContent = {
+                        RadioButton(selected = option == selectedTheme, onClick = { onThemeSelected(option) })
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AuthenticationCard02(
+private fun AuthenticationCard(
     authState: AuthState,
     onSignInRequested: () -> Unit,
     onSignOutRequested: () -> Unit,
@@ -661,28 +721,25 @@ private fun AuthenticationCard02(
                 }
                 AuthState.SignedOut -> {
                     Text("Signed out", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Google AUTH-1 is required for live canonical reads.",
-                        modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
-                    )
+                    Text("Google AUTH-1 is required for live canonical reads.", modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
                     Button(onClick = onSignInRequested) { Text("Sign in with Google") }
                 }
                 AuthState.Authenticating -> {
                     Text("Signing in…", style = MaterialTheme.typography.titleMedium)
-                    Text("Waiting for AUTH-1 validation.", modifier = Modifier.padding(top = 6.dp))
+                    Text("Waiting for Google identity and AUTH-1 validation.", modifier = Modifier.padding(top = 6.dp))
                 }
                 is AuthState.Authenticated -> {
                     Text("Signed in", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        authState.user.name ?: authState.user.email,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
+                    Text(authState.user.name ?: authState.user.email, modifier = Modifier.padding(top = 6.dp))
                     Text(authState.user.email, style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(
-                        onClick = onSignOutRequested,
-                        modifier = Modifier.padding(top = 12.dp),
-                    ) {
-                        Text("Sign out")
+                    OutlinedButton(onClick = onSignOutRequested, modifier = Modifier.padding(top = 12.dp)) { Text("Sign out") }
+                }
+                is AuthState.OfflineRestored -> {
+                    Text("Offline protected session", style = MaterialTheme.typography.titleMedium)
+                    Text(authState.message, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onSignInRequested) { Text("Re-authenticate") }
+                        OutlinedButton(onClick = onSignOutRequested) { Text("Sign out") }
                     }
                 }
                 is AuthState.Error -> {
@@ -696,65 +753,41 @@ private fun AuthenticationCard02(
 }
 
 @Composable
-private fun DataSourceCard02(
-    label: String,
-    source: RuntimeDataSource?,
-    fetchedAtEpochMs: Long?,
-    error: String?,
-) {
+private fun DataSourceCard(label: String, source: RuntimeDataSource?, fetchedAtEpochMs: Long?, error: String?) {
     val sourceLabel = source?.name ?: "NOT LOADED"
     val detail = buildString {
-        if (fetchedAtEpochMs != null) {
-            append("Fetched ${formatTime02(fetchedAtEpochMs)}")
-        } else {
-            append("No last-known-good payload on this device")
-        }
+        append(fetchedAtEpochMs?.let { "Fetched ${formatTime(it)}" } ?: "No last-known-good payload on this device")
         if (!error.isNullOrBlank()) append(" • $error")
     }
-    SummaryCard02("$label • $sourceLabel", detail)
+    SummaryCard("$label • $sourceLabel", detail)
 }
 
 @Composable
-private fun DailyInspirationCard02(text: String, attribution: String?) {
+private fun DailyInspirationCard(text: String, attribution: String?) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text("Quote of the day", style = MaterialTheme.typography.labelLarge)
-            Text(
-                "“$text”",
-                modifier = Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Text("“$text”", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium)
             if (!attribution.isNullOrBlank()) {
-                Text(
-                    "— $attribution",
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Text("— $attribution", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
 }
 
 @Composable
-private fun EventCard02(event: DashboardEvent) {
+private fun EventCard(event: DashboardEvent) {
     Card(modifier = Modifier.fillMaxWidth()) {
         ListItem(
             headlineContent = { Text(event.title) },
-            supportingContent = {
-                Text(
-                    buildString {
-                        append(event.timeLabel)
-                        event.note?.let { append(" • $it") }
-                    },
-                )
-            },
+            supportingContent = { Text(event.timeLabel + (event.note?.let { " • $it" } ?: "")) },
             leadingContent = { Icon(Icons.Outlined.Event, contentDescription = null) },
         )
     }
 }
 
 @Composable
-private fun TaskCard02(task: DashboardTask) {
+private fun TaskCard(task: DashboardTask) {
     Card(modifier = Modifier.fillMaxWidth()) {
         ListItem(
             headlineContent = { Text(task.title) },
@@ -765,36 +798,67 @@ private fun TaskCard02(task: DashboardTask) {
 }
 
 @Composable
-private fun BriefingTextCard02(title: String, lines: List<String>) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            lines.map(HorizonDocumentParser::displayLine)
-                .filter(String::isNotBlank)
-                .forEach { line ->
-                    Text(line, modifier = Modifier.padding(top = 8.dp))
-                }
-        }
-    }
-}
-
-@Composable
-private fun CanonicalEmptyCard02(title: String, detail: String) {
-    SummaryCard02(title, detail)
-}
-
-@Composable
-private fun SummaryCard02(title: String, detail: String) {
+private fun FinanceTransactionCard(transaction: FinanceTransaction) {
     Card(modifier = Modifier.fillMaxWidth()) {
         ListItem(
-            headlineContent = { Text(title) },
-            supportingContent = { Text(detail) },
+            headlineContent = { Text(transaction.vendor) },
+            supportingContent = {
+                Text(
+                    buildString {
+                        append(transaction.category)
+                        append(" • ")
+                        append(transaction.paymentSource)
+                        transaction.occurredAtEpochMs?.let { append(" • ${formatTime(it)}") }
+                        transaction.notes?.let { append(" • $it") }
+                    },
+                )
+            },
+            trailingContent = { Text(currencyFormatter.format(transaction.amount)) },
         )
     }
 }
 
 @Composable
-private fun ScreenList02(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+private fun NotificationCard(notification: ServerNotification) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = { Text(notification.title) },
+            supportingContent = {
+                Text(
+                    buildString {
+                        if (notification.message.isNotBlank()) append(notification.message)
+                        if (isNotEmpty()) append(" • ")
+                        append(notification.type)
+                        notification.createdAtEpochMs?.let { append(" • ${formatTime(it)}") }
+                        notification.detail?.let { append(" • $it") }
+                    },
+                )
+            },
+            leadingContent = { Text(severityLabel(notification.severity)) },
+        )
+    }
+}
+
+@Composable
+private fun BriefingTextCard(title: String, lines: List<String>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            lines.map(HorizonDocumentParser::displayLine).filter(String::isNotBlank)
+                .forEach { Text(it, modifier = Modifier.padding(top = 8.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(title: String, detail: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        ListItem(headlineContent = { Text(title) }, supportingContent = { Text(detail) })
+    }
+}
+
+@Composable
+private fun ScreenList(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -803,18 +867,26 @@ private fun ScreenList02(content: androidx.compose.foundation.lazy.LazyListScope
     )
 }
 
-private fun authHint02(authState: AuthState): String = when (authState) {
+private fun authHint(authState: AuthState): String = when (authState) {
     AuthState.Restoring -> "Restoring your protected session."
     AuthState.SignedOut -> "Open System and sign in with Google to load live canonical data."
     AuthState.Authenticating -> "Authentication is currently in progress."
-    is AuthState.Authenticated -> "Signed in as ${authState.user.email}. Use Refresh canonical data."
+    is AuthState.Authenticated -> "Signed in as ${authState.user.email}. Use Refresh all canonical reads."
+    is AuthState.OfflineRestored -> authState.message
     is AuthState.Error -> authState.message
 }
 
-private fun formatTime02(epochMs: Long): String = dateTimeFormatter02.format(Instant.ofEpochMilli(epochMs))
+private fun formatTime(epochMs: Long): String = dateTimeFormatter.format(Instant.ofEpochMilli(epochMs))
 
-private fun connectivityLabel02(state: ConnectivityState): String = when (state) {
+private fun connectivityLabel(state: ConnectivityState): String = when (state) {
     ConnectivityState.Unknown -> "UNKNOWN"
     ConnectivityState.Offline -> "OFFLINE"
     is ConnectivityState.Online -> if (state.validated) "ONLINE / VALIDATED" else "ONLINE / UNVALIDATED"
+}
+
+private fun severityLabel(severity: NotificationSeverity): String = when (severity) {
+    NotificationSeverity.INFO -> "INFO"
+    NotificationSeverity.WARNING -> "WARN"
+    NotificationSeverity.CRITICAL -> "CRIT"
+    NotificationSeverity.UNKNOWN -> "?"
 }
