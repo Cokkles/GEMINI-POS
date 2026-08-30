@@ -20,7 +20,13 @@ enum class DashboardDay {
 }
 
 data class DashboardTask(
+    /** Stable identity for Android rendering, synthesized only when necessary. */
     val id: String,
+    /**
+     * Backend-provided Google Task identity. Only this value may be used by mutation code.
+     * Null means the task is display-only and completion must remain disabled.
+     */
+    val canonicalId: String? = null,
     val title: String,
     val timeLabel: String?,
 )
@@ -104,10 +110,11 @@ object DashboardPayloadMapper {
                 val title = item.optString("title").trim()
                 if (title.isBlank()) continue
                 val time = item.optString("time").trim().takeIf { it.isNotBlank() }
+                val canonicalId = item.optString("id").trim().takeIf { it.isNotBlank() }
                 add(
                     DashboardTask(
-                        id = item.optString("id").trim().takeIf { it.isNotBlank() }
-                            ?: stableId("task", title, time.orEmpty()),
+                        id = canonicalId ?: stableId("task", title, time.orEmpty()),
+                        canonicalId = canonicalId,
                         title = title,
                         timeLabel = time,
                     ),
