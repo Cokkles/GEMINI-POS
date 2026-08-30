@@ -1,6 +1,5 @@
 package com.cokkles.gpos.data.command
 
-import java.time.Instant
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -61,6 +60,21 @@ data class NotificationAcknowledgementResult(
     val acknowledged: Boolean,
 )
 
+enum class CommandProgress {
+    IDLE,
+    SUBMITTING,
+}
+
+data class TaskCommandRuntimeState(
+    val stagedCanonicalIds: Set<String> = emptySet(),
+    val progress: CommandProgress = CommandProgress.IDLE,
+    val lastMessage: String? = null,
+    val error: String? = null,
+) {
+    val canApply: Boolean
+        get() = stagedCanonicalIds.isNotEmpty() && progress == CommandProgress.IDLE
+}
+
 internal object AegisCommandPayloads {
     const val COMPLETE_TASKS = "mark_done"
     const val RESOLVE_CALENDAR = "resolve_calendar_event"
@@ -100,6 +114,3 @@ internal object AegisCommandPayloads {
 internal fun JSONObject.requiredString(key: String): String =
     optString(key).trim().takeIf { it.isNotBlank() }
         ?: throw IllegalArgumentException("Missing required field: $key")
-
-internal fun String.isIsoInstantOrBackendDate(): Boolean =
-    runCatching { Instant.parse(this) }.isSuccess || isNotBlank()
