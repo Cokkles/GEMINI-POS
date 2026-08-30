@@ -11,25 +11,28 @@ class AndroidNavigationSmokeTest {
     val composeRule = createAndroidComposeRule<GposActivity>()
 
     @Test
-    fun combinedReadOnlyShellNavigatesWithoutMutationDependency() {
+    fun explicitMutationShellNavigatesWithSignedOutWritesDisabled() {
         composeRule.onNodeWithText("Quote of the day").assertExists()
-        composeRule.onNodeWithText("GPOS Android 0.2.5-dev").assertExists()
+        composeRule.onNodeWithText("GPOS Android 0.3.0-dev").assertExists()
 
         composeRule.onNodeWithText("Briefing").performClick()
         composeRule.onNodeWithText("Refresh briefing").assertExists()
 
         composeRule.onNodeWithText("Calendar").performClick()
-        composeRule.onNodeWithText("Refresh calendar").assertExists()
+        composeRule.onNodeWithText("Add an event").assertExists()
+        composeRule.onNodeWithText("Resolve and preview").assertExists()
+        composeRule.onNodeWithText("Sign in online to enable Calendar creation.").assertExists()
 
         composeRule.onNodeWithText("Tasks").performClick()
-        composeRule.onNodeWithText("Read-only in 0.2.5", substring = true).assertExists()
+        composeRule.onNodeWithText("Selections are local staging only", substring = true).assertExists()
+        composeRule.onNodeWithText("Task writes disabled").assertExists()
 
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("More GPOS").assertExists()
 
         composeRule.onNodeWithText("Notifications").performClick()
         composeRule.onNodeWithText("Server notifications").assertExists()
-        composeRule.onNodeWithText("Acknowledgement remains a future explicit mutation", substring = true).assertExists()
+        composeRule.onNodeWithText("Opening or deep-linking never acknowledges", substring = true).assertExists()
 
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("Finances").performClick()
