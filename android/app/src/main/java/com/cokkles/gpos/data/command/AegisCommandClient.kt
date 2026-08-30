@@ -1,0 +1,164 @@
+package com.cokkles.gpos.data.command
+
+import com.cokkles.gpos.BuildConfig
+import com.cokkles.gpos.data.remote.AegisBackendException
+import java.util.concurrent.TimeUnit
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.ResponseBody
+import org.json.JSONObject
+import retrofit2.Response
+import retrofit2.Retrofit
+import retrofit2.http.Body
+import retrofit2.http.POST
+import retrofit2.http.Url
+
+/**
+ * Explicit foreground command boundary.
+ *
+ * This client intentionally has no generic public execute(action) method and is not used by
+ * CanonicalSyncWorker. Every method maps to a production-proven mutation envelope and must be
+ * invoked only after the corresponding foreground user-intent policy is satisfied by the caller.
+ * Non-idempotent commands are never retried automatically here.
+ */
+class AegisCommandClient(
+    private val backendUrl: String = BuildConfig.GPOS_BACKEND_URL,
+) {
+    private val transport: CommandTransport = Retrofit.Builder()
+        .baseUrl("https://script.google.com/")
+        .client(
+            OkHttpClient.Builder()
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(false)
+                .build(),
+        )
+        .build()
+        .create(CommandTransport::class.java)
+
+    suspend fun completeTasks(
+        idToken: String,
+        taskIds: Collection<String>,
+    ): TaskCompletionResult {
+        val json = postAuthenticated(idToken, AegisCommandPayloads.completeTasks(taskIds))
+        return TaskCompletionResult(
+            message = json.optString("result").takeIf { it.isNotBlank() }
+                ?: "Selected Google Tasks were completed.",
+        )
+    }
+
+    suspend fun resolveCalendarEvent(
+        idToken: String,
+        text: String,
+    ): CalendarResolutionResult {
+        val json = postAuthenticated(idToken, AegisCommandPayloads.resolveCalendar(text))
+        val event = json.optJSONObject("event")
+            ?: throw AegisBackendException(
+                "INVALID_CALENDAR_PROPOSAL",
+                "AEGIS returned no structured calendar event proposal.",
+            )
+        return CalendarResolutionResult(ResolvedCalendarEvent.fromJson(event))
+    }
+
+    suspend fun createCalendarEvent(
+        idToken: String,
+        event: ResolvedCalendarEvent,
+    ): CalendarCreationResult {
+        val json = postAuthenticated(idToken, AegisCommandPayloads.createCalendar(event))
+        val returnedEvent = json.optJSONObject("event")?.let(ResolvedCalendarEvent::fromJson)
+        return CalendarCreationResult(
+            event = returnedEvent,
+            message = json.optString("message").takeIf { it.isNotBlank() }
+                ?: json.optString("result").takeIf { it.isNotBlank() },
+        )
+    }
+
+    suspend fun acknowledgeNotification(
+        idToken: String,
+        notificationId: String,
+    ): NotificationAcknowledgementResult {
+        val normalizedId = notificationId.trim()
+        val json = postAuthenticated(
+            idToken,
+            AegisCommandPayloads.acknowledgeNotification(normalizedId),
+        )
+        return NotificationAcknowledgementResult(
+            notificationId = normalizedId,
+            acknowledged = json.optBoolean("acknowledged", true),
+        )
+    }
+
+    private suspend fun postAuthenticated(
+        idToken: String,
+        payload: JSONObject,
+    ): JSONObject {
+        require(idToken.isNotBlank()) { "Authentication token missing." }
+        payload.put("auth_token", idToken)
+        val body = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val json = parseResponse(transport.post(backendUrl, body))
+        ensureSuccess(json)
+        return json
+    }
+
+    private fun ensureSuccess(json: JSONObject) {
+        val code = json.optString("code")
+        if (code == "AEGIS_AUTH_REQUIRED" || code == "AEGIS_AUTH_FAILED") {
+            throw AegisBackendException(code, json.optString("error", "AEGIS authentication required."))
+        }
+        if (json.optString("status").equals("error", ignoreCase = true) || json.has("error")) {
+            throw AegisBackendException(
+                code.ifBlank { "AEGIS_COMMAND_FAILED" },
+                json.optString("error", "AEGIS command failed."),
+            )
+        }
+    }
+
+    private fun parseResponse(response: Response<ResponseBody>): JSONObject {
+        val raw = response.body()?.use { body ->
+            val declaredLength = body.contentLength()
+            if (declaredLength > MAX_RESPONSE_BYTES) {
+                throw AegisBackendException(
+                    "RESPONSE_TOO_LARGE",
+                    "AEGIS command response exceeded the Android safety limit.",
+                )
+            }
+            body.string()
+        } ?: response.errorBody()?.use { it.string() }
+        ?: throw AegisBackendException("EMPTY_RESPONSE", "AEGIS returned an empty command response.")
+
+        if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESPONSE_BYTES) {
+            throw AegisBackendException(
+                "RESPONSE_TOO_LARGE",
+                "AEGIS command response exceeded the Android safety limit.",
+            )
+        }
+        if (!response.isSuccessful) {
+            throw AegisBackendException(
+                "HTTP_${response.code()}",
+                "AEGIS command failed with HTTP ${response.code()}.",
+            )
+        }
+        return runCatching { JSONObject(raw) }
+            .getOrElse {
+                throw AegisBackendException("INVALID_JSON", "AEGIS returned invalid command JSON.")
+            }
+    }
+
+    private interface CommandTransport {
+        @POST
+        suspend fun post(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+    }
+
+    private companion object {
+        val JSON_MEDIA_TYPE = "text/plain;charset=utf-8".toMediaType()
+        const val CONNECT_TIMEOUT_SECONDS = 10L
+        const val READ_TIMEOUT_SECONDS = 30L
+        const val CALL_TIMEOUT_SECONDS = 35L
+        const val MAX_RESPONSE_BYTES = 2L * 1024L * 1024L
+    }
+}
