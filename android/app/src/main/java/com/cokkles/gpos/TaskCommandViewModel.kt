@@ -17,8 +17,10 @@ import kotlinx.coroutines.launch
 /**
  * Owns only explicit task-completion intent and submission state.
  *
- * Staging is local and side-effect free. The network mutation occurs only through completeStaged,
- * which is called after foreground confirmation. Failed submissions preserve staged IDs.
+ * Staging is local and side-effect free. A successful mark_done response is treated only as
+ * submission acknowledgement because the legacy backend can swallow individual Google Tasks patch
+ * failures. Completion is not shown as confirmed until a newer LIVE canonical dashboard proves the
+ * selected task IDs are no longer active.
  */
 class TaskCommandViewModel(
     application: Application,
@@ -32,12 +34,13 @@ class TaskCommandViewModel(
     fun setStaged(canonicalTaskId: String?, staged: Boolean) {
         val id = canonicalTaskId?.trim()?.takeIf { it.isNotBlank() } ?: return
         _state.update { current ->
-            if (current.progress == CommandProgress.SUBMITTING) return@update current
+            if (current.progress != CommandProgress.IDLE) return@update current
             val updated = current.stagedCanonicalIds.toMutableSet().apply {
                 if (staged) add(id) else remove(id)
             }
             current.copy(
                 stagedCanonicalIds = updated,
+                verificationNotBeforeEpochMs = null,
                 lastMessage = null,
                 error = null,
             )
@@ -46,14 +49,14 @@ class TaskCommandViewModel(
 
     fun clearStaged() {
         _state.update { current ->
-            if (current.progress == CommandProgress.SUBMITTING) current
-            else current.copy(stagedCanonicalIds = emptySet(), lastMessage = null, error = null)
+            if (current.progress != CommandProgress.IDLE) current
+            else TaskCommandRuntimeState()
         }
     }
 
     fun completeStaged(onCanonicalRefreshRequested: () -> Unit) {
         val ids = _state.value.stagedCanonicalIds
-        if (ids.isEmpty() || _state.value.progress == CommandProgress.SUBMITTING) return
+        if (ids.isEmpty() || _state.value.progress != CommandProgress.IDLE) return
 
         viewModelScope.launch {
             _state.update { it.copy(progress = CommandProgress.SUBMITTING, error = null, lastMessage = null) }
@@ -70,11 +73,12 @@ class TaskCommandViewModel(
 
             runCatching { commandClient.completeTasks(credential.idToken, ids) }
                 .onSuccess { result ->
+                    val submittedAt = System.currentTimeMillis()
                     _state.update {
                         it.copy(
-                            stagedCanonicalIds = emptySet(),
-                            progress = CommandProgress.IDLE,
-                            lastMessage = result.message,
+                            progress = CommandProgress.VERIFYING,
+                            verificationNotBeforeEpochMs = submittedAt,
+                            lastMessage = "Completion request accepted; verifying against a newer canonical task refresh.",
                             error = null,
                         )
                     }
@@ -84,11 +88,39 @@ class TaskCommandViewModel(
                     _state.update {
                         it.copy(
                             progress = CommandProgress.IDLE,
+                            verificationNotBeforeEpochMs = null,
                             error = error.message?.takeIf(String::isNotBlank)
-                                ?: "Task completion could not be confirmed.",
+                                ?: "Task completion request could not be submitted.",
                         )
                     }
                 }
+        }
+    }
+
+    /**
+     * Reconciles only a LIVE dashboard fetched after the completion request was acknowledged.
+     * Cached or older payloads must never be used as proof of a canonical write.
+     */
+    fun reconcileCanonical(
+        activeCanonicalTaskIds: Set<String>,
+        fetchedAtEpochMs: Long,
+        isLive: Boolean,
+    ) {
+        val current = _state.value
+        if (current.progress != CommandProgress.VERIFYING || !isLive) return
+        val threshold = current.verificationNotBeforeEpochMs ?: return
+        if (fetchedAtEpochMs < threshold) return
+
+        val remaining = current.stagedCanonicalIds.intersect(activeCanonicalTaskIds)
+        _state.value = if (remaining.isEmpty()) {
+            TaskCommandRuntimeState(
+                lastMessage = "Task completion confirmed by the canonical live task refresh.",
+            )
+        } else {
+            TaskCommandRuntimeState(
+                stagedCanonicalIds = remaining,
+                error = "${remaining.size} selected task${if (remaining.size == 1) " is" else "s are"} still active after the completion request. The unconfirmed selection was preserved.",
+            )
         }
     }
 }
