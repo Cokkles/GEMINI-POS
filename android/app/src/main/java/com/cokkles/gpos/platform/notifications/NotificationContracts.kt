@@ -1,9 +1,11 @@
 package com.cokkles.gpos.platform.notifications
 
 enum class GposDeepLinkTarget(val route: String) {
+    HOME("home"),
     BRIEFING("briefing"),
     CALENDAR("calendar"),
     TASKS("tasks"),
+    NOTIFICATIONS("notifications"),
     FOLLOW_UPS("followups"),
     FINANCES("finances"),
     AEGIS("aegis"),
