@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.cokkles.gpos.data.command.AegisCommandClient
 import com.cokkles.gpos.data.command.CommandProgress
 import com.cokkles.gpos.data.command.TaskCommandRuntimeState
+import com.cokkles.gpos.data.remote.AegisBackendClient
+import com.cokkles.gpos.data.remote.DashboardPayloadMapper
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import com.cokkles.gpos.platform.security.CredentialStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,13 +21,14 @@ import kotlinx.coroutines.launch
  *
  * Staging is local and side-effect free. A successful mark_done response is treated only as
  * submission acknowledgement because the legacy backend can swallow individual Google Tasks patch
- * failures. Completion is not shown as confirmed until a newer LIVE canonical dashboard proves the
- * selected task IDs are no longer active.
+ * failures. Completion is not shown as confirmed until a fresh authenticated canonical dashboard
+ * proves the selected task IDs are no longer active.
  */
 class TaskCommandViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     private val commandClient = AegisCommandClient()
+    private val readClient = AegisBackendClient()
     private val credentialStore: CredentialStore = AndroidKeystoreCredentialStore(application)
 
     private val _state = MutableStateFlow(TaskCommandRuntimeState())
@@ -72,36 +75,56 @@ class TaskCommandViewModel(
             }
 
             runCatching { commandClient.completeTasks(credential.idToken, ids) }
-                .onSuccess { result ->
+                .onSuccess {
                     val submittedAt = System.currentTimeMillis()
                     _state.update {
                         it.copy(
                             progress = CommandProgress.VERIFYING,
                             verificationNotBeforeEpochMs = submittedAt,
-                            lastMessage = "Completion request accepted; verifying against a newer canonical task refresh.",
+                            lastMessage = "Completion request accepted; verifying against a fresh canonical task read.",
                             error = null,
                         )
                     }
-                    onCanonicalRefreshRequested()
+
+                    val verification = runCatching {
+                        val dashboardJson = readClient.readDashboard(credential.idToken)
+                        DashboardPayloadMapper.map(dashboardJson)
+                            .tasks
+                            .mapNotNull { task -> task.canonicalId }
+                            .toSet()
+                    }
+                    verification.onSuccess { activeIds ->
+                        reconcileCanonical(
+                            activeCanonicalTaskIds = activeIds,
+                            fetchedAtEpochMs = System.currentTimeMillis(),
+                            isLive = true,
+                        )
+                        onCanonicalRefreshRequested()
+                    }.onFailure { error ->
+                        _state.update {
+                            it.copy(
+                                progress = CommandProgress.IDLE,
+                                verificationNotBeforeEpochMs = null,
+                                lastMessage = null,
+                                error = "Completion request was accepted, but Android could not verify the canonical task state: ${error.safeTaskMessage()} The selected tasks were preserved and the mutation was not retried.",
+                            )
+                        }
+                        onCanonicalRefreshRequested()
+                    }
                 }
                 .onFailure { error ->
                     _state.update {
                         it.copy(
                             progress = CommandProgress.IDLE,
                             verificationNotBeforeEpochMs = null,
-                            error = error.message?.takeIf(String::isNotBlank)
-                                ?: "Task completion request could not be submitted.",
+                            error = error.safeTaskMessage(),
                         )
                     }
                 }
         }
     }
 
-    /**
-     * Reconciles only a LIVE dashboard fetched after the completion request was acknowledged.
-     * Cached or older payloads must never be used as proof of a canonical write.
-     */
-    fun reconcileCanonical(
+    private fun reconcileCanonical(
         activeCanonicalTaskIds: Set<String>,
         fetchedAtEpochMs: Long,
         isLive: Boolean,
@@ -114,13 +137,16 @@ class TaskCommandViewModel(
         val remaining = current.stagedCanonicalIds.intersect(activeCanonicalTaskIds)
         _state.value = if (remaining.isEmpty()) {
             TaskCommandRuntimeState(
-                lastMessage = "Task completion confirmed by the canonical live task refresh.",
+                lastMessage = "Task completion confirmed by a fresh canonical live task read.",
             )
         } else {
             TaskCommandRuntimeState(
                 stagedCanonicalIds = remaining,
-                error = "${remaining.size} selected task${if (remaining.size == 1) " is" else "s are"} still active after the completion request. The unconfirmed selection was preserved.",
+                error = "${remaining.size} selected task${if (remaining.size == 1) " is" else "s are"} still active after the completion request. The unconfirmed selection was preserved and the mutation was not retried.",
             )
         }
     }
 }
+
+private fun Throwable.safeTaskMessage(): String =
+    message?.takeIf { it.isNotBlank() } ?: "Task completion could not be confirmed."
