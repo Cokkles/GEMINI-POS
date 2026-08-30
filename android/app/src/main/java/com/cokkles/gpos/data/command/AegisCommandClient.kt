@@ -48,7 +48,7 @@ class AegisCommandClient(
         val json = postAuthenticated(idToken, AegisCommandPayloads.completeTasks(taskIds))
         return TaskCompletionResult(
             message = json.optString("result").takeIf { it.isNotBlank() }
-                ?: "Selected Google Tasks were completed.",
+                ?: "Selected Google Tasks were submitted for completion.",
         )
     }
 
@@ -70,11 +70,19 @@ class AegisCommandClient(
         event: ResolvedCalendarEvent,
     ): CalendarCreationResult {
         val json = postAuthenticated(idToken, AegisCommandPayloads.createCalendar(event))
-        val returnedEvent = json.optJSONObject("event")?.let(ResolvedCalendarEvent::fromJson)
+        val returnedJson = json.optJSONObject("event")
+        val returnedEvent = returnedJson
+            ?.takeIf {
+                it.optString("title").isNotBlank() &&
+                    it.optString("start").isNotBlank() &&
+                    it.optString("end").isNotBlank()
+            }
+            ?.let(ResolvedCalendarEvent::fromJson)
         return CalendarCreationResult(
             event = returnedEvent,
             message = json.optString("message").takeIf { it.isNotBlank() }
-                ?: json.optString("result").takeIf { it.isNotBlank() },
+                ?: json.optString("result").takeIf { it.isNotBlank() }
+                ?: "Calendar event created.",
         )
     }
 
@@ -87,10 +95,7 @@ class AegisCommandClient(
             idToken,
             AegisCommandPayloads.acknowledgeNotification(normalizedId),
         )
-        return NotificationAcknowledgementResult(
-            notificationId = normalizedId,
-            acknowledged = json.optBoolean("acknowledged", true),
-        )
+        return AegisCommandPayloads.parseNotificationAcknowledgement(json, normalizedId)
     }
 
     private suspend fun postAuthenticated(
