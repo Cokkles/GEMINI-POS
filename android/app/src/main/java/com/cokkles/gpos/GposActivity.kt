@@ -30,8 +30,10 @@ import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,9 +42,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +66,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cokkles.gpos.data.command.CalendarCommandProgress
+import com.cokkles.gpos.data.command.CalendarCommandRuntimeState
+import com.cokkles.gpos.data.command.CommandProgress
+import com.cokkles.gpos.data.command.NotificationCommandRuntimeState
+import com.cokkles.gpos.data.command.TaskCommandRuntimeState
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.remote.DashboardEvent
 import com.cokkles.gpos.data.remote.DashboardRuntimeState
@@ -94,6 +103,9 @@ import kotlinx.coroutines.launch
 
 class GposActivity : ComponentActivity() {
     private val runtimeViewModel: GposRuntimeViewModel by viewModels()
+    private val taskCommandViewModel: TaskCommandViewModel by viewModels()
+    private val calendarCommandViewModel: CalendarCommandViewModel by viewModels()
+    private val notificationCommandViewModel: NotificationCommandViewModel by viewModels()
     private val pendingDeepLink = mutableStateOf<GposDeepLinkTarget?>(null)
     private val notificationPermissionGranted = mutableStateOf(false)
 
@@ -115,15 +127,21 @@ class GposActivity : ComponentActivity() {
             val themePreferences = remember { ThemePreferences(applicationContext) }
             var selectedTheme by remember { mutableStateOf(themePreferences.load()) }
             val runtimeState by runtimeViewModel.uiState.collectAsStateWithLifecycle()
+            val taskCommandState by taskCommandViewModel.state.collectAsStateWithLifecycle()
+            val calendarCommandState by calendarCommandViewModel.state.collectAsStateWithLifecycle()
+            val notificationCommandState by notificationCommandViewModel.state.collectAsStateWithLifecycle()
 
             GposTheme(selectedTheme) {
-                GposApp025(
+                GposApp030(
                     selectedTheme = selectedTheme,
                     onThemeSelected = { theme ->
                         selectedTheme = theme
                         themePreferences.save(theme)
                     },
                     runtimeState = runtimeState,
+                    taskCommandState = taskCommandState,
+                    calendarCommandState = calendarCommandState,
+                    notificationCommandState = notificationCommandState,
                     deepLinkTarget = pendingDeepLink.value,
                     onDeepLinkConsumed = { pendingDeepLink.value = null },
                     notificationPermissionGranted = notificationPermissionGranted.value,
@@ -146,10 +164,29 @@ class GposActivity : ComponentActivity() {
                         lifecycleScope.launch {
                             googleSignInCoordinator.clearProviderState()
                             runtimeViewModel.signOut()
+                            taskCommandViewModel.clearStaged()
+                            calendarCommandViewModel.cancelProposal()
+                            notificationCommandViewModel.clearMessage()
                         }
                     },
                     onRefreshBackend = runtimeViewModel::refreshBackendAndRestoreSession,
                     onRefreshCanonical = runtimeViewModel::refreshCanonicalReads,
+                    onTaskStaged = taskCommandViewModel::setStaged,
+                    onTaskClear = taskCommandViewModel::clearStaged,
+                    onTaskApply = {
+                        taskCommandViewModel.completeStaged(runtimeViewModel::refreshCanonicalReads)
+                    },
+                    onCalendarResolve = calendarCommandViewModel::resolve,
+                    onCalendarCancel = calendarCommandViewModel::cancelProposal,
+                    onCalendarCreate = {
+                        calendarCommandViewModel.createResolved(runtimeViewModel::refreshCanonicalReads)
+                    },
+                    onNotificationAcknowledge = { id ->
+                        notificationCommandViewModel.acknowledge(
+                            id,
+                            runtimeViewModel::refreshCanonicalReads,
+                        )
+                    },
                 )
             }
         }
@@ -186,10 +223,10 @@ private data class Destination(
 
 private val home = Destination("home", "Home", "Canonical mobile overview", Icons.Outlined.Home)
 private val briefing = Destination("briefing", "Briefing", "Latest canonical HORIZON", Icons.Outlined.Description)
-private val calendar = Destination("calendar", "Calendar", "Read-only canonical schedule", Icons.Outlined.Event)
-private val tasks = Destination("tasks", "Tasks", "Read-only canonical tasks", Icons.Outlined.CheckCircle)
+private val calendar = Destination("calendar", "Calendar", "Schedule + confirmed event creation", Icons.Outlined.Event)
+private val tasks = Destination("tasks", "Tasks", "Stage + explicitly complete tasks", Icons.Outlined.CheckCircle)
 private val more = Destination("more", "More", "Additional GPOS areas", Icons.Outlined.MoreHoriz)
-private val notifications = Destination("notifications", "Notifications", "Read-only server alerts", Icons.Outlined.Notifications)
+private val notifications = Destination("notifications", "Notifications", "Server alerts + explicit acknowledgement", Icons.Outlined.Notifications)
 private val finances = Destination("finances", "Finances", "Recent SENTINEL-FIN activity", Icons.Outlined.AccountBalanceWallet)
 private val insights = Destination("insights", "Insights", "HORIZON-derived insight sections", Icons.Outlined.Lightbulb)
 private val followups = Destination("followups", "Follow-ups", "Dedicated contract pending", Icons.Outlined.Notifications)
@@ -206,10 +243,13 @@ private val currencyFormatter: NumberFormat = NumberFormat.getCurrencyInstance()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GposApp025(
+private fun GposApp030(
     selectedTheme: GposThemeOption,
     onThemeSelected: (GposThemeOption) -> Unit,
     runtimeState: RuntimeUiState,
+    taskCommandState: TaskCommandRuntimeState,
+    calendarCommandState: CalendarCommandRuntimeState,
+    notificationCommandState: NotificationCommandRuntimeState,
     deepLinkTarget: GposDeepLinkTarget?,
     onDeepLinkConsumed: () -> Unit,
     notificationPermissionGranted: Boolean,
@@ -218,12 +258,20 @@ private fun GposApp025(
     onSignOutRequested: () -> Unit,
     onRefreshBackend: () -> Unit,
     onRefreshCanonical: () -> Unit,
+    onTaskStaged: (String?, Boolean) -> Unit,
+    onTaskClear: () -> Unit,
+    onTaskApply: () -> Unit,
+    onCalendarResolve: (String) -> Unit,
+    onCalendarCancel: () -> Unit,
+    onCalendarCreate: () -> Unit,
+    onNotificationAcknowledge: (String) -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: home.route
     val currentDestination = allDestinations.firstOrNull { it.route == currentRoute } ?: home
     val selectedPrimaryRoute = if (secondaryDestinations.any { it.route == currentRoute }) more.route else currentRoute
+    val canMutate = runtimeState.auth is AuthState.Authenticated
 
     LaunchedEffect(deepLinkTarget) {
         deepLinkTarget?.let { target ->
@@ -274,10 +322,38 @@ private fun GposApp025(
         ) {
             composable(home.route) { HomeScreen(runtimeState, onRefreshCanonical) }
             composable(briefing.route) { BriefingScreen(runtimeState, onRefreshCanonical) }
-            composable(calendar.route) { CalendarScreen(runtimeState.dashboard, onRefreshCanonical) }
-            composable(tasks.route) { TasksScreen(runtimeState.dashboard, onRefreshCanonical) }
+            composable(calendar.route) {
+                CalendarScreen(
+                    dashboard = runtimeState.dashboard,
+                    commandState = calendarCommandState,
+                    canMutate = canMutate,
+                    onResolve = onCalendarResolve,
+                    onCancel = onCalendarCancel,
+                    onCreate = onCalendarCreate,
+                    onRefreshCanonical = onRefreshCanonical,
+                )
+            }
+            composable(tasks.route) {
+                TasksScreen(
+                    dashboard = runtimeState.dashboard,
+                    commandState = taskCommandState,
+                    canMutate = canMutate,
+                    onTaskStaged = onTaskStaged,
+                    onClear = onTaskClear,
+                    onApply = onTaskApply,
+                    onRefreshCanonical = onRefreshCanonical,
+                )
+            }
             composable(more.route) { MoreScreen(onNavigate = { route -> navController.navigate(route) }) }
-            composable(notifications.route) { NotificationsScreen(runtimeState.notifications, onRefreshCanonical) }
+            composable(notifications.route) {
+                NotificationsScreen(
+                    state = runtimeState.notifications,
+                    commandState = notificationCommandState,
+                    canMutate = canMutate,
+                    onAcknowledge = onNotificationAcknowledge,
+                    onRefreshCanonical = onRefreshCanonical,
+                )
+            }
             composable(finances.route) { FinanceScreen(runtimeState.finance, onRefreshCanonical) }
             composable(insights.route) { InsightsScreen(runtimeState) }
             composable(followups.route) {
@@ -369,7 +445,7 @@ private fun HomeScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () -> U
                 detail = if (activeAlerts.any { it.severity == NotificationSeverity.CRITICAL }) {
                     "Critical attention is present. Open More → Notifications."
                 } else {
-                    "Read-only notification state from AEGIS."
+                    "Server notification state from AEGIS."
                 },
             )
         }
@@ -432,9 +508,91 @@ private fun BriefingScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () 
 }
 
 @Composable
-private fun CalendarScreen(dashboard: DashboardRuntimeState?, onRefreshCanonical: () -> Unit) {
+private fun CalendarScreen(
+    dashboard: DashboardRuntimeState?,
+    commandState: CalendarCommandRuntimeState,
+    canMutate: Boolean,
+    onResolve: (String) -> Unit,
+    onCancel: () -> Unit,
+    onCreate: () -> Unit,
+    onRefreshCanonical: () -> Unit,
+) {
+    var eventText by remember { mutableStateOf("") }
+
     ScreenList {
         item { DataSourceCard("Calendar", dashboard?.source, dashboard?.fetchedAtEpochMs, dashboard?.error) }
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text("Add an event", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Describe the event. Resolve creates a proposal only; nothing reaches Google Calendar until you review it and press Add to Calendar.",
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    OutlinedTextField(
+                        value = eventText,
+                        onValueChange = { eventText = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        enabled = canMutate && commandState.progress !in setOf(
+                            CalendarCommandProgress.RESOLVING,
+                            CalendarCommandProgress.CREATING,
+                        ),
+                        label = { Text("Event description") },
+                        placeholder = { Text("Dinner Tuesday at 7 PM at…") },
+                    )
+                    Button(
+                        onClick = { onResolve(eventText) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        enabled = canMutate && eventText.isNotBlank() && commandState.progress !in setOf(
+                            CalendarCommandProgress.RESOLVING,
+                            CalendarCommandProgress.CREATING,
+                        ),
+                    ) {
+                        Text(if (commandState.progress == CalendarCommandProgress.RESOLVING) "Resolving…" else "Resolve and preview")
+                    }
+                    if (!canMutate) {
+                        Text("Sign in online to enable Calendar creation.", modifier = Modifier.padding(top = 8.dp))
+                    }
+                    commandState.error?.let {
+                        Text("Calendar action failed: $it", modifier = Modifier.padding(top = 8.dp))
+                    }
+                    commandState.lastMessage?.let {
+                        Text(it, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
+        commandState.proposal?.let { proposal ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Text("Review proposed event", style = MaterialTheme.typography.titleMedium)
+                        Text(proposal.title, modifier = Modifier.padding(top = 10.dp))
+                        Text("${proposal.start} → ${proposal.end}", modifier = Modifier.padding(top = 6.dp))
+                        proposal.location?.let { Text("Location: $it", modifier = Modifier.padding(top = 6.dp)) }
+                        proposal.description?.let { Text(it, modifier = Modifier.padding(top = 6.dp)) }
+                        Text(
+                            "This is still a proposal. Add to Calendar is the write action.",
+                            modifier = Modifier.padding(top = 10.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                            Button(
+                                onClick = onCreate,
+                                modifier = Modifier.weight(1f),
+                                enabled = canMutate && commandState.canCreate,
+                            ) {
+                                Text(if (commandState.progress == CalendarCommandProgress.CREATING) "Adding…" else "Add to Calendar")
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (dashboard == null) {
             item { SummaryCard("Calendar not loaded", "Authenticate in System, then refresh canonical data.") }
         } else {
@@ -456,19 +614,96 @@ private fun CalendarScreen(dashboard: DashboardRuntimeState?, onRefreshCanonical
 }
 
 @Composable
-private fun TasksScreen(dashboard: DashboardRuntimeState?, onRefreshCanonical: () -> Unit) {
+private fun TasksScreen(
+    dashboard: DashboardRuntimeState?,
+    commandState: TaskCommandRuntimeState,
+    canMutate: Boolean,
+    onTaskStaged: (String?, Boolean) -> Unit,
+    onClear: () -> Unit,
+    onApply: () -> Unit,
+    onRefreshCanonical: () -> Unit,
+) {
+    var showConfirmation by remember { mutableStateOf(false) }
+
+    if (showConfirmation) {
+        AlertDialog(
+            onDismissRequest = { if (commandState.progress != CommandProgress.SUBMITTING) showConfirmation = false },
+            title = { Text("Complete Google Tasks?") },
+            text = {
+                Text(
+                    "Complete ${commandState.stagedCanonicalIds.size} selected task${if (commandState.stagedCanonicalIds.size == 1) "" else "s"}? This writes to canonical Google Tasks only after you confirm.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConfirmation = false
+                        onApply()
+                    },
+                    enabled = commandState.canApply,
+                ) { Text("Complete tasks") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmation = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     ScreenList {
         item { DataSourceCard("Tasks", dashboard?.source, dashboard?.fetchedAtEpochMs, dashboard?.error) }
         item {
             Text("Active Google Tasks", style = MaterialTheme.typography.headlineSmall)
-            Text("Read-only in 0.2.5. Completion/editing remains disabled.", modifier = Modifier.padding(top = 4.dp))
+            Text(
+                "Selections are local staging only. Google Tasks are changed only after Apply completions and the confirmation dialog.",
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        if (commandState.stagedCanonicalIds.isNotEmpty()) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Text(
+                            "${commandState.stagedCanonicalIds.size} pending completion${if (commandState.stagedCanonicalIds.size == 1) "" else "s"}",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text("Not written yet.", modifier = Modifier.padding(top = 4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = onClear,
+                                modifier = Modifier.weight(1f),
+                                enabled = commandState.progress == CommandProgress.IDLE,
+                            ) { Text("Clear") }
+                            Button(
+                                onClick = { showConfirmation = true },
+                                modifier = Modifier.weight(1f),
+                                enabled = canMutate && commandState.canApply,
+                            ) { Text("Apply completions") }
+                        }
+                    }
+                }
+            }
+        }
+        commandState.error?.let { item { SummaryCard("Task completion failed", "$it • Pending selections were preserved.") } }
+        commandState.lastMessage?.let { item { SummaryCard("Task completion confirmed", it) } }
+        if (!canMutate) {
+            item { SummaryCard("Task writes disabled", "Sign in online to stage and complete canonical Google Tasks. Cached/offline sessions remain read-only.") }
         }
         if (dashboard == null) {
             item { SummaryCard("Tasks not loaded", "Authenticate in System, then refresh canonical data.") }
         } else if (dashboard.snapshot.tasks.isEmpty()) {
             item { SummaryCard("No active tasks", "The canonical dashboard returned no active Google Tasks.") }
         } else {
-            items(dashboard.snapshot.tasks) { TaskCard(it) }
+            items(dashboard.snapshot.tasks) { task ->
+                TaskCard(
+                    task = task,
+                    staged = task.canonicalId?.let(commandState.stagedCanonicalIds::contains) == true,
+                    canMutate = canMutate && commandState.progress == CommandProgress.IDLE,
+                    onStaged = { selected -> onTaskStaged(task.canonicalId, selected) },
+                )
+            }
         }
         item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh tasks") } }
     }
@@ -500,19 +735,36 @@ private fun FinanceScreen(finance: FinanceRuntimeState?, onRefreshCanonical: () 
 }
 
 @Composable
-private fun NotificationsScreen(state: NotificationsRuntimeState?, onRefreshCanonical: () -> Unit) {
+private fun NotificationsScreen(
+    state: NotificationsRuntimeState?,
+    commandState: NotificationCommandRuntimeState,
+    canMutate: Boolean,
+    onAcknowledge: (String) -> Unit,
+    onRefreshCanonical: () -> Unit,
+) {
     ScreenList {
         item { DataSourceCard("Notifications", state?.source, state?.fetchedAtEpochMs, state?.error) }
         item {
             Text("Server notifications", style = MaterialTheme.typography.headlineSmall)
-            Text("Read-only in this checkpoint. Acknowledgement remains a future explicit mutation.", modifier = Modifier.padding(top = 4.dp))
+            Text(
+                "Opening or deep-linking never acknowledges an alert. Acknowledge is an explicit server write from the button on that alert only.",
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
+        commandState.error?.let { item { SummaryCard("Acknowledgement failed", it) } }
         if (state == null) {
             item { SummaryCard("Notifications not loaded", "Authenticate and refresh to read current server alerts.") }
         } else if (state.snapshot.active.isEmpty()) {
             item { SummaryCard("All clear", "No unacknowledged server notifications were returned.") }
         } else {
-            items(state.snapshot.active) { NotificationCard(it) }
+            items(state.snapshot.active) { notification ->
+                NotificationCard(
+                    notification = notification,
+                    canAcknowledge = canMutate && notification.id !in commandState.submittingIds,
+                    submitting = notification.id in commandState.submittingIds,
+                    onAcknowledge = { onAcknowledge(notification.id) },
+                )
+            }
         }
         item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh notifications") } }
     }
@@ -629,7 +881,7 @@ private fun SystemScreen(
                 Column(modifier = Modifier.padding(18.dp)) {
                     Text("Background refresh", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Automatically scheduled after a valid session: every ${CanonicalSyncScheduler.REPEAT_MINUTES} minutes when network is connected and battery is not low. Uses read-only dashboard, finance, notifications, and stale HORIZON reads only.",
+                        "Automatically scheduled after a valid session: every ${CanonicalSyncScheduler.REPEAT_MINUTES} minutes when network is connected and battery is not low. Uses read-only dashboard, finance, notifications, and stale HORIZON reads only. Command clients are never used by WorkManager.",
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 }
@@ -699,7 +951,7 @@ private fun AuthenticationCard(
                 }
                 AuthState.SignedOut -> {
                     Text("Signed out", style = MaterialTheme.typography.titleMedium)
-                    Text("Google AUTH-1 is required for live canonical reads.", modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
+                    Text("Google AUTH-1 is required for live canonical reads and explicit commands.", modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
                     Button(onClick = onSignInRequested) { Text("Sign in with Google") }
                 }
                 AuthState.Authenticating -> {
@@ -715,6 +967,7 @@ private fun AuthenticationCard(
                 is AuthState.OfflineRestored -> {
                     Text("Offline protected session", style = MaterialTheme.typography.titleMedium)
                     Text(authState.message, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
+                    Text("Cached reads remain available; mutations are disabled until online re-authentication.", modifier = Modifier.padding(bottom = 12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = onSignInRequested) { Text("Re-authenticate") }
                         OutlinedButton(onClick = onSignOutRequested) { Text("Sign out") }
@@ -765,12 +1018,32 @@ private fun EventCard(event: DashboardEvent) {
 }
 
 @Composable
-private fun TaskCard(task: DashboardTask) {
+private fun TaskCard(
+    task: DashboardTask,
+    staged: Boolean,
+    canMutate: Boolean,
+    onStaged: (Boolean) -> Unit,
+) {
+    val mutable = task.canonicalId != null
     Card(modifier = Modifier.fillMaxWidth()) {
         ListItem(
             headlineContent = { Text(task.title) },
-            supportingContent = { Text(task.timeLabel ?: "Google Task") },
-            leadingContent = { Icon(Icons.Outlined.CheckCircle, contentDescription = null) },
+            supportingContent = {
+                Text(
+                    if (mutable) {
+                        (task.timeLabel ?: "Google Task") + if (staged) " • staged locally" else ""
+                    } else {
+                        (task.timeLabel ?: "Google Task") + " • display-only: canonical task ID unavailable"
+                    },
+                )
+            },
+            leadingContent = {
+                Checkbox(
+                    checked = staged,
+                    onCheckedChange = onStaged,
+                    enabled = mutable && canMutate,
+                )
+            },
         )
     }
 }
@@ -797,23 +1070,35 @@ private fun FinanceTransactionCard(transaction: FinanceTransaction) {
 }
 
 @Composable
-private fun NotificationCard(notification: ServerNotification) {
+private fun NotificationCard(
+    notification: ServerNotification,
+    canAcknowledge: Boolean,
+    submitting: Boolean,
+    onAcknowledge: () -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        ListItem(
-            headlineContent = { Text(notification.title) },
-            supportingContent = {
-                Text(
-                    buildString {
-                        if (notification.message.isNotBlank()) append(notification.message)
-                        if (isNotEmpty()) append(" • ")
-                        append(notification.type)
-                        notification.createdAtEpochMs?.let { append(" • ${formatTime(it)}") }
-                        notification.detail?.let { append(" • $it") }
-                    },
-                )
-            },
-            leadingContent = { Text(severityLabel(notification.severity)) },
-        )
+        Column {
+            ListItem(
+                headlineContent = { Text(notification.title) },
+                supportingContent = {
+                    Text(
+                        buildString {
+                            if (notification.message.isNotBlank()) append(notification.message)
+                            if (isNotEmpty()) append(" • ")
+                            append(notification.type)
+                            notification.createdAtEpochMs?.let { append(" • ${formatTime(it)}") }
+                            notification.detail?.let { append(" • $it") }
+                        },
+                    )
+                },
+                leadingContent = { Text(severityLabel(notification.severity)) },
+            )
+            OutlinedButton(
+                onClick = onAcknowledge,
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                enabled = canAcknowledge,
+            ) { Text(if (submitting) "Acknowledging…" else "Acknowledge") }
+        }
     }
 }
 
