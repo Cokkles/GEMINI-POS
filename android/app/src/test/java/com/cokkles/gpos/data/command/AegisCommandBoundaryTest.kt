@@ -59,7 +59,7 @@ class AegisCommandBoundaryTest {
     @Test
     fun `command client has a finite public mutation surface`() {
         val publicDeclaredMethods = AegisCommandClient::class.java.declaredMethods
-            .filter { Modifier.isPublic(it.modifiers) }
+            .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
             .map { it.name }
             .toSet()
 
