@@ -49,8 +49,13 @@ jobs:
       - name: Validate and assemble checkpoint APKs
         run: gradle -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
-      - name: Verify deterministic checkpoint certificate
+      - name: Verify package and deterministic checkpoint certificate
         run: |
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk \
+            | head -n 1 | tee android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "name='com.cokkles.gpos'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionCode='4'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionName='0.2.5-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
           {
             echo "package=com.cokkles.gpos"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
@@ -62,17 +67,18 @@ jobs:
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: gpos-android-0.2-debug
+          name: gpos-android-0.2.5-debug
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/apk/debug/signing-fingerprint.txt
+            android/app/build/outputs/apk/debug/package-metadata.txt
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload Android instrumentation APK
         uses: actions/upload-artifact@v4
         with:
-          name: gpos-android-0.2-androidTest
+          name: gpos-android-0.2.5-androidTest
           path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
