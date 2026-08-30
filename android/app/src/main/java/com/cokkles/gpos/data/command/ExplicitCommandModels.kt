@@ -63,11 +63,13 @@ data class NotificationAcknowledgementResult(
 enum class CommandProgress {
     IDLE,
     SUBMITTING,
+    VERIFYING,
 }
 
 data class TaskCommandRuntimeState(
     val stagedCanonicalIds: Set<String> = emptySet(),
     val progress: CommandProgress = CommandProgress.IDLE,
+    val verificationNotBeforeEpochMs: Long? = null,
     val lastMessage: String? = null,
     val error: String? = null,
 ) {
