@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -277,15 +276,9 @@ private fun GposApp025(
             composable(briefing.route) { BriefingScreen(runtimeState, onRefreshCanonical) }
             composable(calendar.route) { CalendarScreen(runtimeState.dashboard, onRefreshCanonical) }
             composable(tasks.route) { TasksScreen(runtimeState.dashboard, onRefreshCanonical) }
-            composable(more.route) {
-                MoreScreen(onNavigate = { route -> navController.navigate(route) })
-            }
-            composable(notifications.route) {
-                NotificationsScreen(runtimeState.notifications, onRefreshCanonical)
-            }
-            composable(finances.route) {
-                FinanceScreen(runtimeState.finance, onRefreshCanonical)
-            }
+            composable(more.route) { MoreScreen(onNavigate = { route -> navController.navigate(route) }) }
+            composable(notifications.route) { NotificationsScreen(runtimeState.notifications, onRefreshCanonical) }
+            composable(finances.route) { FinanceScreen(runtimeState.finance, onRefreshCanonical) }
             composable(insights.route) { InsightsScreen(runtimeState) }
             composable(followups.route) {
                 PendingContractScreen(
@@ -336,14 +329,7 @@ private fun HomeScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () -> U
             )
             Text("GPOS Android ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
         }
-        item {
-            DataSourceCard(
-                label = "Canonical dashboard",
-                source = dashboard?.source,
-                fetchedAtEpochMs = dashboard?.fetchedAtEpochMs,
-                error = dashboard?.error,
-            )
-        }
+        item { DataSourceCard("Canonical dashboard", dashboard?.source, dashboard?.fetchedAtEpochMs, dashboard?.error) }
 
         if (dashboard == null) {
             item { SummaryCard("Canonical data not loaded", authHint(runtimeState.auth)) }
@@ -370,18 +356,16 @@ private fun HomeScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () -> U
             val credits = finance?.summary?.creditTotal
             SummaryCard(
                 title = if (purchase == null) "Finance not loaded" else "72h purchases ${currencyFormatter.format(purchase)}",
-                detail = when {
-                    finance == null -> "SENTINEL-FIN recent activity will appear after authenticated canonical refresh."
-                    else -> "${finance.transactions.size} transaction${if (finance.transactions.size == 1) "" else "s"} • credits ${credits?.let(currencyFormatter::format) ?: "—"}"
+                detail = if (finance == null) {
+                    "SENTINEL-FIN recent activity will appear after authenticated canonical refresh."
+                } else {
+                    "${finance.transactions.size} transaction${if (finance.transactions.size == 1) "" else "s"} • credits ${credits?.let(currencyFormatter::format) ?: "—"}"
                 },
             )
         }
         item {
             SummaryCard(
-                title = when {
-                    activeAlerts.isEmpty() -> "No active server alerts"
-                    else -> "${activeAlerts.size} active server alert${if (activeAlerts.size == 1) "" else "s"}"
-                },
+                title = if (activeAlerts.isEmpty()) "No active server alerts" else "${activeAlerts.size} active server alert${if (activeAlerts.size == 1) "" else "s"}",
                 detail = if (activeAlerts.any { it.severity == NotificationSeverity.CRITICAL }) {
                     "Critical attention is present. Open More → Notifications."
                 } else {
@@ -400,9 +384,7 @@ private fun HomeScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () -> U
             )
         }
         item {
-            Button(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) {
-                Text("Refresh all canonical reads")
-            }
+            Button(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh all canonical reads") }
         }
     }
 }
@@ -427,9 +409,7 @@ private fun BriefingScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () 
             item { SummaryCard("No canonical briefing loaded", authHint(runtimeState.auth)) }
         } else {
             item { Text(document.title ?: "Daily Executive Briefing", style = MaterialTheme.typography.headlineSmall) }
-            if (document.preamble.isNotEmpty()) {
-                item { BriefingTextCard("Overview", document.preamble) }
-            }
+            if (document.preamble.isNotEmpty()) item { BriefingTextCard("Overview", document.preamble) }
             items(document.sections) { section ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(18.dp)) {
@@ -447,9 +427,7 @@ private fun BriefingScreen(runtimeState: RuntimeUiState, onRefreshCanonical: () 
                 }
             }
         }
-        item {
-            OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh briefing") }
-        }
+        item { OutlinedButton(onClick = onRefreshCanonical, modifier = Modifier.fillMaxWidth()) { Text("Refresh briefing") } }
     }
 }
 
@@ -695,7 +673,7 @@ private fun SystemScreen(
         items(GposThemeOption.entries) { option ->
             Card(onClick = { onThemeSelected(option) }, modifier = Modifier.fillMaxWidth()) {
                 ListItem(
-                    headlineContent = { Text(option.label) },
+                    headlineContent = { Text(option.displayName) },
                     supportingContent = { Text(option.description) },
                     leadingContent = {
                         RadioButton(selected = option == selectedTheme, onClick = { onThemeSelected(option) })
