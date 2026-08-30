@@ -1,5 +1,7 @@
 package com.cokkles.gpos.data.remote
 
+import com.cokkles.gpos.data.command.TaskCommandRuntimeState
+
 data class AuthConfig(
     val provider: String,
     val configured: Boolean,
@@ -75,4 +77,5 @@ data class RuntimeUiState(
     val dashboard: DashboardRuntimeState? = null,
     val finance: FinanceRuntimeState? = null,
     val notifications: NotificationsRuntimeState? = null,
+    val taskCommand: TaskCommandRuntimeState = TaskCommandRuntimeState(),
 )
