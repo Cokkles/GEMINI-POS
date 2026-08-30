@@ -23,6 +23,7 @@ import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import com.cokkles.gpos.platform.security.CredentialStore
 import com.cokkles.gpos.platform.security.StoredCredential
+import com.cokkles.gpos.platform.sync.CanonicalSyncScheduler
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,7 @@ class GposRuntimeViewModel(
 ) : AndroidViewModel(application) {
     private val backend = AegisBackendClient()
     private val credentialStore: CredentialStore = AndroidKeystoreCredentialStore(application)
+    private val syncScheduler = CanonicalSyncScheduler(application)
     private val cacheDao = Room.databaseBuilder(
         application,
         GposDatabase::class.java,
@@ -133,6 +135,7 @@ class GposRuntimeViewModel(
                             expiresAtEpochMs = session.expiresAtEpochMs,
                         ),
                     )
+                    syncScheduler.schedule()
                     _uiState.update {
                         it.copy(
                             auth = AuthState.Authenticated(
@@ -205,7 +208,6 @@ class GposRuntimeViewModel(
     fun refreshDashboard() {
         viewModelScope.launch {
             val credential = credentialStore.read() ?: return@launch
-
             runCatching {
                 val json = backend.readDashboard(credential.idToken)
                 val snapshot = DashboardPayloadMapper.map(json)
@@ -217,18 +219,9 @@ class GposRuntimeViewModel(
                     json = json,
                     fetchedAt = fetchedAt,
                 )
-                DashboardRuntimeState(
-                    snapshot = snapshot,
-                    source = RuntimeDataSource.LIVE,
-                    fetchedAtEpochMs = fetchedAt,
-                )
+                DashboardRuntimeState(snapshot, RuntimeDataSource.LIVE, fetchedAt)
             }.onSuccess { dashboard ->
-                _uiState.update {
-                    it.copy(
-                        dashboard = dashboard,
-                        backend = it.backend.copy(error = null),
-                    )
-                }
+                _uiState.update { it.copy(dashboard = dashboard, backend = it.backend.copy(error = null)) }
             }.onFailure { error ->
                 onDomainReadFailure(error) { loadCachedDashboard(error.safeMessage()) }
             }
@@ -238,7 +231,6 @@ class GposRuntimeViewModel(
     fun refreshLatestHorizon() {
         viewModelScope.launch {
             val credential = credentialStore.read() ?: return@launch
-
             runCatching {
                 val json = backend.readLatestHorizon(credential.idToken)
                 val plainText = json.optString("plain_text").trim()
@@ -253,11 +245,7 @@ class GposRuntimeViewModel(
                     json = json,
                     fetchedAt = fetchedAt,
                 )
-                BriefingRuntimeState(
-                    plainText = plainText,
-                    source = RuntimeDataSource.LIVE,
-                    fetchedAtEpochMs = fetchedAt,
-                )
+                BriefingRuntimeState(plainText, RuntimeDataSource.LIVE, fetchedAt)
             }.onSuccess { briefing ->
                 _uiState.update { it.copy(briefing = briefing) }
             }.onFailure { error ->
@@ -280,11 +268,7 @@ class GposRuntimeViewModel(
                     json = json,
                     fetchedAt = fetchedAt,
                 )
-                FinanceRuntimeState(
-                    snapshot = snapshot,
-                    source = RuntimeDataSource.LIVE,
-                    fetchedAtEpochMs = fetchedAt,
-                )
+                FinanceRuntimeState(snapshot, RuntimeDataSource.LIVE, fetchedAt)
             }.onSuccess { finance ->
                 _uiState.update { it.copy(finance = finance) }
             }.onFailure { error ->
@@ -307,11 +291,7 @@ class GposRuntimeViewModel(
                     json = json,
                     fetchedAt = fetchedAt,
                 )
-                NotificationsRuntimeState(
-                    snapshot = snapshot,
-                    source = RuntimeDataSource.LIVE,
-                    fetchedAtEpochMs = fetchedAt,
-                )
+                NotificationsRuntimeState(snapshot, RuntimeDataSource.LIVE, fetchedAt)
             }.onSuccess { notifications ->
                 _uiState.update { it.copy(notifications = notifications) }
             }.onFailure { error ->
@@ -339,12 +319,8 @@ class GposRuntimeViewModel(
         val result = runCatching { backend.validateSession(credential.idToken) }
         val session = result.getOrNull()
         if (session != null) {
-            credentialStore.replace(
-                StoredCredential(
-                    idToken = credential.idToken,
-                    expiresAtEpochMs = session.expiresAtEpochMs,
-                ),
-            )
+            credentialStore.replace(StoredCredential(credential.idToken, session.expiresAtEpochMs))
+            syncScheduler.schedule()
             _uiState.update {
                 it.copy(
                     auth = AuthState.Authenticated(
@@ -362,6 +338,7 @@ class GposRuntimeViewModel(
             clearPrivateSession()
             _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
         } else {
+            syncScheduler.schedule()
             _uiState.update {
                 it.copy(
                     auth = AuthState.OfflineRestored(
@@ -381,6 +358,7 @@ class GposRuntimeViewModel(
             clearPrivateSession()
             return false
         }
+        syncScheduler.schedule()
         _uiState.update {
             it.copy(
                 auth = AuthState.OfflineRestored(
@@ -393,6 +371,7 @@ class GposRuntimeViewModel(
     }
 
     private suspend fun clearPrivateSession() {
+        syncScheduler.cancel()
         credentialStore.clear()
         cacheDao.clear()
         clearPrivateUiState()
@@ -400,12 +379,7 @@ class GposRuntimeViewModel(
 
     private fun clearPrivateUiState() {
         _uiState.update {
-            it.copy(
-                briefing = null,
-                dashboard = null,
-                finance = null,
-                notifications = null,
-            )
+            it.copy(briefing = null, dashboard = null, finance = null, notifications = null)
         }
     }
 
@@ -417,10 +391,10 @@ class GposRuntimeViewModel(
         _uiState.update {
             it.copy(
                 dashboard = DashboardRuntimeState(
-                    snapshot = snapshot,
-                    source = cachedSource(cached.staleAfterEpochMs),
-                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
-                    error = error,
+                    snapshot,
+                    cachedSource(cached.staleAfterEpochMs),
+                    cached.fetchedAtEpochMs,
+                    error,
                 ),
             )
         }
@@ -436,10 +410,10 @@ class GposRuntimeViewModel(
         _uiState.update {
             it.copy(
                 briefing = BriefingRuntimeState(
-                    plainText = plainText,
-                    source = cachedSource(cached.staleAfterEpochMs),
-                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
-                    error = error,
+                    plainText,
+                    cachedSource(cached.staleAfterEpochMs),
+                    cached.fetchedAtEpochMs,
+                    error,
                 ),
             )
         }
@@ -454,10 +428,10 @@ class GposRuntimeViewModel(
         _uiState.update {
             it.copy(
                 finance = FinanceRuntimeState(
-                    snapshot = snapshot,
-                    source = cachedSource(cached.staleAfterEpochMs),
-                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
-                    error = error,
+                    snapshot,
+                    cachedSource(cached.staleAfterEpochMs),
+                    cached.fetchedAtEpochMs,
+                    error,
                 ),
             )
         }
@@ -472,10 +446,10 @@ class GposRuntimeViewModel(
         _uiState.update {
             it.copy(
                 notifications = NotificationsRuntimeState(
-                    snapshot = snapshot,
-                    source = cachedSource(cached.staleAfterEpochMs),
-                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
-                    error = error,
+                    snapshot,
+                    cachedSource(cached.staleAfterEpochMs),
+                    cached.fetchedAtEpochMs,
+                    error,
                 ),
             )
         }
