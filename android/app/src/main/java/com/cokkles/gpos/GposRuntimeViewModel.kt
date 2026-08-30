@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
+import com.cokkles.gpos.data.CanonicalCachePolicy
 import com.cokkles.gpos.data.local.CanonicalSnapshotEntity
 import com.cokkles.gpos.data.local.GposDatabase
 import com.cokkles.gpos.data.remote.AegisBackendClient
@@ -13,6 +14,10 @@ import com.cokkles.gpos.data.remote.BackendRuntimeState
 import com.cokkles.gpos.data.remote.BriefingRuntimeState
 import com.cokkles.gpos.data.remote.DashboardPayloadMapper
 import com.cokkles.gpos.data.remote.DashboardRuntimeState
+import com.cokkles.gpos.data.remote.FinancePayloadMapper
+import com.cokkles.gpos.data.remote.FinanceRuntimeState
+import com.cokkles.gpos.data.remote.NotificationsPayloadMapper
+import com.cokkles.gpos.data.remote.NotificationsRuntimeState
 import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
@@ -34,7 +39,7 @@ class GposRuntimeViewModel(
     private val cacheDao = Room.databaseBuilder(
         application,
         GposDatabase::class.java,
-        DATABASE_NAME,
+        CanonicalCachePolicy.DATABASE_NAME,
     ).build().canonicalSnapshotDao()
 
     private val _uiState = MutableStateFlow(RuntimeUiState())
@@ -50,9 +55,11 @@ class GposRuntimeViewModel(
             if (storedCredential != null) {
                 loadCachedDashboard()
                 loadCachedBriefing()
+                loadCachedFinance()
+                loadCachedNotifications()
             } else {
                 cacheDao.clear()
-                _uiState.update { it.copy(dashboard = null, briefing = null) }
+                clearPrivateUiState()
             }
 
             _uiState.update {
@@ -167,6 +174,8 @@ class GposRuntimeViewModel(
         refreshProtectedReads()
         refreshDashboard()
         refreshLatestHorizon()
+        refreshFinance()
+        refreshNotifications()
     }
 
     fun refreshProtectedReads() {
@@ -201,15 +210,12 @@ class GposRuntimeViewModel(
                 val json = backend.readDashboard(credential.idToken)
                 val snapshot = DashboardPayloadMapper.map(json)
                 val fetchedAt = System.currentTimeMillis()
-                cacheDao.replace(
-                    CanonicalSnapshotEntity(
-                        cacheKey = DASHBOARD_CACHE_KEY,
-                        contractVersion = DASHBOARD_CONTRACT,
-                        fetchedAtEpochMs = fetchedAt,
-                        staleAfterEpochMs = fetchedAt + DASHBOARD_FRESHNESS_MS,
-                        payloadVersion = json.optString("version").takeIf { it.isNotBlank() },
-                        payloadJson = json.toString(),
-                    ),
+                cache(
+                    key = CanonicalCachePolicy.DASHBOARD_KEY,
+                    contract = CanonicalCachePolicy.DASHBOARD_CONTRACT,
+                    freshnessMs = CanonicalCachePolicy.DASHBOARD_FRESHNESS_MS,
+                    json = json,
+                    fetchedAt = fetchedAt,
                 )
                 DashboardRuntimeState(
                     snapshot = snapshot,
@@ -224,12 +230,7 @@ class GposRuntimeViewModel(
                     )
                 }
             }.onFailure { error ->
-                if (isAuthenticationFailure(error)) {
-                    handleProtectedFailure(error)
-                } else {
-                    val cached = loadCachedDashboard(error.safeMessage())
-                    if (!cached) handleProtectedFailure(error)
-                }
+                onDomainReadFailure(error) { loadCachedDashboard(error.safeMessage()) }
             }
         }
     }
@@ -245,15 +246,12 @@ class GposRuntimeViewModel(
                     throw IllegalStateException("Canonical HORIZON response contained no plain_text briefing.")
                 }
                 val fetchedAt = parseBackendTime(json) ?: System.currentTimeMillis()
-                cacheDao.replace(
-                    CanonicalSnapshotEntity(
-                        cacheKey = HORIZON_CACHE_KEY,
-                        contractVersion = HORIZON_CONTRACT,
-                        fetchedAtEpochMs = fetchedAt,
-                        staleAfterEpochMs = fetchedAt + HORIZON_FRESHNESS_MS,
-                        payloadVersion = json.optString("version").takeIf { it.isNotBlank() },
-                        payloadJson = json.toString(),
-                    ),
+                cache(
+                    key = CanonicalCachePolicy.HORIZON_KEY,
+                    contract = CanonicalCachePolicy.HORIZON_CONTRACT,
+                    freshnessMs = CanonicalCachePolicy.HORIZON_FRESHNESS_MS,
+                    json = json,
+                    fetchedAt = fetchedAt,
                 )
                 BriefingRuntimeState(
                     plainText = plainText,
@@ -263,12 +261,61 @@ class GposRuntimeViewModel(
             }.onSuccess { briefing ->
                 _uiState.update { it.copy(briefing = briefing) }
             }.onFailure { error ->
-                if (isAuthenticationFailure(error)) {
-                    handleProtectedFailure(error)
-                } else {
-                    val cached = loadCachedBriefing(error.safeMessage())
-                    if (!cached) handleProtectedFailure(error)
-                }
+                onDomainReadFailure(error) { loadCachedBriefing(error.safeMessage()) }
+            }
+        }
+    }
+
+    fun refreshFinance() {
+        viewModelScope.launch {
+            val credential = credentialStore.read() ?: return@launch
+            runCatching {
+                val json = backend.readRecentFinance(credential.idToken, FINANCE_HOURS)
+                val snapshot = FinancePayloadMapper.map(json, FINANCE_HOURS)
+                val fetchedAt = System.currentTimeMillis()
+                cache(
+                    key = CanonicalCachePolicy.FINANCE_KEY,
+                    contract = CanonicalCachePolicy.FINANCE_CONTRACT,
+                    freshnessMs = CanonicalCachePolicy.FINANCE_FRESHNESS_MS,
+                    json = json,
+                    fetchedAt = fetchedAt,
+                )
+                FinanceRuntimeState(
+                    snapshot = snapshot,
+                    source = RuntimeDataSource.LIVE,
+                    fetchedAtEpochMs = fetchedAt,
+                )
+            }.onSuccess { finance ->
+                _uiState.update { it.copy(finance = finance) }
+            }.onFailure { error ->
+                onDomainReadFailure(error) { loadCachedFinance(error.safeMessage()) }
+            }
+        }
+    }
+
+    fun refreshNotifications() {
+        viewModelScope.launch {
+            val credential = credentialStore.read() ?: return@launch
+            runCatching {
+                val json = backend.readNotifications(credential.idToken)
+                val snapshot = NotificationsPayloadMapper.map(json)
+                val fetchedAt = System.currentTimeMillis()
+                cache(
+                    key = CanonicalCachePolicy.NOTIFICATIONS_KEY,
+                    contract = CanonicalCachePolicy.NOTIFICATIONS_CONTRACT,
+                    freshnessMs = CanonicalCachePolicy.NOTIFICATIONS_FRESHNESS_MS,
+                    json = json,
+                    fetchedAt = fetchedAt,
+                )
+                NotificationsRuntimeState(
+                    snapshot = snapshot,
+                    source = RuntimeDataSource.LIVE,
+                    fetchedAtEpochMs = fetchedAt,
+                )
+            }.onSuccess { notifications ->
+                _uiState.update { it.copy(notifications = notifications) }
+            }.onFailure { error ->
+                onDomainReadFailure(error) { loadCachedNotifications(error.safeMessage()) }
             }
         }
     }
@@ -277,7 +324,8 @@ class GposRuntimeViewModel(
         val credential = credentialStore.read()
         if (credential == null) {
             cacheDao.clear()
-            _uiState.update { it.copy(auth = AuthState.SignedOut, dashboard = null, briefing = null) }
+            clearPrivateUiState()
+            _uiState.update { it.copy(auth = AuthState.SignedOut) }
             return
         }
 
@@ -347,29 +395,30 @@ class GposRuntimeViewModel(
     private suspend fun clearPrivateSession() {
         credentialStore.clear()
         cacheDao.clear()
+        clearPrivateUiState()
+    }
+
+    private fun clearPrivateUiState() {
         _uiState.update {
             it.copy(
                 briefing = null,
                 dashboard = null,
+                finance = null,
+                notifications = null,
             )
         }
     }
 
     private suspend fun loadCachedDashboard(error: String? = null): Boolean {
         if (credentialStore.read() == null) return false
-        val cached = cacheDao.read(DASHBOARD_CACHE_KEY) ?: return false
+        val cached = cacheDao.read(CanonicalCachePolicy.DASHBOARD_KEY) ?: return false
         val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
         val snapshot = runCatching { DashboardPayloadMapper.map(json) }.getOrNull() ?: return false
-        val source = if (cached.staleAfterEpochMs < System.currentTimeMillis()) {
-            RuntimeDataSource.STALE
-        } else {
-            RuntimeDataSource.CACHED
-        }
         _uiState.update {
             it.copy(
                 dashboard = DashboardRuntimeState(
                     snapshot = snapshot,
-                    source = source,
+                    source = cachedSource(cached.staleAfterEpochMs),
                     fetchedAtEpochMs = cached.fetchedAtEpochMs,
                     error = error,
                 ),
@@ -380,26 +429,87 @@ class GposRuntimeViewModel(
 
     private suspend fun loadCachedBriefing(error: String? = null): Boolean {
         if (credentialStore.read() == null) return false
-        val cached = cacheDao.read(HORIZON_CACHE_KEY) ?: return false
+        val cached = cacheDao.read(CanonicalCachePolicy.HORIZON_KEY) ?: return false
         val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
         val plainText = json.optString("plain_text").trim()
         if (plainText.isBlank()) return false
-        val source = if (cached.staleAfterEpochMs < System.currentTimeMillis()) {
-            RuntimeDataSource.STALE
-        } else {
-            RuntimeDataSource.CACHED
-        }
         _uiState.update {
             it.copy(
                 briefing = BriefingRuntimeState(
                     plainText = plainText,
-                    source = source,
+                    source = cachedSource(cached.staleAfterEpochMs),
                     fetchedAtEpochMs = cached.fetchedAtEpochMs,
                     error = error,
                 ),
             )
         }
         return true
+    }
+
+    private suspend fun loadCachedFinance(error: String? = null): Boolean {
+        if (credentialStore.read() == null) return false
+        val cached = cacheDao.read(CanonicalCachePolicy.FINANCE_KEY) ?: return false
+        val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
+        val snapshot = runCatching { FinancePayloadMapper.map(json, FINANCE_HOURS) }.getOrNull() ?: return false
+        _uiState.update {
+            it.copy(
+                finance = FinanceRuntimeState(
+                    snapshot = snapshot,
+                    source = cachedSource(cached.staleAfterEpochMs),
+                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
+                    error = error,
+                ),
+            )
+        }
+        return true
+    }
+
+    private suspend fun loadCachedNotifications(error: String? = null): Boolean {
+        if (credentialStore.read() == null) return false
+        val cached = cacheDao.read(CanonicalCachePolicy.NOTIFICATIONS_KEY) ?: return false
+        val json = runCatching { JSONObject(cached.payloadJson) }.getOrNull() ?: return false
+        val snapshot = runCatching { NotificationsPayloadMapper.map(json) }.getOrNull() ?: return false
+        _uiState.update {
+            it.copy(
+                notifications = NotificationsRuntimeState(
+                    snapshot = snapshot,
+                    source = cachedSource(cached.staleAfterEpochMs),
+                    fetchedAtEpochMs = cached.fetchedAtEpochMs,
+                    error = error,
+                ),
+            )
+        }
+        return true
+    }
+
+    private suspend fun cache(
+        key: String,
+        contract: String,
+        freshnessMs: Long,
+        json: JSONObject,
+        fetchedAt: Long,
+    ) {
+        cacheDao.replace(
+            CanonicalSnapshotEntity(
+                cacheKey = key,
+                contractVersion = contract,
+                fetchedAtEpochMs = fetchedAt,
+                staleAfterEpochMs = fetchedAt + freshnessMs,
+                payloadVersion = json.optString("version").takeIf { it.isNotBlank() },
+                payloadJson = json.toString(),
+            ),
+        )
+    }
+
+    private suspend fun onDomainReadFailure(
+        error: Throwable,
+        cachedFallback: suspend () -> Boolean,
+    ) {
+        if (isAuthenticationFailure(error)) {
+            handleProtectedFailure(error)
+        } else if (!cachedFallback()) {
+            _uiState.update { it.copy(backend = it.backend.copy(error = error.safeMessage())) }
+        }
     }
 
     private fun handleProtectedFailure(error: Throwable) {
@@ -427,6 +537,9 @@ class GposRuntimeViewModel(
         }
     }
 
+    private fun cachedSource(staleAfterEpochMs: Long): RuntimeDataSource =
+        if (staleAfterEpochMs < System.currentTimeMillis()) RuntimeDataSource.STALE else RuntimeDataSource.CACHED
+
     private fun isAuthenticationFailure(error: Throwable): Boolean {
         val message = error.safeMessage().lowercase()
         return (error is AegisBackendException && error.code in AUTH_FAILURE_CODES) ||
@@ -436,13 +549,7 @@ class GposRuntimeViewModel(
     }
 
     private companion object {
-        const val DATABASE_NAME = "gpos-cache.db"
-        const val DASHBOARD_CACHE_KEY = "dashboard_v1"
-        const val DASHBOARD_CONTRACT = "AUTH-1/get_dashboard/pwa-bounded-v1"
-        const val DASHBOARD_FRESHNESS_MS = 30L * 60L * 1000L
-        const val HORIZON_CACHE_KEY = "latest_horizon"
-        const val HORIZON_CONTRACT = "AUTH-1/get_latest_horizon/plain_text"
-        const val HORIZON_FRESHNESS_MS = 24L * 60L * 60L * 1000L
+        const val FINANCE_HOURS = 72
         val AUTH_FAILURE_CODES = setOf("AEGIS_AUTH_REQUIRED", "AEGIS_AUTH_FAILED")
     }
 }
