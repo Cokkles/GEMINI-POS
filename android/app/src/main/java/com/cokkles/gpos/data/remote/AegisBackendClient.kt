@@ -66,9 +66,25 @@ class AegisBackendClient(
 
     suspend fun readLatestHorizon(idToken: String): JSONObject = protectedRead("get_latest_horizon", idToken)
 
-    private suspend fun protectedRead(action: String, idToken: String): JSONObject {
+    suspend fun readRecentFinance(idToken: String, hours: Int = 72): JSONObject {
+        val boundedHours = hours.coerceIn(1, 168)
+        return protectedRead(
+            action = "get_recent_finance",
+            idToken = idToken,
+            additionalPayload = JSONObject().put("hours", boundedHours),
+        )
+    }
+
+    suspend fun readNotifications(idToken: String): JSONObject =
+        protectedRead("get_notifications", idToken)
+
+    private suspend fun protectedRead(
+        action: String,
+        idToken: String,
+        additionalPayload: JSONObject? = null,
+    ): JSONObject {
         require(action in READ_ONLY_ACTIONS) { "Unsupported protected read action: $action" }
-        return postJson(action, idToken)
+        return postJson(action, idToken, additionalPayload)
     }
 
     private suspend fun postJson(
@@ -165,6 +181,8 @@ class AegisBackendClient(
             "get_health",
             "get_capabilities",
             "get_latest_horizon",
+            "get_recent_finance",
+            "get_notifications",
         )
     }
 }
