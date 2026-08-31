@@ -12,6 +12,7 @@ class CanonicalSyncScheduler(
     context: Context,
 ) {
     private val workManager = WorkManager.getInstance(context)
+    private val taskQueue = TaskQueueSyncScheduler(context)
 
     fun schedule() {
         val constraints = Constraints.Builder()
@@ -30,10 +31,12 @@ class CanonicalSyncScheduler(
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
+        taskQueue.schedulePeriodic()
     }
 
     fun cancel() {
         workManager.cancelUniqueWork(CanonicalSyncWorker.UNIQUE_WORK_NAME)
+        taskQueue.cancelAll()
     }
 
     companion object {
