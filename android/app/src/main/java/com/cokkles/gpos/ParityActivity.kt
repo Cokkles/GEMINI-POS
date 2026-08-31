@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,8 +52,8 @@ class ParityActivity : ComponentActivity() {
         val googleSignInCoordinator = GoogleSignInCoordinator(this)
 
         setContent {
-            val themePreferences = ThemePreferences(applicationContext)
-            var selectedTheme by mutableStateOf(themePreferences.load())
+            val themePreferences = remember { ThemePreferences(applicationContext) }
+            var selectedTheme by remember { mutableStateOf(themePreferences.load()) }
             val runtimeState by runtimeViewModel.uiState.collectAsStateWithLifecycle()
             val parityState by parityViewModel.state.collectAsStateWithLifecycle()
             val taskQueueState by taskQueueViewModel.state.collectAsStateWithLifecycle()
