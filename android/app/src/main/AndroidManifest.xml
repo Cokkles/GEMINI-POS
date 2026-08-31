@@ -12,6 +12,9 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name=".GposActivity"
+            android:exported="false" />
+        <activity
+            android:name=".DailyDriverActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
