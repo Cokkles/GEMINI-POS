@@ -89,6 +89,7 @@ class AegisCommandBoundaryTest {
                 "completeTasks",
                 "resolveCalendarEvent",
                 "createCalendarEvent",
+                "submitCapture",
                 "acknowledgeNotification",
             ),
             publicDeclaredMethods,
