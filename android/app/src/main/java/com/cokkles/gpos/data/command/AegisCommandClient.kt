@@ -86,6 +86,23 @@ class AegisCommandClient(
         )
     }
 
+    suspend fun submitCapture(
+        idToken: String,
+        kind: CaptureKind,
+        text: String,
+        submissionId: String,
+    ): CaptureSubmissionResult {
+        val json = postAuthenticated(idToken, capturePayload(kind, text, submissionId))
+        val message = json.optString("result").trim().takeIf(String::isNotBlank)
+            ?: json.optString("answer").trim().takeIf(String::isNotBlank)
+            ?: json.optString("message").trim().takeIf(String::isNotBlank)
+            ?: throw AegisBackendException(
+                "CAPTURE_RESULT_MISSING",
+                "AEGIS accepted the connection but returned no meaningful capture result.",
+            )
+        return CaptureSubmissionResult(message)
+    }
+
     suspend fun acknowledgeNotification(
         idToken: String,
         notificationId: String,
