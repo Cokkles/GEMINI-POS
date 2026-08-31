@@ -11,7 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.cokkles.gpos.GposActivity
+import com.cokkles.gpos.DailyDriverActivity
 import com.cokkles.gpos.R
 
 class GposNotificationPublisher(
@@ -47,7 +47,7 @@ class GposNotificationPublisher(
             Intent.ACTION_VIEW,
             DeepLinkRouter.uriFor(target),
             context,
-            GposActivity::class.java,
+            DailyDriverActivity::class.java,
         ).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
