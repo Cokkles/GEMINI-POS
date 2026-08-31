@@ -58,7 +58,7 @@ data class LocalLedger(
 /**
  * Small identity-bound local mutation ledger.
  *
- * The payload is AES/GCM encrypted with an Android Keystore key. Callers must clear the store on
+ * The payload is AES/GCM encrypted with an Android Keystore key. Callers clear the store on
  * explicit logout. No OAuth token, backend endpoint, document ID, or raw private report is stored.
  */
 class ProtectedLocalLedger(
@@ -83,7 +83,7 @@ class ProtectedLocalLedger(
 
     private fun readUnsafe(): LocalLedger {
         val encoded = preferences.getString(KEY_LEDGER_BLOB, null) ?: return LocalLedger()
-        return runCatching { LocalLedger.fromJson(JSONObject(decrypt(encoded))) }
+        return runCatching { parseLedger(JSONObject(decrypt(encoded))) }
             .getOrElse {
                 preferences.edit().remove(KEY_LEDGER_BLOB).commit()
                 LocalLedger()
@@ -198,11 +198,47 @@ class ProtectedLocalLedger(
     }
 }
 
-private fun LocalLedger.Companion_unused() = Unit
+private fun parseLedger(json: JSONObject): LocalLedger = LocalLedger(
+    pendingTasks = json.optJSONArray("pending_tasks").mapObjects { item ->
+        PendingTaskMutation(
+            id = item.optString("id"),
+            taskId = item.optString("task_id"),
+            title = item.optString("title"),
+            stagedAtEpochMs = item.optLong("staged_at"),
+            syncAfterEpochMs = item.optLong("sync_after"),
+            attempts = item.optInt("attempts", 0),
+        )
+    }.filter { it.id.isNotBlank() && it.taskId.isNotBlank() },
+    receipts = json.optJSONArray("receipts").mapObjects { item ->
+        LocalReceipt(
+            id = item.optString("id"),
+            kind = item.optString("kind"),
+            summary = item.optString("summary"),
+            state = runCatching { LocalReceiptState.valueOf(item.optString("state")) }
+                .getOrDefault(LocalReceiptState.FAILED),
+            createdAtEpochMs = item.optLong("created_at"),
+            updatedAtEpochMs = item.optLong("updated_at"),
+            result = item.optString("result").trim().takeIf(String::isNotBlank),
+            error = item.optString("error").trim().takeIf(String::isNotBlank),
+        )
+    }.filter { it.id.isNotBlank() },
+    alerts = json.optJSONArray("alerts").mapObjects { item ->
+        LocalAlert(
+            id = item.optString("id"),
+            severity = item.optString("severity", "warning"),
+            title = item.optString("title"),
+            detail = item.optString("detail"),
+            createdAtEpochMs = item.optLong("created_at"),
+            acknowledged = item.optBoolean("acknowledged", false),
+        )
+    }.filter { it.id.isNotBlank() },
+)
 
-private fun LocalLedger.Companion_fromJson_placeholder() = Unit
-
-private fun LocalLedger.Companion.fromJson(json: JSONObject): LocalLedger = LocalLedger()
-
-private companion object LedgerParser {
+private inline fun <T> JSONArray?.mapObjects(transform: (JSONObject) -> T): List<T> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            optJSONObject(index)?.let { add(transform(it)) }
+        }
+    }
 }
