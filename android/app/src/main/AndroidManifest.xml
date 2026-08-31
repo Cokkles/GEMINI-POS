@@ -7,7 +7,7 @@
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="GPOS"
+        android:label="AEGIS"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.GPOS"
@@ -17,6 +17,9 @@
             android:exported="false" />
         <activity
             android:name=".DailyDriverActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ParityActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
