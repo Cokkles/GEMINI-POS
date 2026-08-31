@@ -109,8 +109,8 @@ class TaskQueueViewModel(
                 syncing = false,
                 lastMessage = when {
                     result.completed > 0 || result.failed > 0 ->
-                        "Task sync: ${result.completed} confirmed, ${result.failed} failed."
-                    else -> "No queued task changes were ready to synchronize."
+                        "Task sync: ${result.completed} confirmed, ${result.failed} failed. Canonical Tasks refreshed."
+                    else -> "No pending task changes. Canonical Google Tasks refreshed.",
                 },
             )
             onCanonicalRefreshRequested()
