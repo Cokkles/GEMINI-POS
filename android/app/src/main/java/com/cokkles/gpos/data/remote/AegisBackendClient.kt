@@ -66,6 +66,45 @@ class AegisBackendClient(
 
     suspend fun readLatestHorizon(idToken: String): JSONObject = protectedRead("get_latest_horizon", idToken)
 
+    suspend fun readCalendarRange(
+        idToken: String,
+        startDate: String,
+        endDate: String,
+    ): JSONObject = protectedRead(
+        action = "get_calendar_range",
+        idToken = idToken,
+        additionalPayload = JSONObject()
+            .put("start_date", startDate)
+            .put("end_date", endDate),
+    )
+
+    suspend fun readIntelligence(
+        idToken: String,
+        force: Boolean = false,
+    ): JSONObject = protectedRead(
+        action = "get_intelligence",
+        idToken = idToken,
+        additionalPayload = JSONObject().put("force", force),
+    )
+
+    suspend fun readNutritionSummary(
+        idToken: String,
+        days: Int,
+    ): JSONObject = protectedRead(
+        action = "get_nutrition_summary",
+        idToken = idToken,
+        additionalPayload = JSONObject().put("days", days.coerceIn(1, 30)),
+    )
+
+    suspend fun readTaskHistory(
+        idToken: String,
+        days: Int,
+    ): JSONObject = protectedRead(
+        action = "get_task_history",
+        idToken = idToken,
+        additionalPayload = JSONObject().put("days", days.coerceIn(1, 30)),
+    )
+
     suspend fun readRecentFinance(idToken: String, hours: Int = 72): JSONObject {
         val boundedHours = hours.coerceIn(1, 168)
         return protectedRead(
@@ -181,6 +220,10 @@ class AegisBackendClient(
             "get_health",
             "get_capabilities",
             "get_latest_horizon",
+            "get_calendar_range",
+            "get_intelligence",
+            "get_nutrition_summary",
+            "get_task_history",
             "get_recent_finance",
             "get_notifications",
         )
