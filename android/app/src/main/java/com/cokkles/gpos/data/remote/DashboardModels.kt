@@ -40,6 +40,8 @@ data class DashboardSnapshot(
     val horizonLastSuccessAtEpochMs: Long?,
     val horizonMode: String?,
     val backendReportedUpdatedAtEpochMs: Long?,
+    val totalCalories: Double? = null,
+    val nutritionAdherence: String? = null,
 )
 
 object DashboardPayloadMapper {
@@ -54,6 +56,7 @@ object DashboardPayloadMapper {
         val briefing = json.optJSONObject("briefing")
         val metadata = json.optJSONObject("system_metadata")
         val horizonGeneration = metadata?.optJSONObject("horizon_generation")
+        val nutrition = json.optJSONObject("health_nutrition")
 
         return DashboardSnapshot(
             todayEvents = mapEvents(calendar?.optJSONArray("today"), DashboardDay.TODAY),
@@ -76,6 +79,14 @@ object DashboardPayloadMapper {
             backendReportedUpdatedAtEpochMs = parseInstant(
                 metadata?.optString("last_updated"),
             ),
+            totalCalories = nutrition
+                ?.takeIf { it.has("total_calories") && !it.isNull("total_calories") }
+                ?.optDouble("total_calories", Double.NaN)
+                ?.takeUnless(Double::isNaN),
+            nutritionAdherence = nutrition
+                ?.optString("adherence_status")
+                ?.trim()
+                ?.takeIf(String::isNotBlank),
         )
     }
 
