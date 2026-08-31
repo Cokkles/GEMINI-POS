@@ -1,9 +1,6 @@
 package com.cokkles.gpos.ui.parity
 
 import android.os.Build
-import android.provider.Settings
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,7 +62,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -400,7 +396,7 @@ private fun HomeScreen(
                         modifier = Modifier.padding(top = 5.dp),
                     )
                     Text(
-                        parity.nutrition.source?.name ?: dashboard?.nutritionAdherence ?: "Dashboard glance",
+                        parity.nutrition.source?.name ?: humanizeToken(dashboard?.nutritionAdherence) ?: "Dashboard glance",
                         modifier = Modifier.padding(top = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -438,7 +434,7 @@ private fun HomeScreen(
             Card(onClick = { navigate(alerts.route) }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Alerts & receipts", style = MaterialTheme.typography.titleMedium)
-                    Text("${serverAlerts + localAlerts + captureAlerts} active alert(s) • ${queue.ledger.receipts.size} task receipt(s)", modifier = Modifier.padding(top = 5.dp))
+                    Text("${countLabel(serverAlerts + localAlerts + captureAlerts, "active alert")} • ${countLabel(queue.ledger.receipts.size, "task receipt")}", modifier = Modifier.padding(top = 5.dp))
                 }
             }
         }
@@ -448,12 +444,6 @@ private fun HomeScreen(
 
 @Composable
 private fun QuoteCard() {
-    val context = LocalContext.current
-    val reduceMotion = remember {
-        runCatching {
-            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        }.getOrDefault(false)
-    }
     val seed = remember { (LocalDate.now().toEpochDay() % quotes.size).toInt().let { if (it < 0) it + quotes.size else it } }
     var step by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
@@ -466,14 +456,11 @@ private fun QuoteCard() {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { step += 1 },
     ) {
-        Column(Modifier.padding(18.dp)) {
-            if (reduceMotion) {
-                QuoteContent(quote)
-            } else {
-                Crossfade(targetState = quote, animationSpec = tween(400), label = "aegisQuote") { current ->
-                    QuoteContent(current)
-                }
-            }
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            QuoteContent(quote)
         }
     }
 }
@@ -635,8 +622,8 @@ private fun TasksScreen(
         }
         queueState.lastMessage?.let { item { SummaryCard("Task status", it) } }
         item {
-            Button(onClick = onSyncNow, modifier = Modifier.fillMaxWidth(), enabled = canMutate && !queueState.syncing && queueState.ledger.pendingTasks.isNotEmpty()) {
-                Text(if (queueState.syncing) "Synchronizing…" else "Sync now")
+            Button(onClick = onSyncNow, modifier = Modifier.fillMaxWidth(), enabled = canMutate && !queueState.syncing) {
+                Text(if (queueState.syncing) "Synchronizing…" else "Sync & refresh Tasks")
             }
         }
         item { SectionTitle("Completed task history") }
@@ -671,7 +658,7 @@ private fun TaskQueueCard(
         Column {
             ListItem(
                 headlineContent = { Text(task.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                supportingContent = { Text(if (pending != null) "PENDING • Undo available until sync" else task.timeLabel ?: "Google Task") },
+                supportingContent = { Text(if (pending != null) "Pending • Undo available until sync" else task.timeLabel ?: "Google Task") },
                 leadingContent = {
                     Checkbox(
                         checked = pending != null,
@@ -757,7 +744,7 @@ private fun NewsScreen(state: ParityUiState, onRefresh: () -> Unit) {
             val successful = snapshot?.sourceHealth?.count { !it.status.equals("failed", true) }
             SummaryCard(
                 "Pipeline • ${snapshot?.status ?: "not loaded"}",
-                "${successful ?: "—"} / ${snapshot?.sourceCount ?: "—"} sources ready • ${snapshot?.sourceErrors?.size ?: 0} isolated failure(s)",
+                "${successful ?: "—"} / ${snapshot?.sourceCount ?: "—"} sources ready • ${countLabel(snapshot?.sourceErrors?.size ?: 0, "isolated failure")}",
             )
         }
         val categories = snapshot?.items.orEmpty().groupBy { it.category }
@@ -821,7 +808,7 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
             }
             item {
                 SummaryCard(
-                    "${loggedDays.size} logged day(s)",
+                    countLabel(loggedDays.size, "logged day"),
                     "Avg ${formatNumber(average { it.calories })} cal • ${formatNumber(average { it.protein })}g protein • ${formatNumber(average { it.carbs })}g carbs • ${formatNumber(average { it.fat })}g fat",
                 )
             }
@@ -850,7 +837,7 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
                     listOfNotNull(meal.date, meal.time, meal.portion, meal.calories?.let { "${formatNumber(it)} cal" }, meal.status).joinToString(" • "),
                 )
             }
-            if ((snapshot?.pendingEstimateCount ?: 0) > 0) item { SummaryCard("Pending estimates", "${snapshot?.pendingEstimateCount} meal estimate(s) are still pending.") }
+            if ((snapshot?.pendingEstimateCount ?: 0) > 0) item { SummaryCard("Pending estimates", "${countLabel(snapshot?.pendingEstimateCount ?: 0, "meal estimate")} still pending.") }
         }
     }
 }
