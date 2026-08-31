@@ -11,7 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.cokkles.gpos.DailyDriverActivity
+import com.cokkles.gpos.ParityActivity
 import com.cokkles.gpos.R
 
 class GposNotificationPublisher(
@@ -20,15 +20,23 @@ class GposNotificationPublisher(
     fun ensureChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
+        listOf(
             NotificationChannel(
                 GposNotificationChannels.GENERAL,
-                "GPOS alerts",
+                "AEGIS alerts & receipts",
                 NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = "Privacy-safe GPOS alert notifications"
-            },
-        )
+            ).apply { description = "Meaningful AEGIS outcomes and alerts" },
+            NotificationChannel(
+                GposNotificationChannels.TASKS,
+                "AEGIS task synchronization",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "Delayed Google Tasks synchronization outcomes" },
+            NotificationChannel(
+                GposNotificationChannels.SYSTEM,
+                "AEGIS system",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "Authentication and backend attention states" },
+        ).forEach(manager::createNotificationChannel)
     }
 
     fun canPostNotifications(): Boolean =
@@ -39,15 +47,32 @@ class GposNotificationPublisher(
             ) == PackageManager.PERMISSION_GRANTED
 
     fun publishGenericCriticalAlert(stableEventId: String) {
+        publishOutcome(
+            stableEventId = stableEventId,
+            title = "AEGIS has a critical alert",
+            body = "Open AEGIS to review the alert securely.",
+            target = GposDeepLinkTarget.ALERTS,
+            isError = true,
+        )
+    }
+
+    fun publishOutcome(
+        stableEventId: String,
+        title: String,
+        body: String,
+        target: GposDeepLinkTarget,
+        isError: Boolean,
+        channelId: String = GposNotificationChannels.GENERAL,
+    ) {
         if (!canPostNotifications()) return
         ensureChannels()
-
-        val target = GposDeepLinkTarget.NOTIFICATIONS
+        val safeTitle = title.trim().take(90).ifBlank { "AEGIS" }
+        val safeBody = body.trim().replace(Regex("\\s+"), " ").take(240).ifBlank { "Open AEGIS for details." }
         val intent = Intent(
             Intent.ACTION_VIEW,
             DeepLinkRouter.uriFor(target),
             context,
-            DailyDriverActivity::class.java,
+            ParityActivity::class.java,
         ).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -57,19 +82,15 @@ class GposNotificationPublisher(
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
-        val notification = NotificationCompat.Builder(context, GposNotificationChannels.GENERAL)
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_gpos_notification)
-            .setContentTitle("GPOS has a critical alert")
-            .setContentText("Open GPOS to review the alert securely.")
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText("Open GPOS to review the alert securely. Private server content is hidden from the lock-screen notification."),
-            )
+            .setContentTitle(safeTitle)
+            .setContentText(safeBody)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(safeBody))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(if (isError) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
+            .setPriority(if (isError) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
         if (
@@ -78,9 +99,7 @@ class GposNotificationPublisher(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS,
             ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        ) return
 
         try {
             NotificationManagerCompat.from(context).notify(stableEventId.hashCode(), notification)
