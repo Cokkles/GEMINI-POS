@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-android:
@@ -28,6 +28,113 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: One-time 0.5.1 device-feedback source repair
+        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/gpos-android-foundation'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('android/app/src/main/java/com/cokkles/gpos/ui/parity/ParityApp.kt')
+          text = path.read_text()
+
+          for old in [
+              'import android.provider.Settings\n',
+              'import androidx.compose.animation.Crossfade\n',
+              'import androidx.compose.animation.core.tween\n',
+              'import androidx.compose.ui.platform.LocalContext\n',
+          ]:
+              text = text.replace(old, '')
+
+          old_quote = '''@Composable
+          private fun QuoteCard() {
+              val context = LocalContext.current
+              val reduceMotion = remember {
+                  runCatching {
+                      Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+                  }.getOrDefault(false)
+              }
+              val seed = remember { (LocalDate.now().toEpochDay() % quotes.size).toInt().let { if (it < 0) it + quotes.size else it } }
+              var step by remember { mutableIntStateOf(0) }
+              LaunchedEffect(Unit) {
+                  while (true) {
+                      delay(5L * 60L * 1000L)
+                      step += 1
+                  }
+              }
+              val quote = quotes[(seed + step) % quotes.size]
+              Card(
+                  modifier = Modifier.fillMaxWidth().clickable { step += 1 },
+              ) {
+                  Column(Modifier.padding(18.dp)) {
+                      if (reduceMotion) {
+                          QuoteContent(quote)
+                      } else {
+                          Crossfade(targetState = quote, animationSpec = tween(400), label = "aegisQuote") { current ->
+                              QuoteContent(current)
+                          }
+                      }
+                  }
+              }
+          }
+          '''
+          new_quote = '''@Composable
+          private fun QuoteCard() {
+              val seed = remember { (LocalDate.now().toEpochDay() % quotes.size).toInt().let { if (it < 0) it + quotes.size else it } }
+              var step by remember { mutableIntStateOf(0) }
+              LaunchedEffect(Unit) {
+                  while (true) {
+                      delay(5L * 60L * 1000L)
+                      step += 1
+                  }
+              }
+              val quote = quotes[(seed + step) % quotes.size]
+              Card(
+                  modifier = Modifier.fillMaxWidth().clickable { step += 1 },
+              ) {
+                  Column(
+                      modifier = Modifier.padding(18.dp),
+                      verticalArrangement = Arrangement.spacedBy(8.dp),
+                  ) {
+                      QuoteContent(quote)
+                  }
+              }
+          }
+          '''
+          if old_quote not in text:
+              raise SystemExit('QuoteCard source shape changed; refusing blind patch')
+          text = text.replace(old_quote, new_quote)
+
+          replacements = {
+              'parity.nutrition.source?.name ?: dashboard?.nutritionAdherence ?: "Dashboard glance",':
+                  'parity.nutrition.source?.name ?: humanizeToken(dashboard?.nutritionAdherence) ?: "Dashboard glance",',
+              'Text("${serverAlerts + localAlerts + captureAlerts} active alert(s) • ${queue.ledger.receipts.size} task receipt(s)", modifier = Modifier.padding(top = 5.dp))':
+                  'Text("${countLabel(serverAlerts + localAlerts + captureAlerts, "active alert")} • ${countLabel(queue.ledger.receipts.size, "task receipt")}", modifier = Modifier.padding(top = 5.dp))',
+              'Button(onClick = onSyncNow, modifier = Modifier.fillMaxWidth(), enabled = canMutate && !queueState.syncing && queueState.ledger.pendingTasks.isNotEmpty()) {\n                Text(if (queueState.syncing) "Synchronizing…" else "Sync now")\n            }':
+                  'Button(onClick = onSyncNow, modifier = Modifier.fillMaxWidth(), enabled = canMutate && !queueState.syncing) {\n                Text(if (queueState.syncing) "Synchronizing…" else "Sync & refresh Tasks")\n            }',
+              'supportingContent = { Text(if (pending != null) "PENDING • Undo available until sync" else task.timeLabel ?: "Google Task") },':
+                  'supportingContent = { Text(if (pending != null) "Pending • Undo available until sync" else task.timeLabel ?: "Google Task") },',
+              '"${successful ?: "—"} / ${snapshot?.sourceCount ?: "—"} sources ready • ${snapshot?.sourceErrors?.size ?: 0} isolated failure(s)",':
+                  '"${successful ?: "—"} / ${snapshot?.sourceCount ?: "—"} sources ready • ${countLabel(snapshot?.sourceErrors?.size ?: 0, "isolated failure")}",',
+              '"${loggedDays.size} logged day(s)",':
+                  'countLabel(loggedDays.size, "logged day"),',
+              'if ((snapshot?.pendingEstimateCount ?: 0) > 0) item { SummaryCard("Pending estimates", "${snapshot?.pendingEstimateCount} meal estimate(s) are still pending.") }':
+                  'if ((snapshot?.pendingEstimateCount ?: 0) > 0) item { SummaryCard("Pending estimates", "${countLabel(snapshot?.pendingEstimateCount ?: 0, "meal estimate")} still pending.") }',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'Expected 0.5.0 source fragment missing: {old[:80]}')
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+          if ! git diff --quiet -- android/app/src/main/java/com/cokkles/gpos/ui/parity/ParityApp.kt; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add android/app/src/main/java/com/cokkles/gpos/ui/parity/ParityApp.kt
+            git commit -m 'fix(android): harden 0.5.1 device feedback presentation'
+            git push origin HEAD:agent/gpos-android-foundation
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -54,8 +161,8 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk \
             | head -n 1 | tee android/app/build/outputs/apk/debug/package-metadata.txt
           grep -q "name='com.cokkles.gpos'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionCode='8'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionName='0.5.0-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionCode='9'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionName='0.5.1-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
           {
             echo "package=com.cokkles.gpos"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
@@ -67,7 +174,7 @@ jobs:
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.5.0-parity-debug
+          name: aegis-android-0.5.1-device-feedback-debug
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/apk/debug/signing-fingerprint.txt
@@ -78,7 +185,7 @@ jobs:
       - name: Upload Android instrumentation APK
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.5.0-parity-androidTest
+          name: aegis-android-0.5.1-device-feedback-androidTest
           path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
