@@ -1,0 +1,235 @@
+package com.cokkles.gpos.platform.sync
+
+import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.cokkles.gpos.data.command.AegisCommandClient
+import com.cokkles.gpos.data.local.LocalAlert
+import com.cokkles.gpos.data.local.LocalReceiptState
+import com.cokkles.gpos.data.local.PendingTaskMutation
+import com.cokkles.gpos.data.local.ProtectedLocalLedger
+import com.cokkles.gpos.data.remote.AegisBackendClient
+import com.cokkles.gpos.data.remote.DashboardPayloadMapper
+import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
+import com.cokkles.gpos.platform.notifications.GposNotificationChannels
+import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
+import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+
+class TaskQueueSyncWorker(
+    appContext: Context,
+    workerParams: WorkerParameters,
+) : CoroutineWorker(appContext, workerParams) {
+    override suspend fun doWork(): Result {
+        val result = TaskQueueProcessor(applicationContext).flushDue(force = false)
+        return if (result.retrySuggested && runAttemptCount < MAX_WORK_RETRIES) Result.retry() else Result.success()
+    }
+
+    companion object {
+        const val PERIODIC_WORK_NAME = "gpos-task-queue-periodic"
+        const val DUE_WORK_PREFIX = "gpos-task-queue-due-"
+        private const val MAX_WORK_RETRIES = 2
+    }
+}
+
+data class TaskQueueProcessResult(
+    val completed: Int = 0,
+    val failed: Int = 0,
+    val retrySuggested: Boolean = false,
+)
+
+class TaskQueueProcessor(
+    private val context: Context,
+) {
+    private val ledgerStore = ProtectedLocalLedger(context)
+    private val credentialStore = AndroidKeystoreCredentialStore(context)
+    private val commands = AegisCommandClient()
+    private val reads = AegisBackendClient()
+    private val notifications = GposNotificationPublisher(context)
+
+    suspend fun flushDue(force: Boolean): TaskQueueProcessResult {
+        val credential = credentialStore.read() ?: return TaskQueueProcessResult()
+        if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
+            return TaskQueueProcessResult()
+        }
+        val now = System.currentTimeMillis()
+        val due = ledgerStore.read().pendingTasks.filter { force || it.syncAfterEpochMs <= now }
+        var completed = 0
+        var failed = 0
+        var retry = false
+
+        for (pending in due) {
+            val outcome = runCatching {
+                commands.completeTasks(credential.idToken, listOf(pending.taskId))
+                val activeIds = DashboardPayloadMapper.map(reads.readDashboard(credential.idToken))
+                    .tasks
+                    .mapNotNull { it.canonicalId }
+                    .toSet()
+                check(pending.taskId !in activeIds) {
+                    "Task remains active after canonical completion acknowledgement."
+                }
+            }
+            if (outcome.isSuccess) {
+                completed += 1
+                markConfirmed(pending)
+            } else {
+                val nextAttempt = pending.attempts + 1
+                val message = outcome.exceptionOrNull()?.message
+                    ?.takeIf(String::isNotBlank)
+                    ?: "Task synchronization could not be verified."
+                if (nextAttempt >= MAX_TASK_ATTEMPTS) {
+                    failed += 1
+                    markFailed(pending, message)
+                } else {
+                    retry = true
+                    val nextSync = System.currentTimeMillis() + RETRY_DELAY_MS
+                    ledgerStore.update { ledger ->
+                        ledger.copy(
+                            pendingTasks = ledger.pendingTasks.map { item ->
+                                if (item.id == pending.id) {
+                                    item.copy(attempts = nextAttempt, syncAfterEpochMs = nextSync)
+                                } else item
+                            },
+                            receipts = ledger.receipts.map { receipt ->
+                                if (receipt.id == pending.id) {
+                                    receipt.copy(
+                                        updatedAtEpochMs = System.currentTimeMillis(),
+                                        result = "Retry ${nextAttempt + 1} scheduled after a transient verification failure.",
+                                    )
+                                } else receipt
+                            },
+                        )
+                    }
+                    TaskQueueSyncScheduler(context).schedulePending(pending.id, RETRY_DELAY_MS)
+                }
+            }
+        }
+        return TaskQueueProcessResult(completed, failed, retry)
+    }
+
+    private fun markConfirmed(pending: PendingTaskMutation) {
+        val now = System.currentTimeMillis()
+        ledgerStore.update { ledger ->
+            ledger.copy(
+                pendingTasks = ledger.pendingTasks.filterNot { it.id == pending.id },
+                receipts = ledger.receipts.map { receipt ->
+                    if (receipt.id == pending.id) {
+                        receipt.copy(
+                            state = LocalReceiptState.CONFIRMED,
+                            updatedAtEpochMs = now,
+                            result = "Task completion confirmed by a fresh canonical read.",
+                            error = null,
+                        )
+                    } else receipt
+                },
+            )
+        }
+        notifications.publishOutcome(
+            stableEventId = pending.id,
+            title = "Task completed",
+            body = pending.title,
+            target = GposDeepLinkTarget.TASKS,
+            isError = false,
+            channelId = GposNotificationChannels.TASKS,
+        )
+    }
+
+    private fun markFailed(pending: PendingTaskMutation, message: String) {
+        val now = System.currentTimeMillis()
+        val alert = LocalAlert(
+            id = UUID.randomUUID().toString(),
+            severity = "error",
+            title = "Task synchronization failed",
+            detail = "${pending.title}: $message".take(500),
+            createdAtEpochMs = now,
+        )
+        ledgerStore.update { ledger ->
+            ledger.copy(
+                pendingTasks = ledger.pendingTasks.filterNot { it.id == pending.id },
+                receipts = ledger.receipts.map { receipt ->
+                    if (receipt.id == pending.id) {
+                        receipt.copy(
+                            state = LocalReceiptState.FAILED,
+                            updatedAtEpochMs = now,
+                            error = message.take(500),
+                        )
+                    } else receipt
+                },
+                alerts = ledger.alerts + alert,
+            )
+        }
+        notifications.publishOutcome(
+            stableEventId = pending.id,
+            title = "Task sync failed",
+            body = pending.title,
+            target = GposDeepLinkTarget.ALERTS,
+            isError = true,
+            channelId = GposNotificationChannels.TASKS,
+        )
+    }
+
+    private companion object {
+        const val MAX_TASK_ATTEMPTS = 2
+        const val RETRY_DELAY_MS = 5L * 60L * 1000L
+    }
+}
+
+class TaskQueueSyncScheduler(
+    context: Context,
+) {
+    private val workManager = WorkManager.getInstance(context)
+    private val constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .setRequiresBatteryNotLow(true)
+        .build()
+
+    fun schedulePeriodic() {
+        val request = PeriodicWorkRequestBuilder<TaskQueueSyncWorker>(
+            PERIODIC_MINUTES,
+            TimeUnit.MINUTES,
+        )
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            TaskQueueSyncWorker.PERIODIC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
+    fun schedulePending(localId: String, delayMs: Long = GRACE_MS) {
+        val request = OneTimeWorkRequestBuilder<TaskQueueSyncWorker>()
+            .setInitialDelay(delayMs.coerceAtLeast(0), TimeUnit.MILLISECONDS)
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        workManager.enqueueUniqueWork(
+            TaskQueueSyncWorker.DUE_WORK_PREFIX + localId,
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
+    }
+
+    fun cancelPending(localId: String) {
+        workManager.cancelUniqueWork(TaskQueueSyncWorker.DUE_WORK_PREFIX + localId)
+    }
+
+    fun cancelAll() {
+        workManager.cancelUniqueWork(TaskQueueSyncWorker.PERIODIC_WORK_NAME)
+    }
+
+    companion object {
+        const val GRACE_MS = 5L * 60L * 1000L
+        const val PERIODIC_MINUTES = 15L
+    }
+}
