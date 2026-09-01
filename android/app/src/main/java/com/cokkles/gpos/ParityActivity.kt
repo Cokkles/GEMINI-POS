@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,10 +21,12 @@ import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.platform.notifications.DeepLinkRouter
 import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
+import com.cokkles.gpos.platform.security.AuthContinuityPreferences
 import com.cokkles.gpos.platform.security.GoogleSignInCoordinator
-import com.cokkles.gpos.ui.parity.ParityApp
+import com.cokkles.gpos.ui.daily.DailyUxApp
 import com.cokkles.gpos.ui.theme.GposTheme
 import com.cokkles.gpos.ui.theme.ThemePreferences
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ParityActivity : ComponentActivity() {
@@ -31,8 +34,8 @@ class ParityActivity : ComponentActivity() {
     private val parityViewModel: ParityRuntimeViewModel by viewModels()
     private val taskQueueViewModel: TaskQueueViewModel by viewModels()
     private val captureViewModel: CaptureViewModel by viewModels()
-    private val calendarCommandViewModel: CalendarCommandViewModel by viewModels()
     private val notificationCommandViewModel: NotificationCommandViewModel by viewModels()
+    private val interactionViewModel: AegisInteractionViewModel by viewModels()
 
     private var pendingDeepLink by mutableStateOf<GposDeepLinkTarget?>(null)
     private var notificationPermissionGranted by mutableStateOf(false)
@@ -49,7 +52,9 @@ class ParityActivity : ComponentActivity() {
         pendingDeepLink = DeepLinkRouter.resolve(intent?.data)
         notificationPermissionGranted = hasNotificationPermission()
         GposNotificationPublisher(this).ensureChannels()
+
         val googleSignInCoordinator = GoogleSignInCoordinator(this)
+        val authContinuity = AuthContinuityPreferences(applicationContext)
 
         setContent {
             val themePreferences = remember { ThemePreferences(applicationContext) }
@@ -58,16 +63,22 @@ class ParityActivity : ComponentActivity() {
             val parityState by parityViewModel.state.collectAsStateWithLifecycle()
             val taskQueueState by taskQueueViewModel.state.collectAsStateWithLifecycle()
             val captureState by captureViewModel.state.collectAsStateWithLifecycle()
-            val calendarCommandState by calendarCommandViewModel.state.collectAsStateWithLifecycle()
             val notificationCommandState by notificationCommandViewModel.state.collectAsStateWithLifecycle()
+            val interactionState by interactionViewModel.state.collectAsStateWithLifecycle()
+
+            LaunchedEffect(runtimeState.auth) {
+                if (runtimeState.auth is AuthState.Authenticated) {
+                    authContinuity.markAuthenticated()
+                }
+            }
 
             GposTheme(selectedTheme) {
-                ParityApp(
+                DailyUxApp(
                     runtimeState = runtimeState,
                     parityState = parityState,
                     taskQueueState = taskQueueState,
                     captureState = captureState,
-                    calendarCommandState = calendarCommandState,
+                    interactionState = interactionState,
                     notificationCommandState = notificationCommandState,
                     selectedTheme = selectedTheme,
                     deepLinkTarget = pendingDeepLink,
@@ -91,9 +102,12 @@ class ParityActivity : ComponentActivity() {
                     },
                     onSignOut = {
                         lifecycleScope.launch {
+                            authContinuity.clear()
                             googleSignInCoordinator.clearProviderState()
                             taskQueueViewModel.clearProtectedLedger()
                             captureViewModel.clearProtectedLedger()
+                            interactionViewModel.clearAiChat()
+                            interactionViewModel.clearCalendarProposal()
                             runtimeViewModel.signOut()
                         }
                     },
@@ -101,6 +115,7 @@ class ParityActivity : ComponentActivity() {
                     onRefreshCanonical = {
                         runtimeViewModel.refreshCanonicalReads()
                         parityViewModel.refreshAll()
+                        interactionViewModel.refreshCapabilitiesAndFollowups()
                         taskQueueViewModel.refresh()
                         captureViewModel.refreshLedger()
                     },
@@ -121,25 +136,45 @@ class ParityActivity : ComponentActivity() {
                             parityViewModel.refreshAll()
                         }
                     },
-                    onCaptureSubmit = captureViewModel::submit,
-                    onLocalAlertAck = captureViewModel::acknowledgeLocalAlert,
-                    onCalendarResolve = calendarCommandViewModel::resolve,
-                    onCalendarCancel = calendarCommandViewModel::cancelProposal,
-                    onCalendarCreate = {
-                        calendarCommandViewModel.createResolved {
+                    onTaskCreate = { title, notes ->
+                        interactionViewModel.createTask(title, notes) {
                             runtimeViewModel.refreshDashboard()
-                            parityViewModel.refreshCalendar()
+                            parityViewModel.refreshAll()
                         }
                     },
+                    onCaptureSubmit = captureViewModel::submit,
+                    onLocalAlertAck = captureViewModel::acknowledgeLocalAlert,
                     onServerNotificationAck = { id ->
                         notificationCommandViewModel.acknowledge(
                             id,
                             runtimeViewModel::refreshNotifications,
                         )
                     },
+                    onInteractionRefresh = interactionViewModel::refreshCapabilitiesAndFollowups,
+                    onFollowupResolve = interactionViewModel::resolveFollowup,
+                    onFollowupDismiss = interactionViewModel::dismissFollowup,
+                    onFollowupPromote = { followup ->
+                        interactionViewModel.promoteFollowup(followup) {
+                            runtimeViewModel.refreshDashboard()
+                            parityViewModel.refreshAll()
+                        }
+                    },
+                    onAiMode = interactionViewModel::setAiMode,
+                    onAskAegis = interactionViewModel::askAegis,
+                    onClearAiChat = interactionViewModel::clearAiChat,
+                    onCalendarAsk = interactionViewModel::prepareCalendar,
+                    onCalendarConfirm = {
+                        interactionViewModel.confirmCalendar {
+                            runtimeViewModel.refreshDashboard()
+                            parityViewModel.refreshCalendar()
+                        }
+                    },
+                    onCalendarCancel = interactionViewModel::clearCalendarProposal,
                 )
             }
         }
+
+        attemptAuthorizedSessionContinuity(googleSignInCoordinator, authContinuity)
     }
 
     override fun onResume() {
@@ -148,6 +183,7 @@ class ParityActivity : ComponentActivity() {
         captureViewModel.refreshLedger()
         if (runtimeViewModel.uiState.value.auth is AuthState.Authenticated) {
             parityViewModel.refreshAll()
+            interactionViewModel.refreshCapabilitiesAndFollowups()
         }
     }
 
@@ -155,6 +191,30 @@ class ParityActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingDeepLink = DeepLinkRouter.resolve(intent.data)
+    }
+
+    private fun attemptAuthorizedSessionContinuity(
+        googleSignInCoordinator: GoogleSignInCoordinator,
+        authContinuity: AuthContinuityPreferences,
+    ) {
+        if (!authContinuity.wasAuthenticated()) return
+        lifecycleScope.launch {
+            // Give the encrypted stored-token restoration path first opportunity to validate.
+            var attempts = 0
+            while (attempts < 12) {
+                val auth = runtimeViewModel.uiState.value.auth
+                if (auth != AuthState.Restoring && auth != AuthState.Authenticating) break
+                delay(250)
+                attempts++
+            }
+            if (runtimeViewModel.uiState.value.auth !is AuthState.SignedOut) return@launch
+
+            // Best effort only. Failure leaves the ordinary Sign in control available and must not
+            // turn a previously valid session into a noisy authentication error.
+            runCatching {
+                googleSignInCoordinator.requestAuthorizedIdToken(BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID)
+            }.onSuccess(runtimeViewModel::authenticateWithIdToken)
+        }
     }
 
     private fun requestNotificationPermission() {
