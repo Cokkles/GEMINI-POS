@@ -107,11 +107,13 @@ internal object AegisCommandPayloads {
     const val CREATE_CALENDAR = "create_calendar_event"
     const val ACK_NOTIFICATION = "ack_notification"
 
-    fun completeTasks(taskIds: Collection<String>): JSONObject {
+    fun completeTasks(taskIds: Collection<String>, taskListId: String = "@default"): JSONObject {
+        require(taskListId.isNotBlank())
         val ids = taskIds.map(String::trim).filter(String::isNotBlank).distinct()
         require(ids.isNotEmpty()) { "At least one task must be selected for completion." }
         return JSONObject()
             .put("action", COMPLETE_TASKS)
+            .put("task_list_id", taskListId)
             .put("message", "mark_done:")
             .put("completedTasks", JSONArray(ids))
     }

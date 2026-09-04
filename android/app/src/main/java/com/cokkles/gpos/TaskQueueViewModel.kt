@@ -41,15 +41,19 @@ class TaskQueueViewModel(
         _state.update { it.copy(ledger = ledgerStore.read()) }
     }
 
-    fun stage(taskId: String?, title: String) {
+    fun stage(taskId: String?, title: String) = stageInList(taskId, title, "@default", "")
+
+    fun stageInList(taskId: String?, title: String, listId: String, owner: String) {
         val canonicalId = taskId?.trim()?.takeIf(String::isNotBlank) ?: return
         val current = ledgerStore.read()
-        if (current.pendingTasks.any { it.taskId == canonicalId }) return
+        if (current.pendingTasks.any { it.taskId == canonicalId && it.taskListId == listId && it.owner == owner }) return
         val now = System.currentTimeMillis()
         val localId = UUID.randomUUID().toString()
         val pending = PendingTaskMutation(
             id = localId,
             taskId = canonicalId,
+            taskListId = listId,
+            owner = owner,
             title = title.trim().ifBlank { "Google Task" },
             stagedAtEpochMs = now,
             syncAfterEpochMs = now + TaskQueueSyncScheduler.GRACE_MS,
@@ -78,7 +82,10 @@ class TaskQueueViewModel(
 
     fun undo(localId: String) {
         val now = System.currentTimeMillis()
+        var undone = false
         val updated = ledgerStore.update { ledger ->
+            if (ledger.receipts.none { it.id == localId && it.state == LocalReceiptState.QUEUED }) return@update ledger
+            undone = true
             ledger.copy(
                 pendingTasks = ledger.pendingTasks.filterNot { it.id == localId },
                 receipts = ledger.receipts.map { receipt ->
@@ -95,7 +102,7 @@ class TaskQueueViewModel(
         scheduler.cancelPending(localId)
         _state.value = TaskQueueUiState(
             ledger = updated,
-            lastMessage = "Task completion undone.",
+            lastMessage = if (undone) "Task completion undone." else "Task is already syncing; refresh completed history to restore it.",
         )
     }
 
