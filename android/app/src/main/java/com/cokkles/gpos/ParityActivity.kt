@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.platform.notifications.DeepLinkRouter
 import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
@@ -27,6 +28,10 @@ import com.cokkles.gpos.ui.daily.DailyUxApp
 import com.cokkles.gpos.ui.theme.GposTheme
 import com.cokkles.gpos.ui.theme.ThemePreferences
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import com.cokkles.gpos.platform.security.SessionContinuityPolicy
 import kotlinx.coroutines.launch
 
 class ParityActivity : ComponentActivity() {
@@ -36,6 +41,11 @@ class ParityActivity : ComponentActivity() {
     private val captureViewModel: CaptureViewModel by viewModels()
     private val notificationCommandViewModel: NotificationCommandViewModel by viewModels()
     private val interactionViewModel: AegisInteractionViewModel by viewModels()
+
+    private lateinit var googleSignInCoordinator: GoogleSignInCoordinator
+    private lateinit var authContinuity: AuthContinuityPreferences
+    private var continuityJob: Job? = null
+    private var lastContinuityAttemptAt = 0L
 
     private var pendingDeepLink by mutableStateOf<GposDeepLinkTarget?>(null)
     private var notificationPermissionGranted by mutableStateOf(false)
@@ -53,8 +63,8 @@ class ParityActivity : ComponentActivity() {
         notificationPermissionGranted = hasNotificationPermission()
         GposNotificationPublisher(this).ensureChannels()
 
-        val googleSignInCoordinator = GoogleSignInCoordinator(this)
-        val authContinuity = AuthContinuityPreferences(applicationContext)
+        googleSignInCoordinator = GoogleSignInCoordinator(this)
+        authContinuity = AuthContinuityPreferences(applicationContext)
 
         setContent {
             val themePreferences = remember { ThemePreferences(applicationContext) }
@@ -89,6 +99,7 @@ class ParityActivity : ComponentActivity() {
                         themePreferences.save(option)
                     },
                     onSignIn = {
+                        continuityJob?.cancel()
                         lifecycleScope.launch {
                             runCatching {
                                 googleSignInCoordinator.requestIdToken(BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID)
@@ -101,8 +112,9 @@ class ParityActivity : ComponentActivity() {
                         }
                     },
                     onSignOut = {
+                        authContinuity.clear()
+                        continuityJob?.cancel()
                         lifecycleScope.launch {
-                            authContinuity.clear()
                             googleSignInCoordinator.clearProviderState()
                             taskQueueViewModel.clearProtectedLedger()
                             captureViewModel.clearProtectedLedger()
@@ -174,11 +186,11 @@ class ParityActivity : ComponentActivity() {
             }
         }
 
-        attemptAuthorizedSessionContinuity(googleSignInCoordinator, authContinuity)
     }
 
     override fun onResume() {
         super.onResume()
+        attemptAuthorizedSessionContinuity()
         taskQueueViewModel.refresh()
         captureViewModel.refreshLedger()
         if (runtimeViewModel.uiState.value.auth is AuthState.Authenticated) {
@@ -193,27 +205,30 @@ class ParityActivity : ComponentActivity() {
         pendingDeepLink = DeepLinkRouter.resolve(intent.data)
     }
 
-    private fun attemptAuthorizedSessionContinuity(
-        googleSignInCoordinator: GoogleSignInCoordinator,
-        authContinuity: AuthContinuityPreferences,
-    ) {
-        if (!authContinuity.wasAuthenticated()) return
-        lifecycleScope.launch {
-            // Give the encrypted stored-token restoration path first opportunity to validate.
-            var attempts = 0
-            while (attempts < 12) {
-                val auth = runtimeViewModel.uiState.value.auth
-                if (auth != AuthState.Restoring && auth != AuthState.Authenticating) break
-                delay(250)
-                attempts++
+    private fun attemptAuthorizedSessionContinuity() {
+        if (!authContinuity.wasAuthenticated() || continuityJob?.isActive == true) return
+        continuityJob = lifecycleScope.launch {
+            // Discovery and AUTH-1 validation each have a 20-second transport deadline.
+            // Wait for their result instead of abandoning renewal after three seconds.
+            val settled = withTimeoutOrNull(45_000L) {
+                runtimeViewModel.uiState.first {
+                    it.auth != AuthState.Restoring && it.auth != AuthState.Authenticating
+                }
+            } ?: return@launch
+            val expiry = (settled.auth as? AuthState.Authenticated)?.expiresAtEpochMs
+            if (expiry != null) {
+                delay((expiry - System.currentTimeMillis() - SessionContinuityPolicy.RENEW_BEFORE_MS).coerceAtLeast(0L))
             }
-            if (runtimeViewModel.uiState.value.auth !is AuthState.SignedOut) return@launch
-
-            // Best effort only. Failure leaves the ordinary Sign in control available and must not
-            // turn a previously valid session into a noisy authentication error.
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
+            val now = System.currentTimeMillis()
+            if (now - lastContinuityAttemptAt < 60_000L) return@launch
+            if (!SessionContinuityPolicy.shouldRenew(runtimeViewModel.uiState.value.auth, authContinuity.wasAuthenticated(), now)) return@launch
+            lastContinuityAttemptAt = now
             runCatching {
                 googleSignInCoordinator.requestAuthorizedIdToken(BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID)
-            }.onSuccess(runtimeViewModel::authenticateWithIdToken)
+            }.onSuccess { token ->
+                if (authContinuity.wasAuthenticated()) runtimeViewModel.authenticateWithIdToken(token)
+            }
         }
     }
 

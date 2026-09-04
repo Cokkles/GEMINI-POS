@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
 class GposRuntimeViewModel(
@@ -46,6 +47,19 @@ class GposRuntimeViewModel(
 
     private val _uiState = MutableStateFlow(RuntimeUiState())
     val uiState: StateFlow<RuntimeUiState> = _uiState.asStateFlow()
+
+    private val activeReads = mutableSetOf<String>()
+
+    private fun launchRead(key: String, block: suspend () -> Unit) {
+        if (!activeReads.add(key)) return
+        _uiState.update { it.copy(refreshing = true) }
+        viewModelScope.launch {
+            try { block() } finally {
+                activeReads.remove(key)
+                _uiState.update { it.copy(refreshing = activeReads.isNotEmpty()) }
+            }
+        }
+    }
 
     init {
         refreshBackendAndRestoreSession()
@@ -103,7 +117,8 @@ class GposRuntimeViewModel(
 
             if (
                 config.clientId != null &&
-                config.clientId != BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID
+                config.clientId != BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID &&
+                !config.additionalAudiencesConfigured
             ) {
                 clearPrivateSession()
                 _uiState.update {
@@ -126,6 +141,8 @@ class GposRuntimeViewModel(
             return
         }
         viewModelScope.launch {
+            val previousAuth = _uiState.value.auth
+            val previousCredential = credentialStore.read()
             _uiState.update { it.copy(auth = AuthState.Authenticating) }
             runCatching { backend.authenticate(idToken) }
                 .onSuccess { session ->
@@ -148,8 +165,14 @@ class GposRuntimeViewModel(
                 }
                 .onFailure { error ->
                     viewModelScope.launch {
-                        if (isAuthenticationFailure(error)) clearPrivateSession() else credentialStore.clear()
-                        _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+                        if (error is CancellationException) throw error
+                        val stillValid = previousCredential?.expiresAtEpochMs?.let { it > System.currentTimeMillis() } == true
+                        if (!isAuthenticationFailure(error) && stillValid) {
+                            _uiState.update { it.copy(auth = previousAuth, backend = it.backend.copy(error = error.safeMessage())) }
+                        } else {
+                            clearPrivateSession()
+                            _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+                        }
                     }
                 }
         }
@@ -182,11 +205,11 @@ class GposRuntimeViewModel(
     }
 
     fun refreshProtectedReads() {
-        viewModelScope.launch {
+        launchRead("refreshProtectedReads") {
             val credential = credentialStore.read()
             if (credential == null) {
                 _uiState.update { it.copy(auth = AuthState.SignedOut) }
-                return@launch
+                return@launchRead
             }
 
             runCatching {
@@ -206,8 +229,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshDashboard() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshDashboard") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readDashboard(credential.idToken)
                 val snapshot = DashboardPayloadMapper.map(json)
@@ -229,8 +252,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshLatestHorizon() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshLatestHorizon") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readLatestHorizon(credential.idToken)
                 val plainText = json.optString("plain_text").trim()
@@ -255,8 +278,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshFinance() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshFinance") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readRecentFinance(credential.idToken, FINANCE_HOURS)
                 val snapshot = FinancePayloadMapper.map(json, FINANCE_HOURS)
@@ -278,8 +301,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshNotifications() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshNotifications") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readNotifications(credential.idToken)
                 val snapshot = NotificationsPayloadMapper.map(json)
