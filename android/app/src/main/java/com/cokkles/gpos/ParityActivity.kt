@@ -79,6 +79,7 @@ class ParityActivity : ComponentActivity() {
             LaunchedEffect(runtimeState.auth) {
                 if (runtimeState.auth is AuthState.Authenticated) {
                     authContinuity.markAuthenticated()
+                    attemptAuthorizedSessionContinuity()
                 }
             }
 
@@ -114,13 +115,13 @@ class ParityActivity : ComponentActivity() {
                     onSignOut = {
                         authContinuity.clear()
                         continuityJob?.cancel()
+                        runtimeViewModel.signOut()
                         lifecycleScope.launch {
                             googleSignInCoordinator.clearProviderState()
                             taskQueueViewModel.clearProtectedLedger()
                             captureViewModel.clearProtectedLedger()
                             interactionViewModel.clearAiChat()
                             interactionViewModel.clearCalendarProposal()
-                            runtimeViewModel.signOut()
                         }
                     },
                     onNotificationPermission = ::requestNotificationPermission,

@@ -234,25 +234,25 @@ fun DailyUxApp(
     Scaffold(
         topBar = {
             Column {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("AEGIS")
-                        Text(currentDestination.title, modifier = Modifier.testTag("current_destination"), style = MaterialTheme.typography.labelMedium)
-                    }
-                },
-                actions = {
-                    TextButton(onClick = { navigate(system.route) }) {
-                        Text(connectionLabel(runtimeState.auth), style = MaterialTheme.typography.labelMedium)
-                    }
-                    IconButton(onClick = onRefreshCanonical, enabled = !runtimeState.refreshing && !parityState.refreshing) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh AEGIS")
-                    }
-                },
-            )
-            if (runtimeState.refreshing || parityState.refreshing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("AEGIS")
+                            Text(currentDestination.title, modifier = Modifier.testTag("current_destination"), style = MaterialTheme.typography.labelMedium)
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = { navigate(system.route) }) {
+                            Text(connectionLabel(runtimeState.auth), style = MaterialTheme.typography.labelMedium)
+                        }
+                        IconButton(onClick = onRefreshCanonical, enabled = !runtimeState.refreshing && !parityState.refreshing) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = "Refresh AEGIS")
+                        }
+                    },
+                )
+                if (runtimeState.refreshing || parityState.refreshing) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
             }
         },
         bottomBar = {

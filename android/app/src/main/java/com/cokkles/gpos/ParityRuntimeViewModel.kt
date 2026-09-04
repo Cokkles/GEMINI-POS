@@ -82,41 +82,41 @@ class ParityRuntimeViewModel(
             if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) return@launch
             _state.update { it.copy(refreshing = true) }
             try {
-            val capabilities = runCatching { CapabilityPayloadMapper.map(backend.readCapabilities(credential.idToken)) }
-            capabilities.onSuccess { snapshot ->
-                _state.update { it.copy(capabilities = snapshot, capabilityError = null) }
-            }.onFailure { error ->
-                _state.update { it.copy(capabilityError = error.safeParityMessage()) }
-            }
-
-            refreshCalendarInternal(credential.idToken)
-            refreshIntelligenceInternal(credential.idToken, force = false)
-
-            val caps = capabilities.getOrNull() ?: _state.value.capabilities
-            if (caps?.nutritionHistoryV1 == true) {
-                refreshNutritionInternal(credential.idToken, _state.value.nutritionDays)
-            } else {
-                _state.update {
-                    it.copy(
-                        nutrition = it.nutrition.copy(
-                            contractAvailable = false,
-                            error = "Nutrition history contract is not advertised by the backend. Dashboard calories remain available.",
-                        ),
-                    )
+                val capabilities = runCatching { CapabilityPayloadMapper.map(backend.readCapabilities(credential.idToken)) }
+                capabilities.onSuccess { snapshot ->
+                    _state.update { it.copy(capabilities = snapshot, capabilityError = null) }
+                }.onFailure { error ->
+                    _state.update { it.copy(capabilityError = error.safeParityMessage()) }
                 }
-            }
-            if (caps?.tasksHistoryV1 == true) {
-                refreshTaskHistoryInternal(credential.idToken, _state.value.taskHistoryDays)
-            } else {
-                _state.update {
-                    it.copy(
-                        taskHistory = it.taskHistory.copy(
-                            contractAvailable = false,
-                            error = "Task history contract is not advertised. Active Tasks and delayed completion remain available.",
-                        ),
-                    )
+
+                refreshCalendarInternal(credential.idToken)
+                refreshIntelligenceInternal(credential.idToken, force = false)
+
+                val caps = capabilities.getOrNull() ?: _state.value.capabilities
+                if (caps?.nutritionHistoryV1 == true) {
+                    refreshNutritionInternal(credential.idToken, _state.value.nutritionDays)
+                } else {
+                    _state.update {
+                        it.copy(
+                            nutrition = it.nutrition.copy(
+                                contractAvailable = false,
+                                error = "Nutrition history contract is not advertised by the backend. Dashboard calories remain available.",
+                            ),
+                        )
+                    }
                 }
-            }
+                if (caps?.tasksHistoryV1 == true) {
+                    refreshTaskHistoryInternal(credential.idToken, _state.value.taskHistoryDays)
+                } else {
+                    _state.update {
+                        it.copy(
+                            taskHistory = it.taskHistory.copy(
+                                contractAvailable = false,
+                                error = "Task history contract is not advertised. Active Tasks and delayed completion remain available.",
+                            ),
+                        )
+                    }
+                }
             } finally { _state.update { it.copy(refreshing = false) } }
         }
     }
