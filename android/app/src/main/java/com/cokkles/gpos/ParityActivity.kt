@@ -41,6 +41,8 @@ class ParityActivity : ComponentActivity() {
     private val captureViewModel: CaptureViewModel by viewModels()
     private val notificationCommandViewModel: NotificationCommandViewModel by viewModels()
     private val interactionViewModel: AegisInteractionViewModel by viewModels()
+    private val workspaceViewModel: TaskWorkspaceViewModel by viewModels()
+    private val notesViewModel: RunningNotesViewModel by viewModels()
 
     private lateinit var googleSignInCoordinator: GoogleSignInCoordinator
     private lateinit var authContinuity: AuthContinuityPreferences
@@ -77,6 +79,8 @@ class ParityActivity : ComponentActivity() {
             val interactionState by interactionViewModel.state.collectAsStateWithLifecycle()
 
             LaunchedEffect(runtimeState.auth) {
+                workspaceViewModel.activate(runtimeState.auth)
+                notesViewModel.activate(runtimeState.auth)
                 if (runtimeState.auth is AuthState.Authenticated) {
                     authContinuity.markAuthenticated()
                     attemptAuthorizedSessionContinuity()
@@ -113,6 +117,8 @@ class ParityActivity : ComponentActivity() {
                         }
                     },
                     onSignOut = {
+                        workspaceViewModel.detach()
+                        notesViewModel.detach()
                         authContinuity.clear()
                         continuityJob?.cancel()
                         runtimeViewModel.signOut()
@@ -126,6 +132,7 @@ class ParityActivity : ComponentActivity() {
                     },
                     onNotificationPermission = ::requestNotificationPermission,
                     onRefreshCanonical = {
+                        workspaceViewModel.refresh()
                         runtimeViewModel.refreshCanonicalReads()
                         parityViewModel.refreshAll()
                         interactionViewModel.refreshCapabilitiesAndFollowups()
@@ -145,6 +152,7 @@ class ParityActivity : ComponentActivity() {
                     onTaskUndo = taskQueueViewModel::undo,
                     onTaskSyncNow = {
                         taskQueueViewModel.syncNow {
+                            workspaceViewModel.refresh(force = true)
                             runtimeViewModel.refreshDashboard()
                             parityViewModel.refreshAll()
                         }
@@ -152,6 +160,7 @@ class ParityActivity : ComponentActivity() {
                     onTaskCreate = { title, notes ->
                         interactionViewModel.createTask(title, notes) {
                             runtimeViewModel.refreshDashboard()
+                            workspaceViewModel.refresh(force = true)
                             parityViewModel.refreshAll()
                         }
                     },
@@ -169,6 +178,7 @@ class ParityActivity : ComponentActivity() {
                     onFollowupPromote = { followup ->
                         interactionViewModel.promoteFollowup(followup) {
                             runtimeViewModel.refreshDashboard()
+                            workspaceViewModel.refresh(force = true)
                             parityViewModel.refreshAll()
                         }
                     },
@@ -193,6 +203,8 @@ class ParityActivity : ComponentActivity() {
         super.onResume()
         attemptAuthorizedSessionContinuity()
         taskQueueViewModel.refresh()
+        workspaceViewModel.activate(runtimeViewModel.uiState.value.auth)
+        notesViewModel.activate(runtimeViewModel.uiState.value.auth)
         captureViewModel.refreshLedger()
         if (runtimeViewModel.uiState.value.auth is AuthState.Authenticated) {
             parityViewModel.refreshAll()

@@ -1,6 +1,9 @@
 package com.cokkles.gpos.data.interaction
 
 import com.cokkles.gpos.BuildConfig
+import com.cokkles.gpos.data.workspace.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.cokkles.gpos.data.remote.AegisBackendException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -22,6 +25,10 @@ data class InteractionCapabilities(
     val taskActionV1: Boolean = false,
     val aiQueryV1: Boolean = false,
     val calendarAiV2: Boolean = false,
+    val taskWorkspaceV1: Boolean = false,
+    val taskCrudV1: Boolean = false,
+    val taskListsV1: Boolean = false,
+    val taskHistoryV1: Boolean = false,
 )
 
 data class AegisFollowup(
@@ -121,7 +128,43 @@ class AegisInteractionClient(
             taskActionV1 = ux.optBoolean("task_action_v1", false),
             aiQueryV1 = features.optBoolean("ai_query_v1", false),
             calendarAiV2 = features.optBoolean("calendar_ai_v2", false),
+            taskWorkspaceV1 = ux.optBoolean("task_workspace_v1"),
+            taskCrudV1 = ux.optBoolean("task_crud_v1"),
+            taskListsV1 = ux.optBoolean("task_lists_v1"),
+            taskHistoryV1 = ux.optBoolean("tasks_history_v1"),
         )
+    }
+
+    suspend fun readTaskWorkspace(token: String): TaskWorkspace = parseTaskWorkspace(readTaskWorkspaceJson(token))
+
+    suspend fun readTaskWorkspaceJson(token: String): JSONObject =
+        postAuthenticated(token, JSONObject().put("action", "get_task_workspace"))
+
+    suspend fun readWorkspaceHistory(token: String, days: Int): List<WorkspaceTask> {
+        require(days == 7 || days == 30)
+        val result = postAuthenticated(token, JSONObject().put("action", "get_task_history").put("days", days))
+        require(result.optString("contract") == "AEGIS_TASK_HISTORY_V1") { "Task history contract unavailable." }
+        return parseWorkspaceTasks(result.optJSONArray("items"))
+    }
+
+    suspend fun saveWorkspaceTask(token: String, listId: String, taskId: String?, title: String, notes: String, due: String, localId: String) {
+        val result = postAuthenticated(token, WorkspacePayloads.save(listId, taskId, title, notes, due, localId))
+        require(result.optJSONObject("task")?.optString("id")?.isNotBlank() == true) { "Task save was not confirmed. Refresh before retrying." }
+    }
+
+    suspend fun deleteWorkspaceTask(token: String, task: WorkspaceTask) {
+        val result = postAuthenticated(token, WorkspacePayloads.task("delete_task", task.listId, task.id))
+        require(result.optString("operation") == "DELETE") { "Task deletion was not confirmed." }
+    }
+
+    suspend fun restoreWorkspaceTask(token: String, task: WorkspaceTask) {
+        val result = postAuthenticated(token, WorkspacePayloads.task("restore_task", task.listId, task.id))
+        require(result.optString("operation") == "RESTORE") { "Task restoration was not confirmed." }
+    }
+
+    suspend fun saveWorkspaceList(token: String, title: String, listId: String?) {
+        val result = postAuthenticated(token, WorkspacePayloads.list(title, listId))
+        require(result.optJSONObject("task_list")?.optString("id")?.isNotBlank() == true) { "List save was not confirmed. Refresh before retrying." }
     }
 
     suspend fun readFollowups(idToken: String): FollowupsResult {
@@ -297,7 +340,7 @@ class AegisInteractionClient(
         require(idToken.isNotBlank()) { "Authentication token missing." }
         payload.put("auth_token", idToken)
         val response = transport.post(backendUrl, payload.toString().toRequestBody(JSON_MEDIA_TYPE))
-        val json = parseResponse(response)
+        val json = withContext(Dispatchers.IO) { parseResponse(response) }
         ensureSuccess(json)
         return json
     }

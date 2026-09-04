@@ -1,6 +1,11 @@
 package com.cokkles.gpos.platform.sync
 
 import android.content.Context
+import com.cokkles.gpos.data.interaction.AegisInteractionClient
+import com.cokkles.gpos.data.workspace.workspaceOwner
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -56,28 +61,43 @@ class TaskQueueProcessor(
     private val reads = AegisBackendClient()
     private val notifications = GposNotificationPublisher(context)
 
-    suspend fun flushDue(force: Boolean): TaskQueueProcessResult {
+    suspend fun flushDue(force: Boolean): TaskQueueProcessResult = flushLock.withLock { processDue(force) }
+
+    private suspend fun processDue(force: Boolean): TaskQueueProcessResult {
         val credential = credentialStore.read() ?: return TaskQueueProcessResult()
         if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
             return TaskQueueProcessResult()
         }
         val now = System.currentTimeMillis()
-        val due = ledgerStore.read().pendingTasks.filter { force || it.syncAfterEpochMs <= now }
+        val owner = credential.workspaceOwner()
+        val due = ledgerStore.read().pendingTasks.filter { (it.owner.isBlank() || it.owner == owner) && (force || it.syncAfterEpochMs <= now) }
         var completed = 0
         var failed = 0
         var retry = false
 
         for (pending in due) {
+            if (credentialStore.read()?.workspaceOwner() != owner) break
+            var claimed = false
+            ledgerStore.update { ledger ->
+                if (ledger.pendingTasks.none { it.id == pending.id }) return@update ledger
+                claimed = true
+                ledger.copy(receipts = ledger.receipts.map {
+                    if (it.id == pending.id) it.copy(state = LocalReceiptState.SENDING) else it
+                })
+            }
+            if (!claimed) continue
             val outcome = runCatching {
-                commands.completeTasks(credential.idToken, listOf(pending.taskId))
-                val activeIds = DashboardPayloadMapper.map(reads.readDashboard(credential.idToken))
-                    .tasks
-                    .mapNotNull { it.canonicalId }
-                    .toSet()
-                check(pending.taskId !in activeIds) {
-                    "Task remains active after canonical completion acknowledgement."
+                commands.completeTasks(credential.idToken, listOf(pending.taskId), pending.taskListId)
+                if (pending.taskListId == "@default") {
+                    val activeIds = DashboardPayloadMapper.map(reads.readDashboard(credential.idToken)).tasks.mapNotNull { it.canonicalId }
+                    check(pending.taskId !in activeIds) { "Task remains active after completion." }
+                } else {
+                    val workspace = AegisInteractionClient().readTaskWorkspace(credential.idToken)
+                    check(workspace.lists.any { it.id == pending.taskListId }) { "Original task list was not returned; completion cannot be verified." }
+                    check(workspace.tasks.none { it.id == pending.taskId && it.listId == pending.taskListId }) { "Task remains active after completion." }
                 }
             }
+            outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             if (outcome.isSuccess) {
                 completed += 1
                 markConfirmed(pending)
@@ -102,6 +122,7 @@ class TaskQueueProcessor(
                             receipts = ledger.receipts.map { receipt ->
                                 if (receipt.id == pending.id) {
                                     receipt.copy(
+                                        state = LocalReceiptState.QUEUED,
                                         updatedAtEpochMs = System.currentTimeMillis(),
                                         result = "Retry ${nextAttempt + 1} scheduled after a transient verification failure.",
                                     )
@@ -178,6 +199,7 @@ class TaskQueueProcessor(
     }
 
     private companion object {
+        val flushLock = Mutex()
         const val MAX_TASK_ATTEMPTS = 2
         const val RETRY_DELAY_MS = 5L * 60L * 1000L
     }
@@ -197,6 +219,7 @@ class TaskQueueSyncScheduler(
             PERIODIC_MINUTES,
             TimeUnit.MINUTES,
         )
+            .addTag("gpos-task-queue")
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
@@ -210,6 +233,7 @@ class TaskQueueSyncScheduler(
     fun schedulePending(localId: String, delayMs: Long = GRACE_MS) {
         val request = OneTimeWorkRequestBuilder<TaskQueueSyncWorker>()
             .setInitialDelay(delayMs.coerceAtLeast(0), TimeUnit.MILLISECONDS)
+            .addTag("gpos-task-queue")
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
@@ -225,6 +249,7 @@ class TaskQueueSyncScheduler(
     }
 
     fun cancelAll() {
+        workManager.cancelAllWorkByTag("gpos-task-queue")
         workManager.cancelUniqueWork(TaskQueueSyncWorker.PERIODIC_WORK_NAME)
     }
 

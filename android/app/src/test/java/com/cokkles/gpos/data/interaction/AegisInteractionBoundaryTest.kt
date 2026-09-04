@@ -58,6 +58,13 @@ class AegisInteractionBoundaryTest {
         assertEquals(
             setOf(
                 "readCapabilities",
+                "readTaskWorkspace",
+                "readTaskWorkspaceJson",
+                "readWorkspaceHistory",
+                "saveWorkspaceTask",
+                "deleteWorkspaceTask",
+                "restoreWorkspaceTask",
+                "saveWorkspaceList",
                 "readFollowups",
                 "createTask",
                 "resolveFollowup",

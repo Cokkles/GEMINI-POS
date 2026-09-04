@@ -44,8 +44,9 @@ class AegisCommandClient(
     suspend fun completeTasks(
         idToken: String,
         taskIds: Collection<String>,
+        taskListId: String = "@default",
     ): TaskCompletionResult {
-        val json = postAuthenticated(idToken, AegisCommandPayloads.completeTasks(taskIds))
+        val json = postAuthenticated(idToken, AegisCommandPayloads.completeTasks(taskIds, taskListId))
         return TaskCompletionResult(
             message = json.optString("result").takeIf { it.isNotBlank() }
                 ?: "Selected Google Tasks were submitted for completion.",
@@ -86,6 +87,13 @@ class AegisCommandClient(
         )
     }
 
+    suspend fun submitRunningNotes(token: String, document: com.cokkles.gpos.data.workspace.RunningNotesDocument): String {
+        val json = postAuthenticated(token, com.cokkles.gpos.data.workspace.runningNotesPayload(document))
+        val result = json.optString("result")
+        check(result.startsWith("✅ Logged entry to Notes & Ideas Log:")) { "Journal submission was not confirmed. Keep the local draft and check the journal." }
+        return "Saved to Notes & Ideas Log"
+    }
+
     suspend fun submitCapture(
         idToken: String,
         kind: CaptureKind,
@@ -122,7 +130,8 @@ class AegisCommandClient(
         require(idToken.isNotBlank()) { "Authentication token missing." }
         payload.put("auth_token", idToken)
         val body = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
-        val json = parseResponse(transport.post(backendUrl, body))
+        val response = transport.post(backendUrl, body)
+        val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { parseResponse(response) }
         ensureSuccess(json)
         return json
     }

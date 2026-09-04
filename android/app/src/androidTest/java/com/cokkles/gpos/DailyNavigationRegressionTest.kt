@@ -1,6 +1,8 @@
 package com.cokkles.gpos
 
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -62,4 +64,26 @@ class DailyNavigationRegressionTest {
         scrollTo("No canonical HORIZON text is cached yet.")
         composeRule.onNodeWithText("No canonical HORIZON text is cached yet.").assertExists()
     }
+    @Test fun calendarAndRunningNotesHomeShortcutsOpenTheirScreens() {
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("home_calendar"))
+        composeRule.onNodeWithTag("home_calendar").performClick()
+        composeRule.onNodeWithTag("current_destination").assertTextEquals("Calendar")
+        tab("home", "Home")
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("home_running_notes"))
+        composeRule.onNodeWithTag("home_running_notes").performClick()
+        composeRule.onNodeWithTag("current_destination").assertTextEquals("Running Notes")
+        composeRule.onNodeWithTag("running_notes_editor").assertExists()
+        tab("tasks", "Tasks")
+        composeRule.onNodeWithTag("task_list_picker").assertExists()
+    }
+
+    @Test fun headlinerControlsAreReachableAndDealsDefaultOff() {
+        tab("more", "More")
+        scrollTo("News & Insights")
+        composeRule.onNodeWithText("News & Insights").performClick()
+        composeRule.onNodeWithTag("headliner_settings").performClick()
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("headline_deals"))
+        composeRule.onNodeWithTag("headline_deals").assertIsOff()
+    }
+
 }

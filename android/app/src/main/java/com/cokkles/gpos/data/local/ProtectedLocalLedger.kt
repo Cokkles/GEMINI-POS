@@ -27,6 +27,8 @@ data class PendingTaskMutation(
     val stagedAtEpochMs: Long,
     val syncAfterEpochMs: Long,
     val attempts: Int = 0,
+    val taskListId: String = "@default",
+    val owner: String = "",
 )
 
 data class LocalReceipt(
@@ -66,13 +68,12 @@ class ProtectedLocalLedger(
 ) {
     private val preferences = context.applicationContext
         .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    private val lock = Any()
 
     fun read(): LocalLedger = synchronized(lock) { readUnsafe() }
 
     fun update(transform: (LocalLedger) -> LocalLedger): LocalLedger = synchronized(lock) {
         val updated = transform(readUnsafe()).bounded()
-        preferences.edit().putString(KEY_LEDGER_BLOB, encrypt(updated.toJson().toString())).commit()
+        check(preferences.edit().putString(KEY_LEDGER_BLOB, encrypt(updated.toJson().toString())).commit()) { "Local queue could not be saved." }
         updated
     }
 
@@ -91,7 +92,7 @@ class ProtectedLocalLedger(
     }
 
     private fun LocalLedger.bounded(): LocalLedger = copy(
-        pendingTasks = pendingTasks.distinctBy { it.taskId }.takeLast(MAX_PENDING_TASKS),
+        pendingTasks = pendingTasks.distinctBy { "${it.owner}/${it.taskListId}/${it.taskId}" }.takeLast(MAX_PENDING_TASKS),
         receipts = receipts.sortedByDescending { it.updatedAtEpochMs }.take(MAX_RECEIPTS),
         alerts = alerts.sortedByDescending { it.createdAtEpochMs }.take(MAX_ALERTS),
     )
@@ -105,6 +106,8 @@ class ProtectedLocalLedger(
                         JSONObject()
                             .put("id", item.id)
                             .put("task_id", item.taskId)
+                            .put("task_list_id", item.taskListId)
+                            .put("owner", item.owner)
                             .put("title", item.title)
                             .put("staged_at", item.stagedAtEpochMs)
                             .put("sync_after", item.syncAfterEpochMs)
@@ -187,6 +190,7 @@ class ProtectedLocalLedger(
     }
 
     private companion object {
+        val lock = Any()
         const val PREFERENCES_NAME = "gpos_protected_ledger"
         const val KEY_LEDGER_BLOB = "ledger_blob"
         const val KEY_ALIAS = "gpos_protected_ledger_v1"
@@ -207,6 +211,8 @@ private fun parseLedger(json: JSONObject): LocalLedger = LocalLedger(
             stagedAtEpochMs = item.optLong("staged_at"),
             syncAfterEpochMs = item.optLong("sync_after"),
             attempts = item.optInt("attempts", 0),
+            taskListId = item.optString("task_list_id", "@default"),
+            owner = item.optString("owner"),
         )
     }.filter { it.id.isNotBlank() && it.taskId.isNotBlank() },
     receipts = json.optJSONArray("receipts").mapObjects { item ->

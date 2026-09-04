@@ -51,6 +51,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Switch
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.outlined.EditNote
+import com.cokkles.gpos.TaskWorkspaceViewModel
+import com.cokkles.gpos.RunningNotesViewModel
+import com.cokkles.gpos.TaskQueueViewModel
+import com.cokkles.gpos.TaskWorkspaceUiState
+import com.cokkles.gpos.RunningNotesUiState
+import com.cokkles.gpos.data.workspace.NewsPreferences
+import com.cokkles.gpos.data.workspace.HeadlinerPolicy
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -116,6 +132,7 @@ private val calendar = Destination("calendar", "Calendar", Icons.Outlined.Event)
 private val tasks = Destination("tasks", "Tasks", Icons.Outlined.CheckCircle)
 private val capture = Destination("capture", "Capture", Icons.Outlined.Inbox)
 private val more = Destination("more", "More", Icons.Outlined.MoreHoriz)
+private val runningNotes = Destination("running_notes", "Running Notes", Icons.Outlined.EditNote)
 private val askAegis = Destination("aegis", "Ask AEGIS", Icons.Outlined.Description)
 private val followups = Destination("followups", "Follow-ups", Icons.Outlined.AssignmentTurnedIn)
 private val news = Destination("news", "News & Insights", Icons.Outlined.Article)
@@ -127,7 +144,7 @@ private val search = Destination("search", "Search", Icons.Outlined.Search)
 private val system = Destination("system", "Settings", Icons.Outlined.Settings)
 
 private val bottomDestinations = listOf(home, calendar, tasks, capture, more)
-private val secondaryDestinations = listOf(askAegis, followups, news, nutrition, alerts, briefing, finances, search, system)
+private val secondaryDestinations = listOf(runningNotes, askAegis, followups, news, nutrition, alerts, briefing, finances, search, system)
 private val allDestinations = bottomDestinations + secondaryDestinations
 
 private val dateTimeFormatter = DateTimeFormatter.ofPattern("MMM d • h:mm a").withZone(ZoneId.systemDefault())
@@ -197,6 +214,14 @@ fun DailyUxApp(
     onCalendarConfirm: () -> Unit,
     onCalendarCancel: () -> Unit,
 ) {
+    val workspaceVm: TaskWorkspaceViewModel = viewModel()
+    val notesVm: RunningNotesViewModel = viewModel()
+    val queueVm: TaskQueueViewModel = viewModel()
+    val workspaceState by workspaceVm.state.collectAsStateWithLifecycle()
+    val notesState by notesVm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val newsPreferences = remember { NewsPreferences(context) }
+    val headlineOverrides by newsPreferences.overrides.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: home.route
@@ -275,7 +300,7 @@ fun DailyUxApp(
             modifier = Modifier.padding(padding),
         ) {
             composable(home.route) {
-                HomeScreen(runtimeState, parityState, taskQueueState, ::navigate, onRefreshCanonical)
+                HomeScreen(runtimeState, parityState, taskQueueState, workspaceState, notesState, headlineOverrides, ::navigate, onRefreshCanonical)
             }
             composable(calendar.route) {
                 CalendarScreen(
@@ -292,19 +317,11 @@ fun DailyUxApp(
                 )
             }
             composable(tasks.route) {
-                TasksScreen(
-                    runtimeState = runtimeState,
-                    parityState = parityState,
-                    queueState = taskQueueState,
-                    interactionState = interactionState,
-                    canMutate = authenticated,
-                    onStage = onTaskStage,
-                    onUndo = onTaskUndo,
-                    onSyncNow = onTaskSyncNow,
-                    onHistoryDays = onTaskHistoryDays,
-                    onCreate = onTaskCreate,
-                )
+                WorkspaceTasksScreen(workspaceState, taskQueueState, workspaceVm,
+                    stage = { task -> queueVm.stageInList(task.id, task.title, task.listId, workspaceState.owner) },
+                    undo = onTaskUndo, sync = onTaskSyncNow)
             }
+            composable(runningNotes.route) { RunningNotesScreen(notesState, notesVm, authenticated) }
             composable(capture.route) {
                 CaptureScreen(
                     state = captureState,
@@ -327,7 +344,7 @@ fun DailyUxApp(
                     onFollowupPromote,
                 )
             }
-            composable(news.route) { NewsScreen(parityState, onRefreshIntelligence) }
+            composable(news.route) { NewsScreen(parityState, headlineOverrides, newsPreferences::set, onRefreshIntelligence) }
             composable(nutrition.route) { NutritionScreen(runtimeState, parityState, onNutritionDays) }
             composable(alerts.route) {
                 AlertsScreen(
@@ -378,13 +395,15 @@ private fun HomeScreen(
     runtime: RuntimeUiState,
     parity: ParityUiState,
     queue: TaskQueueUiState,
+    workspace: TaskWorkspaceUiState,
+    notesState: RunningNotesUiState,
+    headlineOverrides: Map<String, Boolean>,
     navigate: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
     val dashboard = runtime.dashboard?.snapshot
-    val pendingIds = queue.ledger.pendingTasks.mapTo(mutableSetOf()) { it.taskId }
     val horizonTime = dashboard?.briefingUpdatedAtEpochMs ?: dashboard?.horizonLastSuccessAtEpochMs
-    val newsItems = parity.intelligence.snapshot?.items.orEmpty()
+    val newsItems = HeadlinerPolicy.select(parity.intelligence.snapshot?.items.orEmpty(), headlineOverrides, 4)
     val nutritionToday = parity.nutrition.snapshot?.today
     val uriHandler = LocalUriHandler.current
 
@@ -395,30 +414,34 @@ private fun HomeScreen(
         }
         item { QuoteCard() }
         item {
-            Card(onClick = { navigate(briefing.route) }, modifier = Modifier.fillMaxWidth().testTag("home_briefing")) {
+            AegisCard(onClick = { navigate(briefing.route) }, modifier = Modifier.fillMaxWidth().testTag("home_briefing"), accent = NotesAccent) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("HORIZON • ${humanizeToken(horizonFreshness(horizonTime)) ?: "Unknown"}", style = MaterialTheme.typography.titleMedium)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("HORIZON", style = MaterialTheme.typography.titleMedium)
+                        Text(humanizeToken(horizonFreshness(horizonTime)) ?: "Unknown", style = MaterialTheme.typography.labelMedium,
+                            color = if (horizonFreshness(horizonTime) == "CURRENT") MaterialTheme.colorScheme.primary else NotesAccent)
+                    }
                     Text(
                         horizonTime?.let { "Updated ${formatTime(it)}" } ?: "No canonical report loaded yet.",
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
         }
-        item { SectionTitle("Today") }
+        item { WorkspaceHeading("Calendar · Today", Icons.Outlined.Event, CalendarAccent, { navigate(calendar.route) }, Modifier.testTag("home_calendar")) }
         if (dashboard?.todayEvents.isNullOrEmpty()) {
-            item { SummaryCard("No events today", "Your Calendar is clear.") }
+            item { TextButton(onClick = { navigate(calendar.route) }) { Text("No events today · Open Calendar") } }
         } else {
-            items(dashboard!!.todayEvents.take(5)) { EventCard(it) }
+            items(dashboard!!.todayEvents.take(5)) { event -> Box(Modifier.clickable { navigate(calendar.route) }) { EventCard(event) } }
         }
         item {
-            Card(onClick = { navigate(tasks.route) }, modifier = Modifier.fillMaxWidth().testTag("home_tasks")) {
+            AegisCard(onClick = { navigate(tasks.route) }, modifier = Modifier.fillMaxWidth().testTag("home_tasks"), accent = TaskAccent) {
                 Column(Modifier.padding(16.dp)) {
-                    val taskList = dashboard?.tasks.orEmpty()
+                    val taskList = workspace.workspace.tasks
                     Text("Tasks • ${taskList.size}", style = MaterialTheme.typography.titleMedium)
-                    if (taskList.isEmpty()) Text("No active Google Tasks.", modifier = Modifier.padding(top = 5.dp))
+                    if (taskList.isEmpty()) Text("No active tasks · Open Tasks to add", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 5.dp))
                     taskList.take(4).forEach { task ->
-                        val pending = task.canonicalId in pendingIds
+                        val pending = queue.ledger.pendingTasks.any { it.taskId == task.id && it.taskListId == task.listId }
                         Text(
                             "• ${task.title}${if (pending) " • Pending" else ""}",
                             modifier = Modifier.padding(top = 5.dp),
@@ -430,7 +453,16 @@ private fun HomeScreen(
             }
         }
         item {
-            Card(onClick = { navigate(nutrition.route) }, modifier = Modifier.fillMaxWidth()) {
+            AegisCard(onClick = { navigate(runningNotes.route) }, modifier = Modifier.fillMaxWidth().testTag("home_running_notes"), accent = NotesAccent) {
+                ListItem(headlineContent = { Text("Running Notes", style = MaterialTheme.typography.titleMedium) },
+                    supportingContent = { Text(if (notesState.document.text.isBlank()) "Open your daily scratchpad" else notesState.document.text, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    leadingContent = { Icon(Icons.Outlined.EditNote, null, tint = NotesAccent) },
+                    trailingContent = { Icon(Icons.Outlined.KeyboardArrowRight, "Open Running Notes") },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+            }
+        }
+        item {
+            AegisCard(onClick = { navigate(nutrition.route) }, modifier = Modifier.fillMaxWidth(), accent = TaskAccent) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Nutrition", style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -446,7 +478,7 @@ private fun HomeScreen(
                 }
             }
         }
-        item { SectionTitle("Headliners") }
+        item { WorkspaceHeading("Headliners", Icons.Outlined.Article, NewsAccent) }
         if (newsItems.isEmpty()) {
             item { SummaryCard("No headliners loaded", "Open News & Insights or refresh AEGIS.") }
         } else {
@@ -462,7 +494,7 @@ private fun HomeScreen(
         item {
             val localAlerts = queue.ledger.alerts.count { !it.acknowledged }
             val serverAlerts = runtime.notifications?.snapshot?.active?.size ?: 0
-            Card(onClick = { navigate(alerts.route) }, modifier = Modifier.fillMaxWidth()) {
+            AegisCard(onClick = { navigate(alerts.route) }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Attention", style = MaterialTheme.typography.titleMedium)
                     Text(countLabel(serverAlerts + localAlerts, "active alert"), modifier = Modifier.padding(top = 5.dp))
@@ -484,9 +516,9 @@ private fun QuoteCard() {
         }
     }
     val quote = quotes[(seed + step) % quotes.size]
-    Card(modifier = Modifier.fillMaxWidth().clickable { step += 1 }) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("“${quote.text}”", style = MaterialTheme.typography.titleMedium)
+    AegisCard(modifier = Modifier.fillMaxWidth().clickable { step += 1 }) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("“${quote.text}”", style = MaterialTheme.typography.bodyMedium)
             Text("— ${quote.author}", style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -539,7 +571,7 @@ private fun CalendarScreen(
                     val events = byDate[date.toString()].orEmpty()
                     val outside = date.month != month.month
                     val selected = date == parityState.selectedDate
-                    Card(onClick = { onSelectDate(date) }, modifier = Modifier.weight(1f).padding(2.dp)) {
+                    AegisCard(onClick = { onSelectDate(date) }, modifier = Modifier.weight(1f).padding(2.dp)) {
                         Column(Modifier.height(92.dp).padding(5.dp)) {
                             Text(
                                 date.dayOfMonth.toString() + if (selected) " •" else "",
@@ -558,7 +590,7 @@ private fun CalendarScreen(
         if (selectedEvents.isEmpty()) item { SummaryCard("No events", "Nothing is scheduled on this day.") }
         else items(selectedEvents) { CalendarRangeEventCard(it) }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            AegisCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Ask Calendar", style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -595,7 +627,7 @@ private fun CalendarScreen(
             }
             if (result.confirmationRequired && result.confirmationToken != null) {
                 item {
-                    Card(Modifier.fillMaxWidth()) {
+                    AegisCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text("Confirm ${humanizeToken(result.operation) ?: "Calendar change"}", style = MaterialTheme.typography.titleMedium)
                             result.previewSummary?.let { Text(it, modifier = Modifier.padding(top = 7.dp)) }
@@ -638,7 +670,7 @@ private fun TasksScreen(
             Text("Add a task, check one off, or undo a completion before it synchronizes.", modifier = Modifier.padding(top = 4.dp))
         }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            AegisCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Add Task", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(
@@ -679,7 +711,7 @@ private fun TasksScreen(
         }
         if (queueState.ledger.pendingTasks.isNotEmpty()) {
             item {
-                Card(Modifier.fillMaxWidth()) {
+                AegisCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Waiting to sync • ${queueState.ledger.pendingTasks.size}", style = MaterialTheme.typography.titleMedium)
                         queueState.ledger.pendingTasks.forEach { pending ->
@@ -721,9 +753,10 @@ private fun TaskQueueCard(
     onStage: (String?, String) -> Unit,
     onUndo: (String) -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth()) {
         Column {
             ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 headlineContent = { Text(task.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                 supportingContent = { Text(if (pending != null) "Pending • Undo available" else task.timeLabel ?: "Google Task") },
                 leadingContent = {
@@ -869,7 +902,7 @@ private fun AskAegisScreen(
 
 @Composable
 private fun ChatCard(message: AiChatMessage) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Text(if (message.role.equals("assistant", true)) "AEGIS" else "You", style = MaterialTheme.typography.labelLarge)
             Text(message.text, modifier = Modifier.padding(top = 6.dp))
@@ -898,7 +931,7 @@ private fun FollowupsScreen(
             item { SummaryCard("Nothing waiting", "No active follow-ups were returned.") }
         } else {
             items(active) { followup ->
-                Card(Modifier.fillMaxWidth()) {
+                AegisCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text(followup.title, style = MaterialTheme.typography.titleMedium)
                         if (followup.summary.isNotBlank()) Text(followup.summary, modifier = Modifier.padding(top = 6.dp))
@@ -922,17 +955,14 @@ private fun FollowupsScreen(
 }
 
 @Composable
-private fun NewsScreen(state: ParityUiState, onRefresh: () -> Unit) {
+private fun NewsScreen(state: ParityUiState, overrides: Map<String, Boolean>, onEligibility: (String, Boolean) -> Unit, onRefresh: () -> Unit) {
     val snapshot = state.intelligence.snapshot
     val uriHandler = LocalUriHandler.current
     var expanded by remember { mutableStateOf(setOf<String>()) }
     val allStories = snapshot?.items.orEmpty()
-    val headliners = allStories.take(5)
-    val headlineKeys = headliners.mapTo(mutableSetOf()) { "${it.title}|${it.link}" }
-    val categories = allStories
-        .filterNot { "${it.title}|${it.link}" in headlineKeys }
-        .groupBy { it.category }
-        .toSortedMap()
+    val headliners = HeadlinerPolicy.select(allStories, overrides, 5)
+    var settings by remember { mutableStateOf(false) }
+    val categories = allStories.groupBy { it.category }.toSortedMap()
 
     ScreenList {
         item {
@@ -942,28 +972,42 @@ private fun NewsScreen(state: ParityUiState, onRefresh: () -> Unit) {
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
-        item { SectionTitle("Headliners") }
+        item { OutlinedButton(onClick = { settings = !settings }, modifier = Modifier.fillMaxWidth().testTag("headliner_settings")) { Text(if (settings) "Close Headliners settings" else "Headliners settings") } }
+        if (settings) {
+            item { Text("Choose which sections may appear in Headliners on this device. Deals are off by default. Every section remains available below.", style = MaterialTheme.typography.bodySmall) }
+            (categories.keys + "Deals" + overrides.keys).distinctBy(HeadlinerPolicy::key).forEach { category ->
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(humanizeToken(category) ?: category, Modifier.weight(1f))
+                        Switch(checked = HeadlinerPolicy.eligible(category, overrides), onCheckedChange = { onEligibility(category, it) }, modifier = Modifier.testTag("headline_${HeadlinerPolicy.key(category)}"))
+                    }
+                }
+            }
+        }
+        item { WorkspaceHeading("Headliners", Icons.Outlined.Article, NewsAccent) }
         if (headliners.isEmpty()) item { SummaryCard("No headliners", "Refresh AEGIS to check the current intelligence feed.") }
         else items(headliners) { story -> StoryCard(story) { story.link?.let(uriHandler::openUri) } }
 
         categories.forEach { (category, stories) ->
             item {
                 val isExpanded = category in expanded
-                Card(
+                AegisCard(
                     onClick = {
                         expanded = if (isExpanded) expanded - category else expanded + category
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp), accent = NewsAccent,
                 ) {
                     ListItem(
-                        headlineContent = { Text(humanizeToken(category) ?: category) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = { Icon(Icons.Outlined.Article, null, tint = NewsAccent) },
+                        headlineContent = { Text(humanizeToken(category) ?: category, style = MaterialTheme.typography.titleMedium) },
                         supportingContent = { Text(countLabel(stories.size, "story")) },
                         trailingContent = { Text(if (isExpanded) "Collapse" else "Expand") },
                     )
                 }
             }
             if (category in expanded) {
-                items(stories.take(24)) { story -> StoryCard(story) { story.link?.let(uriHandler::openUri) } }
+                items(stories) { story -> StoryCard(story) { story.link?.let(uriHandler::openUri) } }
             }
         }
         val failures = snapshot?.sourceHealth?.filter { it.status.equals("failed", true) }.orEmpty()
@@ -976,8 +1020,9 @@ private fun NewsScreen(state: ParityUiState, onRefresh: () -> Unit) {
 
 @Composable
 private fun StoryCard(story: IntelligenceItem, onOpen: () -> Unit) {
-    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+    AegisCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), accent = NewsAccent) {
         ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(story.title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
             supportingContent = {
                 Text(
@@ -1005,7 +1050,7 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
     ScreenList {
         item { Text("Nutrition", style = MaterialTheme.typography.headlineMedium) }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            AegisCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Today", style = MaterialTheme.typography.titleMedium)
                     Text("${formatNumber(today?.calories ?: dashboardCalories)} calories", modifier = Modifier.padding(top = 7.dp), style = MaterialTheme.typography.titleLarge)
@@ -1031,7 +1076,7 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
             }
             snapshot?.daily?.takeLast(if (parity.nutritionDays == 7) 7 else 14)?.forEach { day ->
                 item {
-                    Card(Modifier.fillMaxWidth()) {
+                    AegisCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
                             Text(day.date, style = MaterialTheme.typography.labelLarge)
                             Text("${formatNumber(day.calories)} cal • ${formatNumber(day.protein)}g protein", modifier = Modifier.padding(top = 3.dp))
@@ -1099,7 +1144,7 @@ private fun BriefingScreen(runtime: RuntimeUiState) {
         else {
             document.preamble.takeIf { it.isNotEmpty() }?.let { lines -> item { Text(lines.joinToString("\n")) } }
             items(document.sections) { section ->
-                Card(Modifier.fillMaxWidth()) {
+                AegisCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text(section.title, style = MaterialTheme.typography.titleMedium)
                         (section.lines + section.subsections.flatMap { it.lines })
@@ -1151,7 +1196,7 @@ private fun SearchScreen(
         item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Calendar, Tasks, HORIZON, News, Finance, Follow-ups") }) }
         if (filtered.isEmpty()) item { SummaryCard("No matches", "Try another term or refresh AEGIS.") }
         else items(filtered) { hit ->
-            Card(onClick = { navigate(hit.route) }, modifier = Modifier.fillMaxWidth()) {
+            AegisCard(onClick = { navigate(hit.route) }, modifier = Modifier.fillMaxWidth()) {
                 ListItem(headlineContent = { Text(hit.title) }, supportingContent = { Text("${hit.kind} • ${hit.detail}") })
             }
         }
@@ -1163,8 +1208,9 @@ private fun MoreScreen(navigate: (String) -> Unit) {
     ScreenList {
         item { Text("More", style = MaterialTheme.typography.headlineMedium) }
         items(secondaryDestinations) { destination ->
-            Card(onClick = { navigate(destination.route) }, modifier = Modifier.fillMaxWidth()) {
+            AegisCard(onClick = { navigate(destination.route) }, modifier = Modifier.fillMaxWidth()) {
                 ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = { Text(destination.title) },
                     leadingContent = { Icon(destination.icon, contentDescription = null) },
                 )
@@ -1196,7 +1242,7 @@ private fun SystemScreen(
         item { Text("Settings & Diagnostics", style = MaterialTheme.typography.headlineMedium) }
         item {
             when (val auth = runtimeState.auth) {
-                is AuthState.Authenticated -> Card(Modifier.fillMaxWidth()) {
+                is AuthState.Authenticated -> AegisCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Connected", style = MaterialTheme.typography.titleMedium)
                         Text(auth.user.name ?: auth.user.email, modifier = Modifier.padding(top = 4.dp))
@@ -1205,14 +1251,14 @@ private fun SystemScreen(
                     }
                 }
                 is AuthState.OfflineRestored -> SummaryCard("Offline", "Your protected last-known data is available. Mutations stay disabled until a live authenticated connection returns.")
-                is AuthState.Error -> Card(Modifier.fillMaxWidth()) {
+                is AuthState.Error -> AegisCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Sign-in needs attention", style = MaterialTheme.typography.titleMedium)
                         Text(auth.message, modifier = Modifier.padding(top = 5.dp))
                         Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Sign in with Google") }
                     }
                 }
-                AuthState.SignedOut -> Card(Modifier.fillMaxWidth()) {
+                AuthState.SignedOut -> AegisCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Signed out", style = MaterialTheme.typography.titleMedium)
                         Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Sign in with Google") }
@@ -1258,7 +1304,7 @@ private fun SystemScreen(
         item { SummaryCard("Background reads", "Every ${CanonicalSyncScheduler.REPEAT_MINUTES} minutes when connected and battery is not low. Routine refresh never generates HORIZON or submits Capture entries.") }
         item { SummaryCard("Task completion queue", "Five-minute Undo grace period with a WorkManager safety net every ${TaskQueueSyncScheduler.PERIODIC_MINUTES} minutes.") }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            AegisCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Android notifications", style = MaterialTheme.typography.titleMedium)
                     Text(if (notificationPermissionGranted) "Enabled" else "Permission disabled", modifier = Modifier.padding(top = 4.dp))
@@ -1270,8 +1316,9 @@ private fun SystemScreen(
         item { Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("Sync AEGIS") } }
         item { SectionTitle("Appearance") }
         items(GposThemeOption.entries) { option ->
-            Card(onClick = { onThemeSelected(option) }, modifier = Modifier.fillMaxWidth()) {
+            AegisCard(onClick = { onThemeSelected(option) }, modifier = Modifier.fillMaxWidth()) {
                 ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = { Text(option.displayName) },
                     supportingContent = { Text(option.description) },
                     leadingContent = { RadioButton(selected = option == selectedTheme, onClick = { onThemeSelected(option) }) },
@@ -1283,8 +1330,9 @@ private fun SystemScreen(
 
 @Composable
 private fun EventCard(event: DashboardEvent) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth(), accent = CalendarAccent) {
         ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(event.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(event.timeLabel + event.note?.let { " • $it" }.orEmpty()) },
             leadingContent = { Icon(Icons.Outlined.Event, null) },
@@ -1294,8 +1342,9 @@ private fun EventCard(event: DashboardEvent) {
 
 @Composable
 private fun CalendarRangeEventCard(event: CalendarRangeEvent) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth(), accent = CalendarAccent) {
         ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(event.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = {
                 Text(
@@ -1314,9 +1363,10 @@ private fun CalendarRangeEventCard(event: CalendarRangeEvent) {
 
 @Composable
 private fun ServerAlertCard(notification: ServerNotification, enabled: Boolean, onAck: (String) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth()) {
         Column {
             ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 headlineContent = { Text(notification.title) },
                 supportingContent = { Text(listOfNotNull(notification.message.takeIf(String::isNotBlank), notification.detail).joinToString(" • ")) },
                 leadingContent = { Text(severityLabel(notification.severity)) },
@@ -1328,7 +1378,7 @@ private fun ServerAlertCard(notification: ServerNotification, enabled: Boolean, 
 
 @Composable
 private fun LocalAlertCard(alert: LocalAlert, onAck: (String) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth()) {
         Column {
             ListItem(headlineContent = { Text(alert.title) }, supportingContent = { Text(alert.detail) }, leadingContent = { Text(alert.severity.uppercase()) })
             OutlinedButton(onClick = { onAck(alert.id) }, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) { Text("Dismiss") }
@@ -1338,8 +1388,9 @@ private fun LocalAlertCard(alert: LocalAlert, onAck: (String) -> Unit) {
 
 @Composable
 private fun ReceiptCard(receipt: LocalReceipt) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth()) {
         ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(receipt.summary, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(listOfNotNull(humanizeToken(receipt.kind), receipt.result, receipt.error, formatTime(receipt.updatedAtEpochMs)).joinToString(" • ")) },
             trailingContent = { Text(humanizeToken(receipt.state.name) ?: receipt.state.name) },
@@ -1360,14 +1411,17 @@ private fun SourceCard(label: String, source: RuntimeDataSource?, fetched: Long?
 
 @Composable
 private fun SummaryCard(title: String, detail: String) {
-    Card(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth()) {
         ListItem(headlineContent = { Text(title) }, supportingContent = { Text(detail) })
     }
 }
 
 @Composable
 private fun SectionTitle(title: String) {
-    Text(title, style = MaterialTheme.typography.titleLarge)
+    Column(Modifier.padding(top = 14.dp, bottom = 4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        HorizontalDivider(Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = .55f))
+    }
 }
 
 @Composable
