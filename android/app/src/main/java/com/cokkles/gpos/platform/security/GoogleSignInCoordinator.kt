@@ -23,6 +23,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import java.security.SecureRandom
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 
 class GoogleSignInCoordinator(
     private val activity: Activity,
@@ -164,6 +165,7 @@ class GoogleSignInCoordinator(
     }
 
     private fun classifyCredentialFailure(error: Exception): GoogleSignInDiagnosticException = when (error) {
+        is CancellationException -> throw error
         is GoogleSignInDiagnosticException -> error
         is GetCredentialCancellationException -> diagnostic(
             code = "USER_CANCELLED",

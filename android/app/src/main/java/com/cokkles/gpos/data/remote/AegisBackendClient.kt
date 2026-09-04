@@ -7,6 +7,8 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.http.Body
@@ -45,6 +47,7 @@ class AegisBackendClient(
             authVersion = json.optString("auth_version", "unknown"),
             backendVersion = json.optString("backend_version", "unknown"),
             clientId = json.optString("client_id").takeIf { it.isNotBlank() },
+            additionalAudiencesConfigured = json.optBoolean("additional_audiences_configured", false),
         )
     }
 
@@ -169,7 +172,7 @@ class AegisBackendClient(
         )
     }
 
-    private fun parseResponse(response: Response<ResponseBody>): JSONObject {
+    private suspend fun parseResponse(response: Response<ResponseBody>): JSONObject = withContext(Dispatchers.IO) {
         val raw = response.body()?.use { body ->
             val declaredLength = body.contentLength()
             if (declaredLength > MAX_RESPONSE_BYTES) {
@@ -185,7 +188,7 @@ class AegisBackendClient(
         if (!response.isSuccessful) {
             throw AegisBackendException("HTTP_${response.code()}", "AEGIS request failed with HTTP ${response.code()}.")
         }
-        return runCatching { JSONObject(raw) }
+        runCatching { JSONObject(raw) }
             .getOrElse { throw AegisBackendException("INVALID_JSON", "AEGIS returned invalid JSON.") }
     }
 

@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
 import org.json.JSONObject
 
 class GposRuntimeViewModel(
@@ -47,12 +50,35 @@ class GposRuntimeViewModel(
     private val _uiState = MutableStateFlow(RuntimeUiState())
     val uiState: StateFlow<RuntimeUiState> = _uiState.asStateFlow()
 
+    private val activeReads = mutableSetOf<String>()
+    private var sessionJob: Job? = null
+    private val readJobs = mutableMapOf<String, Job>()
+
+    private fun launchRead(key: String, block: suspend () -> Unit) {
+        if (!activeReads.add(key)) return
+        _uiState.update { it.copy(refreshing = true) }
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try { block() } finally {
+                readJobs.remove(key)
+                activeReads.remove(key)
+                _uiState.update { it.copy(refreshing = activeReads.isNotEmpty()) }
+            }
+        }
+        readJobs[key] = job
+        job.start()
+    }
+
+    private fun cancelReads() {
+        readJobs.values.toList().forEach { it.cancel() }
+    }
+
     init {
         refreshBackendAndRestoreSession()
     }
 
     fun refreshBackendAndRestoreSession() {
-        viewModelScope.launch {
+        if (sessionJob?.isActive == true) return
+        sessionJob = viewModelScope.launch {
             val storedCredential = credentialStore.read()
             if (storedCredential != null) {
                 loadCachedDashboard()
@@ -72,6 +98,7 @@ class GposRuntimeViewModel(
             }
 
             val configResult = runCatching { backend.getAuthConfig() }
+            configResult.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             val config = configResult.getOrNull()
             val configError = configResult.exceptionOrNull()?.safeMessage()
             _uiState.update { state ->
@@ -103,7 +130,8 @@ class GposRuntimeViewModel(
 
             if (
                 config.clientId != null &&
-                config.clientId != BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID
+                config.clientId != BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID &&
+                !config.additionalAudiencesConfigured
             ) {
                 clearPrivateSession()
                 _uiState.update {
@@ -125,7 +153,11 @@ class GposRuntimeViewModel(
             reportAuthFailure("Google did not return a usable identity token.")
             return
         }
-        viewModelScope.launch {
+        sessionJob?.cancel()
+        cancelReads()
+        sessionJob = viewModelScope.launch {
+            val previousAuth = _uiState.value.auth
+            val previousCredential = credentialStore.read()
             _uiState.update { it.copy(auth = AuthState.Authenticating) }
             runCatching { backend.authenticate(idToken) }
                 .onSuccess { session ->
@@ -147,10 +179,14 @@ class GposRuntimeViewModel(
                     refreshCanonicalReads()
                 }
                 .onFailure { error ->
-                    viewModelScope.launch {
-                        if (isAuthenticationFailure(error)) clearPrivateSession() else credentialStore.clear()
-                        _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
-                    }
+                        if (error is CancellationException) throw error
+                        val stillValid = previousCredential?.expiresAtEpochMs?.let { it > System.currentTimeMillis() } == true
+                        if (!isAuthenticationFailure(error) && stillValid) {
+                            _uiState.update { it.copy(auth = previousAuth, backend = it.backend.copy(error = error.safeMessage())) }
+                        } else {
+                            clearPrivateSession()
+                            _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+                        }
                 }
         }
     }
@@ -160,9 +196,12 @@ class GposRuntimeViewModel(
     }
 
     fun signOut() {
-        viewModelScope.launch {
+        sessionJob?.cancel()
+        cancelReads()
+        clearPrivateUiState()
+        _uiState.update { it.copy(auth = AuthState.SignedOut) }
+        sessionJob = viewModelScope.launch {
             val credential = credentialStore.read()
-            credential?.idToken?.let { backend.logout(it) }
             clearPrivateSession()
             _uiState.update {
                 it.copy(
@@ -170,6 +209,7 @@ class GposRuntimeViewModel(
                     backend = it.backend.copy(lastProtectedRead = null),
                 )
             }
+            credential?.idToken?.let { backend.logout(it) }
         }
     }
 
@@ -182,11 +222,11 @@ class GposRuntimeViewModel(
     }
 
     fun refreshProtectedReads() {
-        viewModelScope.launch {
+        launchRead("refreshProtectedReads") {
             val credential = credentialStore.read()
             if (credential == null) {
                 _uiState.update { it.copy(auth = AuthState.SignedOut) }
-                return@launch
+                return@launchRead
             }
 
             runCatching {
@@ -206,8 +246,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshDashboard() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshDashboard") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readDashboard(credential.idToken)
                 val snapshot = DashboardPayloadMapper.map(json)
@@ -229,8 +269,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshLatestHorizon() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshLatestHorizon") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readLatestHorizon(credential.idToken)
                 val plainText = json.optString("plain_text").trim()
@@ -255,8 +295,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshFinance() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshFinance") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readRecentFinance(credential.idToken, FINANCE_HOURS)
                 val snapshot = FinancePayloadMapper.map(json, FINANCE_HOURS)
@@ -278,8 +318,8 @@ class GposRuntimeViewModel(
     }
 
     fun refreshNotifications() {
-        viewModelScope.launch {
-            val credential = credentialStore.read() ?: return@launch
+        launchRead("refreshNotifications") {
+            val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readNotifications(credential.idToken)
                 val snapshot = NotificationsPayloadMapper.map(json)
@@ -334,6 +374,7 @@ class GposRuntimeViewModel(
         }
 
         val error = result.exceptionOrNull() ?: return
+        if (error is CancellationException) throw error
         if (isAuthenticationFailure(error)) {
             clearPrivateSession()
             _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
@@ -479,6 +520,7 @@ class GposRuntimeViewModel(
         error: Throwable,
         cachedFallback: suspend () -> Boolean,
     ) {
+        if (error is CancellationException) throw error
         if (isAuthenticationFailure(error)) {
             handleProtectedFailure(error)
         } else if (!cachedFallback()) {
@@ -487,6 +529,7 @@ class GposRuntimeViewModel(
     }
 
     private fun handleProtectedFailure(error: Throwable) {
+        if (error is CancellationException) throw error
         val message = error.safeMessage()
         viewModelScope.launch {
             if (isAuthenticationFailure(error)) {

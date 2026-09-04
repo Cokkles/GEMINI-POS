@@ -60,6 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -205,7 +207,14 @@ fun DailyUxApp(
 
     fun navigate(route: String) {
         val mapped = if (route == "notifications") alerts.route else route
-        navController.navigate(mapped) { launchSingleTop = true }
+        if (navController.currentDestination?.route == mapped) return
+        navController.navigate(mapped) {
+            if (bottomDestinations.any { it.route == mapped }) {
+                // Tabs always open their named root; never resurrect a shortcut's child stack.
+                popUpTo(navController.graph.findStartDestination().id)
+            }
+            launchSingleTop = true
+        }
     }
 
     LaunchedEffect(runtimeState.auth) {
@@ -224,35 +233,35 @@ fun DailyUxApp(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("AEGIS")
-                        Text(currentDestination.title, style = MaterialTheme.typography.labelMedium)
-                    }
-                },
-                actions = {
-                    TextButton(onClick = { navigate(system.route) }) {
-                        Text(connectionLabel(runtimeState.auth), style = MaterialTheme.typography.labelMedium)
-                    }
-                    IconButton(onClick = onRefreshCanonical) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh AEGIS")
-                    }
-                },
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("AEGIS")
+                            Text(currentDestination.title, modifier = Modifier.testTag("current_destination"), style = MaterialTheme.typography.labelMedium)
+                        }
+                    },
+                    actions = {
+                        TextButton(onClick = { navigate(system.route) }) {
+                            Text(connectionLabel(runtimeState.auth), style = MaterialTheme.typography.labelMedium)
+                        }
+                        IconButton(onClick = onRefreshCanonical, enabled = !runtimeState.refreshing && !parityState.refreshing) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = "Refresh AEGIS")
+                        }
+                    },
+                )
+                if (runtimeState.refreshing || parityState.refreshing) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
         },
         bottomBar = {
             NavigationBar {
                 bottomDestinations.forEach { destination ->
                     NavigationBarItem(
                         selected = selectedBottom == destination.route,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { navigate(destination.route) },
+                        modifier = Modifier.testTag("nav_${destination.route}"),
                         icon = { Icon(destination.icon, contentDescription = destination.title) },
                         label = { Text(destination.title) },
                     )
@@ -386,7 +395,7 @@ private fun HomeScreen(
         }
         item { QuoteCard() }
         item {
-            Card(onClick = { navigate(briefing.route) }, modifier = Modifier.fillMaxWidth()) {
+            Card(onClick = { navigate(briefing.route) }, modifier = Modifier.fillMaxWidth().testTag("home_briefing")) {
                 Column(Modifier.padding(16.dp)) {
                     Text("HORIZON • ${humanizeToken(horizonFreshness(horizonTime)) ?: "Unknown"}", style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -403,7 +412,7 @@ private fun HomeScreen(
             items(dashboard!!.todayEvents.take(5)) { EventCard(it) }
         }
         item {
-            Card(onClick = { navigate(tasks.route) }, modifier = Modifier.fillMaxWidth()) {
+            Card(onClick = { navigate(tasks.route) }, modifier = Modifier.fillMaxWidth().testTag("home_tasks")) {
                 Column(Modifier.padding(16.dp)) {
                     val taskList = dashboard?.tasks.orEmpty()
                     Text("Tasks • ${taskList.size}", style = MaterialTheme.typography.titleMedium)
@@ -497,7 +506,7 @@ private fun CalendarScreen(
     onCancel: () -> Unit,
 ) {
     val snapshot = parityState.calendar.snapshot
-    val byDate = snapshot?.events.orEmpty().groupBy { it.localDate }
+    val byDate = remember(snapshot) { snapshot?.events.orEmpty().groupBy { it.localDate } }
     val month = parityState.selectedMonth
     val gridStart = remember(month) { month.minusDays((month.dayOfWeek.value - 1).toLong()) }
     val selectedEvents = byDate[parityState.selectedDate.toString()].orEmpty()
@@ -1178,6 +1187,11 @@ private fun SystemScreen(
     onRefreshBackend: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    var showRawHorizon by remember { mutableStateOf(false) }
+    val rawHorizon = runtimeState.briefing?.plainText.orEmpty()
+    val rawChunks = remember(rawHorizon, showRawHorizon) {
+        if (showRawHorizon) rawHorizon.chunked(2000) else emptyList()
+    }
     ScreenList {
         item { Text("Settings & Diagnostics", style = MaterialTheme.typography.headlineMedium) }
         item {
@@ -1220,6 +1234,20 @@ private fun SystemScreen(
                 if (caps == null) interactionState.capabilityError ?: "Checking backend capabilities…"
                 else "Add Task ${yesNo(caps.taskActionV1)} • Follow-ups ${yesNo(caps.followupsV1)} • Ask AEGIS ${yesNo(caps.aiQueryV1)} • Calendar control ${yesNo(caps.calendarAiV2)}",
             )
+        }
+        item { SummaryCard("Backend", runtimeState.backend.authConfig?.backendVersion ?: "Not yet discovered") }
+        item {
+            OutlinedButton(onClick = { showRawHorizon = !showRawHorizon }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (showRawHorizon) "Hide raw HORIZON text" else "Show raw HORIZON text")
+            }
+        }
+        if (showRawHorizon) {
+            if (rawChunks.isEmpty()) item { Text("No canonical HORIZON text is cached yet.") }
+            items(rawChunks.size) { index ->
+                SelectionContainer {
+                    Text(rawChunks[index], style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         item { SectionTitle("Data status") }
         item { SourceCard("Dashboard", runtimeState.dashboard?.source, runtimeState.dashboard?.fetchedAtEpochMs, runtimeState.dashboard?.error) }

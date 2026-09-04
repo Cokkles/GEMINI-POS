@@ -8,6 +8,7 @@ data class AuthConfig(
     val authVersion: String,
     val backendVersion: String,
     val clientId: String?,
+    val additionalAudiencesConfigured: Boolean = false,
 )
 
 data class AuthenticatedUser(
@@ -69,6 +70,7 @@ data class BackendRuntimeState(
 )
 
 data class RuntimeUiState(
+    val refreshing: Boolean = false,
     val backend: BackendRuntimeState = BackendRuntimeState(),
     val auth: AuthState = AuthState.Restoring,
     val briefing: BriefingRuntimeState? = null,

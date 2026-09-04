@@ -5,6 +5,8 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -17,9 +19,9 @@ class AndroidKeystoreCredentialStore(
     private val applicationContext = context.applicationContext
     private val preferences = applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
-    override suspend fun read(): StoredCredential? {
-        val encoded = preferences.getString(KEY_CREDENTIAL_BLOB, null) ?: return null
-        return runCatching {
+    override suspend fun read(): StoredCredential? = withContext(Dispatchers.IO) {
+        val encoded = preferences.getString(KEY_CREDENTIAL_BLOB, null) ?: return@withContext null
+        runCatching {
             val plaintext = decrypt(encoded)
             val json = JSONObject(plaintext)
             StoredCredential(
@@ -32,7 +34,7 @@ class AndroidKeystoreCredentialStore(
         }
     }
 
-    override suspend fun replace(credential: StoredCredential) {
+    override suspend fun replace(credential: StoredCredential): Unit = withContext(Dispatchers.IO) {
         val payload = JSONObject()
             .put("id_token", credential.idToken)
             .apply {
@@ -45,7 +47,7 @@ class AndroidKeystoreCredentialStore(
             .apply()
     }
 
-    override suspend fun clear() {
+    override suspend fun clear(): Unit = withContext(Dispatchers.IO) {
         preferences.edit().remove(KEY_CREDENTIAL_BLOB).apply()
     }
 
