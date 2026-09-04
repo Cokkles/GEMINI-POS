@@ -7,6 +7,7 @@ import com.cokkles.gpos.data.command.AegisCommandClient
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.workspace.*
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.security.AuthContinuityPreferences
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -19,6 +20,7 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
     private val storage = ProtectedWorkspaceStore(app)
     private val credentials = AndroidKeystoreCredentialStore(app)
     private val client = AegisCommandClient()
+    private val continuity = AuthContinuityPreferences(app)
     private val _state = MutableStateFlow(RunningNotesUiState())
     val state = _state.asStateFlow()
     private var activation: Job? = null
@@ -40,10 +42,23 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
     private var lastSave: Deferred<Unit>? = null
     fun activate(auth: AuthState) {
         if (auth == AuthState.Restoring || auth == AuthState.Authenticating) return
-        if (auth !is AuthState.Authenticated && auth !is AuthState.OfflineRestored) { detach(); return }
+        val localOnly = auth == AuthState.SignedOut && continuity.wasAuthenticated()
+        if (auth !is AuthState.Authenticated && auth !is AuthState.OfflineRestored && !localOnly) { detach(); return }
         activation?.cancel()
         activation = viewModelScope.launch {
-            val owner = credentials.read()?.workspaceOwner().orEmpty()
+            val credentialOwner = credentials.read()?.workspaceOwner().orEmpty()
+            val owner = try {
+                if (credentialOwner.isNotBlank()) {
+                    withContext(Dispatchers.IO) { storage.write("device", "running_notes_owner", credentialOwner) }
+                    credentialOwner
+                } else if (localOnly) withContext(Dispatchers.IO) { storage.read("device", "running_notes_owner").orEmpty() }
+                else ""
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _state.update { it.copy(error = "Local workspace identity could not be opened. Drafts have been preserved.") }
+                return@launch
+            }
+            if (localOnly && !continuity.wasAuthenticated()) { detach(); return@launch }
             if (owner.isBlank()) { detach(); return@launch }
             if (owner == _state.value.owner && _state.value.ready) return@launch
             generation++
@@ -102,7 +117,7 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
                 client.submitRunningNotes(credential.idToken, pending)
                 val confirmed = pending.confirmed()
                 withContext(NonCancellable + Dispatchers.IO) { storage.write(owner, "running_notes", confirmed.toJson()) }
-                if (stamp == generation) _state.update { it.copy(document = confirmed, message = "Saved to Notes Journal. A fresh section is ready.", error = null) }
+                if (stamp == generation) _state.update { it.copy(document = confirmed, message = if (confirmed.text.isBlank()) "Saved to Notes Journal. A fresh section is ready." else "Previous section saved. Review the remaining draft before syncing again.", error = null) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (stamp == generation) _state.update { it.copy(error = "${e.message ?: "Sync was not confirmed."} Your draft and submission are preserved. Check the journal before retrying.") }

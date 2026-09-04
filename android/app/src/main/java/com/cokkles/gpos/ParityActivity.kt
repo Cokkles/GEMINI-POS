@@ -154,7 +154,6 @@ class ParityActivity : ComponentActivity() {
                         taskQueueViewModel.syncNow {
                             workspaceViewModel.refresh(force = true)
                             runtimeViewModel.refreshDashboard()
-                            workspaceViewModel.refresh(force = true)
                             parityViewModel.refreshAll()
                         }
                     },

@@ -62,10 +62,10 @@ internal fun WorkspaceHeading(title: String, icon: ImageVector, accent: Color, o
 }
 
 @Composable
-internal fun TaskListPicker(lists: List<WorkspaceList>, selected: String?, includeAll: Boolean, onSelect: (String?) -> Unit) {
+internal fun TaskListPicker(lists: List<WorkspaceList>, selected: String?, includeAll: Boolean, onSelect: (String?) -> Unit, enabled: Boolean = true) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("task_list_picker")) {
+        OutlinedButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.fillMaxWidth().testTag("task_list_picker")) {
             Icon(Icons.Outlined.List, null)
             Text(lists.firstOrNull { it.id == selected }?.title ?: if (includeAll) "All lists" else "Choose list", Modifier.weight(1f).padding(horizontal = 8.dp))
             Icon(Icons.Outlined.ArrowDropDown, "Choose task list")
@@ -158,7 +158,7 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
     if (editor) TaskEditor(editing, state, { editor = false }) { listId, title, notes, due -> vm.saveTask(listId, editing, title, notes, due) { editor = false } }
     deleting?.let { task -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete task?") }, text = { Text("${task.title}\nFrom ${task.listTitle}. This cannot be undone.") }, confirmButton = { TextButton(onClick = { deleting = null; vm.deleteTask(task) }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } }) }
     if (listEditor) AlertDialog(onDismissRequest = { if (!state.mutating) listEditor = false }, title = { Text(if (renaming == null) "New task list" else "Rename list") }, text = {
-        Column { OutlinedTextField(listName, { listName = it.take(100) }, label = { Text("List name") }); state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+        Column { OutlinedTextField(listName, { listName = it.take(100) }, enabled = !state.mutating, label = { Text("List name") }); state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
     }, confirmButton = { TextButton(onClick = { vm.saveList(listName, renaming?.id) { listEditor = false } }, enabled = available && listName.isNotBlank()) { Text(if (state.mutating) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = { listEditor = false }, enabled = !state.mutating) { Text("Cancel") } })
 }
 
@@ -171,10 +171,10 @@ private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismis
     val validDate = due.isBlank() || runCatching { LocalDate.parse(due) }.isSuccess
     AlertDialog(onDismissRequest = { if (!state.mutating) dismiss() }, title = { Text(if (task == null) "Add task" else "Edit task") }, text = {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { if (task == null) TaskListPicker(state.workspace.lists, listId, false, { listId = it }) else Text(task.listTitle) }
-            item { OutlinedTextField(title, { title = it.take(1024) }, label = { Text("Title") }, modifier = Modifier.testTag("task_title")) }
-            item { OutlinedTextField(notes, { notes = it.take(8000) }, label = { Text("Notes") }, minLines = 3) }
-            item { OutlinedTextField(due, { due = it.take(10) }, label = { Text("Due date · YYYY-MM-DD") }, supportingText = { Text("Leave empty for no due date") }, isError = !validDate, singleLine = true) }
+            item { if (task == null) TaskListPicker(state.workspace.lists, listId, false, { listId = it }, enabled = !state.mutating) else Text(task.listTitle) }
+            item { OutlinedTextField(title, { title = it.take(1024) }, enabled = !state.mutating, label = { Text("Title") }, modifier = Modifier.testTag("task_title")) }
+            item { OutlinedTextField(notes, { notes = it.take(8000) }, enabled = !state.mutating, label = { Text("Notes") }, minLines = 3) }
+            item { OutlinedTextField(due, { due = it.take(10) }, enabled = !state.mutating, label = { Text("Due date · YYYY-MM-DD") }, supportingText = { Text("Leave empty for no due date") }, isError = !validDate, singleLine = true) }
             state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         }
     }, confirmButton = { TextButton(onClick = { listId?.let { save(it, title, notes, due) } }, enabled = state.canWrite && !state.mutating && title.isNotBlank() && listId != null && validDate) { Text(if (state.mutating) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = dismiss, enabled = !state.mutating) { Text("Cancel") } })
@@ -195,7 +195,7 @@ internal fun RunningNotesScreen(state: RunningNotesUiState, vm: RunningNotesView
             Text("A place to think throughout your day. Saved on this device; sync when you're ready.", style = MaterialTheme.typography.bodyMedium)
         }
         item {
-            Text(when { state.syncing -> "Syncing to Notes Journal…"; state.saving -> "Saving locally…"; !state.ready -> "Connect Google to open your protected draft"; doc.pendingId != null -> "Previous sync needs review · draft preserved"; doc.updatedAt > 0 -> "Saved locally · ${noteTime(doc.updatedAt)}"; else -> "Local autosave ready" }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(when { state.syncing -> "Syncing to Notes Journal…"; state.saving -> "Saving locally…"; !state.ready -> "Connect Google to open your protected draft"; doc.pendingId != null -> "Previous sync needs review · draft preserved"; doc.text.isBlank() && doc.lastSyncedAt > 0 -> "Synced ${noteTime(doc.lastSyncedAt)} · ready for a new section"; doc.updatedAt > 0 -> "Saved locally · ${noteTime(doc.updatedAt)}"; else -> "Local autosave ready" }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             state.message?.let { Text(it) }
         }

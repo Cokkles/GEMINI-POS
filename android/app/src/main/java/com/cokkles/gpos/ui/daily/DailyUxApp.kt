@@ -462,7 +462,7 @@ private fun HomeScreen(
             }
         }
         item {
-            AegisCard(onClick = { navigate(nutrition.route) }, modifier = Modifier.fillMaxWidth()) {
+            AegisCard(onClick = { navigate(nutrition.route) }, modifier = Modifier.fillMaxWidth(), accent = TaskAccent) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Nutrition", style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -989,18 +989,18 @@ private fun NewsScreen(state: ParityUiState, overrides: Map<String, Boolean>, on
         else items(headliners) { story -> StoryCard(story) { story.link?.let(uriHandler::openUri) } }
 
         categories.forEach { (category, stories) ->
-            item { WorkspaceHeading(humanizeToken(category) ?: category, Icons.Outlined.Article, NewsAccent) }
             item {
                 val isExpanded = category in expanded
                 AegisCard(
                     onClick = {
                         expanded = if (isExpanded) expanded - category else expanded + category
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp), accent = NewsAccent,
                 ) {
                     ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(humanizeToken(category) ?: category) },
+                        leadingContent = { Icon(Icons.Outlined.Article, null, tint = NewsAccent) },
+                        headlineContent = { Text(humanizeToken(category) ?: category, style = MaterialTheme.typography.titleMedium) },
                         supportingContent = { Text(countLabel(stories.size, "story")) },
                         trailingContent = { Text(if (isExpanded) "Collapse" else "Expand") },
                     )
@@ -1020,7 +1020,7 @@ private fun NewsScreen(state: ParityUiState, overrides: Map<String, Boolean>, on
 
 @Composable
 private fun StoryCard(story: IntelligenceItem, onOpen: () -> Unit) {
-    AegisCard(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+    AegisCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), accent = NewsAccent) {
         ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(story.title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
@@ -1330,7 +1330,7 @@ private fun SystemScreen(
 
 @Composable
 private fun EventCard(event: DashboardEvent) {
-    AegisCard(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth(), accent = CalendarAccent) {
         ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(event.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
@@ -1342,7 +1342,7 @@ private fun EventCard(event: DashboardEvent) {
 
 @Composable
 private fun CalendarRangeEventCard(event: CalendarRangeEvent) {
-    AegisCard(Modifier.fillMaxWidth()) {
+    AegisCard(Modifier.fillMaxWidth(), accent = CalendarAccent) {
         ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(event.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },

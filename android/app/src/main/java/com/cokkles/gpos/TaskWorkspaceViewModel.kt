@@ -31,6 +31,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
     private var readJob: Job? = null
     private var writeJob: Job? = null
     private var generation = 0
+    private var readSequence = 0
 
     fun activate(auth: AuthState) {
         if (auth == AuthState.Restoring || auth == AuthState.Authenticating) return
@@ -40,7 +41,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
             val owner = credentials.read()?.workspaceOwner().orEmpty()
             if (owner.isBlank()) { detach(); return@launch }
             if (_state.value.owner != owner) {
-                detach()
+                resetState()
                 _state.value = TaskWorkspaceUiState(owner = owner)
                 val currentGeneration = generation
                 try {
@@ -57,7 +58,8 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
             if (auth is AuthState.Authenticated) refresh()
         }
     }
-    fun detach() { generation++; readJob?.cancel(); writeJob?.cancel(); _state.value = TaskWorkspaceUiState() }
+    fun detach() { activationJob?.cancel(); resetState() }
+    private fun resetState() { generation++; readJob?.cancel(); writeJob?.cancel(); _state.value = TaskWorkspaceUiState() }
     fun selectList(id: String?) { _state.update { it.copy(selectedList = id) } }
     fun historyDays(days: Int) { if (days in listOf(7, 30)) { _state.update { it.copy(days = days) }; refresh(force = true) } }
     fun refresh(force: Boolean = false) {
@@ -66,33 +68,34 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
         val owner = _state.value.owner
         val stamp = generation
         val days = _state.value.days
+        val sequence = ++readSequence
         readJob = viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
                 val token = token(owner)
                 val caps = client.readCapabilities(token)
-                if (stamp != generation) return@launch
+                if ((stamp != generation || sequence != readSequence)) return@launch
                 _state.update { it.copy(capabilities = caps) }
                 check(caps.taskWorkspaceV1) { "This deployment does not advertise task workspace support. Check the Apps Script 2.7.0 deployment." }
                 val json = client.readTaskWorkspaceJson(token)
                 val workspace = parseTaskWorkspace(json)
                 withContext(Dispatchers.IO) { storage.write(owner, "tasks", json.toString()) }
-                if (stamp != generation) return@launch
+                if ((stamp != generation || sequence != readSequence)) return@launch
                 _state.update { it.copy(workspace = workspace, cached = false,
                     selectedList = it.selectedList?.takeIf { id -> workspace.lists.any { list -> list.id == id } }) }
                 if (caps.taskHistoryV1) {
                     try {
                         val history = client.readWorkspaceHistory(token, days)
-                        if (stamp == generation) _state.update { it.copy(history = history, historyError = null) }
+                        if (stamp == generation && sequence == readSequence) _state.update { it.copy(history = history, historyError = null) }
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        if (stamp == generation) _state.update { it.copy(historyError = "Completed history could not refresh; previous results retained.") }
+                        if (stamp == generation && sequence == readSequence) _state.update { it.copy(historyError = "Completed history could not refresh; previous results retained.") }
                     }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                if (stamp == generation) _state.update { it.copy(cached = true, error = e.message ?: "Tasks unavailable.") }
-            } finally { if (stamp == generation) _state.update { it.copy(loading = false) } }
+                if (stamp == generation && sequence == readSequence) _state.update { it.copy(cached = true, error = e.message ?: "Tasks unavailable.") }
+            } finally { if (stamp == generation && sequence == readSequence) _state.update { it.copy(loading = false) } }
         }
     }
     fun saveTask(listId: String, task: WorkspaceTask?, title: String, notes: String, due: String, onSuccess: () -> Unit) =

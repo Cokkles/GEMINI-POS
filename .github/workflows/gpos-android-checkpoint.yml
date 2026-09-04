@@ -111,7 +111,7 @@ jobs:
           disable-animations: true
           script: |
             gradle -p android :app:connectedDebugAndroidTest --stacktrace
-            adb pull /sdcard/Android/data/com.cokkles.gpos/files/screenshots android/workspace-screenshots
+            adb pull /sdcard/Pictures/AEGIS-Tests android/workspace-screenshots
       - name: Upload navigation results
         if: always()
         uses: actions/upload-artifact@v4
