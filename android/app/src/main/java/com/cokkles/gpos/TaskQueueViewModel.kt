@@ -10,6 +10,7 @@ import com.cokkles.gpos.data.local.PendingTaskMutation
 import com.cokkles.gpos.data.local.ProtectedLocalLedger
 import com.cokkles.gpos.platform.sync.TaskQueueProcessor
 import com.cokkles.gpos.platform.sync.TaskQueueSyncScheduler
+import com.cokkles.gpos.platform.sync.DeferredMutationProcessor
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,7 @@ class TaskQueueViewModel(
     private val ledgerStore = ProtectedLocalLedger(application)
     private val scheduler = TaskQueueSyncScheduler(application)
     private val processor = TaskQueueProcessor(application)
+    private val deferredProcessor = DeferredMutationProcessor(application)
 
     private val _state = MutableStateFlow(TaskQueueUiState(ledger = ledgerStore.read()))
     val state: StateFlow<TaskQueueUiState> = _state.asStateFlow()
@@ -65,7 +67,7 @@ class TaskQueueViewModel(
             state = LocalReceiptState.QUEUED,
             createdAtEpochMs = now,
             updatedAtEpochMs = now,
-            result = "Undo is available for five minutes.",
+            result = "Undo is available until automatic sync begins.",
         )
         val updated = ledgerStore.update { ledger ->
             ledger.copy(
@@ -76,7 +78,7 @@ class TaskQueueViewModel(
         scheduler.schedulePending(localId)
         _state.value = TaskQueueUiState(
             ledger = updated,
-            lastMessage = "Task queued. Undo is available for five minutes.",
+            lastMessage = "Task updated locally. Automatic sync begins after two quiet minutes.",
         )
     }
 
@@ -93,7 +95,7 @@ class TaskQueueViewModel(
                         receipt.copy(
                             state = LocalReceiptState.CANCELLED,
                             updatedAtEpochMs = now,
-                            result = "Task completion cancelled during the five-minute grace window.",
+                            result = "Task completion cancelled before automatic synchronization.",
                         )
                     } else receipt
                 },
@@ -111,12 +113,13 @@ class TaskQueueViewModel(
         viewModelScope.launch {
             _state.update { it.copy(syncing = true, lastMessage = null) }
             val result = processor.flushDue(force = true)
+            val deferred = deferredProcessor.flush(force = true)
             _state.value = TaskQueueUiState(
                 ledger = ledgerStore.read(),
                 syncing = false,
                 lastMessage = when {
-                    result.completed > 0 || result.failed > 0 ->
-                        "Task sync: ${result.completed} confirmed, ${result.failed} failed. Canonical Tasks refreshed."
+                    result.completed > 0 || result.failed > 0 || deferred.confirmed > 0 || deferred.failed > 0 ->
+                        "Sync: ${result.completed + deferred.confirmed} confirmed, ${result.failed + deferred.failed} failed. Canonical Tasks refreshed."
                     else -> "No pending task changes. Canonical Google Tasks refreshed."
                 },
             )

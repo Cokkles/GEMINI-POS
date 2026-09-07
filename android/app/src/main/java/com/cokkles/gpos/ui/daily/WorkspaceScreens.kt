@@ -140,7 +140,7 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
                         Text(task.title, style = MaterialTheme.typography.titleMedium)
                         Text(task.listTitle + task.due.takeIf { it.isNotBlank() }?.let { " · Due ${it.take(10)}" }.orEmpty(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         if (task.notes.isNotBlank()) Text(task.notes, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        if (queued != null) Text(if (sending) "Syncing completion…" else "Completion queued · five-minute Undo", style = MaterialTheme.typography.bodySmall)
+                        if (queued != null) Text(if (sending) "Syncing completion…" else "Completion queued · two-minute Undo", style = MaterialTheme.typography.bodySmall)
                         Row {
                             if (queued != null) TextButton(onClick = { undo(queued.id) }, enabled = !sending) { Text("Undo") }
                             else {

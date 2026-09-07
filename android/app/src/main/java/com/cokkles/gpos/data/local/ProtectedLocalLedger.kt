@@ -31,6 +31,32 @@ data class PendingTaskMutation(
     val owner: String = "",
 )
 
+enum class DeferredMutationType {
+    TASK_CREATE,
+    TASK_UPDATE,
+    TASK_DELETE,
+    TASK_RESTORE,
+    LIST_CREATE,
+    LIST_RENAME,
+    FOLLOWUP_RESOLVE,
+    FOLLOWUP_DISMISS,
+    FOLLOWUP_PROMOTE,
+}
+
+data class DeferredMutation(
+    val id: String,
+    val owner: String,
+    val type: DeferredMutationType,
+    val entityId: String = "",
+    val listId: String = "",
+    val title: String = "",
+    val notes: String = "",
+    val due: String = "",
+    val createdAtEpochMs: Long,
+    val syncAfterEpochMs: Long,
+    val attempts: Int = 0,
+)
+
 data class LocalReceipt(
     val id: String,
     val kind: String,
@@ -57,6 +83,7 @@ data class LocalAlert(
 
 data class LocalLedger(
     val pendingTasks: List<PendingTaskMutation> = emptyList(),
+    val deferredMutations: List<DeferredMutation> = emptyList(),
     val receipts: List<LocalReceipt> = emptyList(),
     val alerts: List<LocalAlert> = emptyList(),
 )
@@ -97,6 +124,7 @@ class ProtectedLocalLedger(
 
     private fun LocalLedger.bounded(): LocalLedger = copy(
         pendingTasks = pendingTasks.distinctBy { "${it.owner}/${it.taskListId}/${it.taskId}" }.takeLast(MAX_PENDING_TASKS),
+        deferredMutations = deferredMutations.distinctBy { it.id }.takeLast(MAX_DEFERRED_MUTATIONS),
         receipts = receipts.sortedByDescending { it.updatedAtEpochMs }.take(MAX_RECEIPTS),
         alerts = alerts.sortedByDescending { it.createdAtEpochMs }.take(MAX_ALERTS),
     )
@@ -117,6 +145,25 @@ class ProtectedLocalLedger(
                             .put("sync_after", item.syncAfterEpochMs)
                             .put("attempts", item.attempts),
                     )
+                }
+            },
+        )
+        .put(
+            "deferred_mutations",
+            JSONArray().apply {
+                deferredMutations.forEach { item ->
+                    put(JSONObject()
+                        .put("id", item.id)
+                        .put("owner", item.owner)
+                        .put("type", item.type.name)
+                        .put("entity_id", item.entityId)
+                        .put("list_id", item.listId)
+                        .put("title", item.title)
+                        .put("notes", item.notes)
+                        .put("due", item.due)
+                        .put("created_at", item.createdAtEpochMs)
+                        .put("sync_after", item.syncAfterEpochMs)
+                        .put("attempts", item.attempts))
                 }
             },
         )
@@ -205,6 +252,7 @@ class ProtectedLocalLedger(
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val MAX_PENDING_TASKS = 50
+        const val MAX_DEFERRED_MUTATIONS = 100
         const val MAX_RECEIPTS = 60
         const val MAX_ALERTS = 40
     }
@@ -223,6 +271,22 @@ private fun parseLedger(json: JSONObject): LocalLedger = LocalLedger(
             owner = item.optString("owner"),
         )
     }.filter { it.id.isNotBlank() && it.taskId.isNotBlank() },
+    deferredMutations = json.optJSONArray("deferred_mutations").mapObjects { item ->
+        DeferredMutation(
+            id = item.optString("id"),
+            owner = item.optString("owner"),
+            type = runCatching { DeferredMutationType.valueOf(item.optString("type")) }
+                .getOrDefault(DeferredMutationType.TASK_UPDATE),
+            entityId = item.optString("entity_id"),
+            listId = item.optString("list_id"),
+            title = item.optString("title"),
+            notes = item.optString("notes"),
+            due = item.optString("due"),
+            createdAtEpochMs = item.optLong("created_at"),
+            syncAfterEpochMs = item.optLong("sync_after"),
+            attempts = item.optInt("attempts", 0),
+        )
+    }.filter { it.id.isNotBlank() && it.owner.isNotBlank() },
     receipts = json.optJSONArray("receipts").mapObjects { item ->
         LocalReceipt(
             id = item.optString("id"),

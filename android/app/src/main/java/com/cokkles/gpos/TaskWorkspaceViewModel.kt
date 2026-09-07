@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.cokkles.gpos.data.interaction.AegisInteractionClient
 import com.cokkles.gpos.data.interaction.InteractionCapabilities
 import com.cokkles.gpos.data.remote.AuthState
+import com.cokkles.gpos.data.local.DeferredMutation
+import com.cokkles.gpos.data.local.DeferredMutationType
 import com.cokkles.gpos.data.workspace.*
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.sync.DeferredMutationQueue
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.json.JSONObject
@@ -25,6 +28,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
     private val credentials = AndroidKeystoreCredentialStore(app)
     private val storage = ProtectedWorkspaceStore(app)
     private val client = AegisInteractionClient()
+    private val queue = DeferredMutationQueue(app)
     private val _state = MutableStateFlow(TaskWorkspaceUiState())
     val state = _state.asStateFlow()
     private var activationJob: Job? = null
@@ -98,26 +102,69 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
             } finally { if (stamp == generation && sequence == readSequence) _state.update { it.copy(loading = false) } }
         }
     }
-    fun saveTask(listId: String, task: WorkspaceTask?, title: String, notes: String, due: String, onSuccess: () -> Unit) =
-        mutate("Task saved", _state.value.capabilities.taskCrudV1, onSuccess) { token ->
-            client.saveWorkspaceTask(token, listId, task?.id, title, notes, due, UUID.randomUUID().toString())
+    fun saveTask(listId: String, task: WorkspaceTask?, title: String, notes: String, due: String, onSuccess: () -> Unit) {
+        if (!_state.value.capabilities.taskCrudV1 || !_state.value.canWrite || title.trim().isBlank()) return
+        val now = System.currentTimeMillis()
+        val localEntityId = task?.id ?: "local:${UUID.randomUUID()}"
+        val listTitle = _state.value.workspace.lists.firstOrNull { it.id == listId }?.title.orEmpty()
+        val optimistic = WorkspaceTask(localEntityId, listId, listTitle, title.trim(), notes, due)
+        _state.update { current ->
+            val tasks = current.workspace.tasks.filterNot { it.key == optimistic.key } + optimistic
+            current.copy(workspace = current.workspace.copy(tasks = tasks), message = "Saved locally • sync pending", error = null)
         }
-    fun deleteTask(task: WorkspaceTask) = mutate("Task deleted", _state.value.capabilities.taskCrudV1) { client.deleteWorkspaceTask(it, task) }
-    fun restoreTask(task: WorkspaceTask) = mutate("Task restored to ${task.listTitle}", _state.value.capabilities.taskHistoryV1) { client.restoreWorkspaceTask(it, task) }
-    fun saveList(title: String, id: String?, onSuccess: () -> Unit) = mutate("Task list saved", _state.value.capabilities.taskListsV1, onSuccess) { client.saveWorkspaceList(it, title, id) }
-    private fun mutate(message: String, available: Boolean, onSuccess: () -> Unit = {}, action: suspend (String) -> Unit) {
-        if (!available || !_state.value.canWrite || _state.value.mutating) return
+        persistWorkspace()
+        queue.stage(DeferredMutation(
+            id = UUID.randomUUID().toString(), owner = _state.value.owner,
+            type = if (task == null || task.id.startsWith("local:")) DeferredMutationType.TASK_CREATE else DeferredMutationType.TASK_UPDATE,
+            entityId = localEntityId, listId = listId, title = title.trim(), notes = notes, due = due,
+            createdAtEpochMs = now, syncAfterEpochMs = now,
+        ))
+        onSuccess()
+    }
+
+    fun deleteTask(task: WorkspaceTask) {
+        if (!_state.value.capabilities.taskCrudV1 || !_state.value.canWrite) return
+        _state.update { it.copy(workspace = it.workspace.copy(tasks = it.workspace.tasks.filterNot { candidate -> candidate.key == task.key }), message = "Deleted locally • sync pending") }
+        persistWorkspace()
+        if (task.id.startsWith("local:")) queue.removeForEntity(_state.value.owner, task.id)
+        else stage(DeferredMutationType.TASK_DELETE, task.id, task.listId, task.title)
+    }
+
+    fun restoreTask(task: WorkspaceTask) {
+        if (!_state.value.capabilities.taskHistoryV1 || !_state.value.canWrite) return
+        _state.update { it.copy(history = it.history.filterNot { candidate -> candidate.key == task.key }, message = "Restored locally • sync pending") }
+        stage(DeferredMutationType.TASK_RESTORE, task.id, task.listId, task.title)
+    }
+
+    fun saveList(title: String, id: String?, onSuccess: () -> Unit) {
+        if (!_state.value.capabilities.taskListsV1 || !_state.value.canWrite || title.trim().isBlank()) return
+        val entityId = id ?: "local-list:${UUID.randomUUID()}"
+        _state.update { current -> current.copy(
+            workspace = current.workspace.copy(lists = current.workspace.lists.filterNot { it.id == entityId } + WorkspaceList(entityId, title.trim())),
+            message = "Task list saved locally • sync pending", error = null,
+        ) }
+        persistWorkspace()
+        stage(if (id == null) DeferredMutationType.LIST_CREATE else DeferredMutationType.LIST_RENAME, entityId, title = title.trim())
+        onSuccess()
+    }
+
+    private fun stage(type: DeferredMutationType, entityId: String, listId: String = "", title: String = "") {
+        val now = System.currentTimeMillis()
+        queue.stage(DeferredMutation(UUID.randomUUID().toString(), _state.value.owner, type, entityId, listId,
+            title, createdAtEpochMs = now, syncAfterEpochMs = now))
+    }
+
+    private fun persistWorkspace() {
         val owner = _state.value.owner
-        val stamp = generation
-        _state.update { it.copy(mutating = true, error = null, message = null) }
-        writeJob = viewModelScope.launch {
-            try {
-                action(token(owner))
-                if (stamp == generation) { _state.update { it.copy(message = message) }; onSuccess(); refresh(force = true) }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                if (stamp == generation) _state.update { it.copy(error = "${e.message ?: "Change not confirmed"} Check Tasks with Refresh before retrying.") }
-            } finally { if (stamp == generation) _state.update { it.copy(mutating = false) } }
+        val workspace = _state.value.workspace
+        if (owner.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val json = JSONObject().put("contract", "AEGIS_TASK_WORKSPACE_V1")
+                .put("lists", org.json.JSONArray(workspace.lists.map { JSONObject().put("id", it.id).put("title", it.title) }))
+                .put("tasks", org.json.JSONArray(workspace.tasks.map { JSONObject()
+                    .put("id", it.id).put("task_list_id", it.listId).put("task_list_title", it.listTitle)
+                    .put("title", it.title).put("notes", it.notes).put("due", it.due).put("completed", it.completed) }))
+            storage.write(owner, "tasks", json.toString())
         }
     }
     private suspend fun token(owner: String): String {

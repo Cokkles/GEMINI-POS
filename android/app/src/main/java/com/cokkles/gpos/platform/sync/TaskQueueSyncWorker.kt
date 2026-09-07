@@ -254,7 +254,7 @@ class TaskQueueSyncScheduler(
     }
 
     companion object {
-        const val GRACE_MS = 5L * 60L * 1000L
+        const val GRACE_MS = 2L * 60L * 1000L
         const val PERIODIC_MINUTES = 15L
     }
 }

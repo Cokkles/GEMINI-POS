@@ -8,9 +8,13 @@ import com.cokkles.gpos.data.interaction.AegisInteractionClient
 import com.cokkles.gpos.data.interaction.AiChatMessage
 import com.cokkles.gpos.data.interaction.CalendarInteractionResult
 import com.cokkles.gpos.data.interaction.InteractionCapabilities
+import com.cokkles.gpos.data.local.DeferredMutation
+import com.cokkles.gpos.data.local.DeferredMutationType
 import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.sync.DeferredMutationQueue
+import com.cokkles.gpos.data.workspace.workspaceOwner
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +35,7 @@ data class AegisInteractionUiState(
     val followups: List<AegisFollowup> = emptyList(),
     val followupsLoading: Boolean = false,
     val followupsError: String? = null,
+    val pendingFollowupIds: Set<String> = emptySet(),
     val taskSubmitting: Boolean = false,
     val taskMessage: String? = null,
     val taskError: String? = null,
@@ -47,6 +52,7 @@ class AegisInteractionViewModel(
     private val client = AegisInteractionClient()
     private val credentials = AndroidKeystoreCredentialStore(application)
     private val notifications = GposNotificationPublisher(application)
+    private val deferredQueue = DeferredMutationQueue(application)
 
     private val _state = MutableStateFlow(AegisInteractionUiState())
     val state: StateFlow<AegisInteractionUiState> = _state.asStateFlow()
@@ -124,46 +130,20 @@ class AegisInteractionViewModel(
     }
 
     fun resolveFollowup(followup: AegisFollowup) {
-        mutateFollowup(followup, "resolved") { token ->
-            client.resolveFollowup(token, followup.id, followup.title)
-        }
+        queueFollowup(followup, DeferredMutationType.FOLLOWUP_RESOLVE, "resolved")
     }
 
     fun dismissFollowup(followup: AegisFollowup) {
-        mutateFollowup(followup, "dismissed") { token ->
-            client.dismissFollowup(token, followup.id, followup.title)
-        }
+        queueFollowup(followup, DeferredMutationType.FOLLOWUP_DISMISS, "dismissed")
     }
 
     fun promoteFollowup(followup: AegisFollowup, onSuccess: () -> Unit = {}) {
-        viewModelScope.launch {
-            val token = currentToken() ?: return@launch
-            if (_state.value.capabilities?.followupsV1 != true || _state.value.capabilities?.taskActionV1 != true) {
-                _state.update { it.copy(followupsError = "Task promotion is not advertised by this backend.") }
-                return@launch
-            }
-            _state.update { it.copy(followupsLoading = true, followupsError = null) }
-            runCatching {
-                client.promoteFollowupToTask(
-                    token,
-                    followup.id,
-                    followup.title,
-                    followup.summary,
-                )
-            }.onSuccess { result ->
-                notifications.publishOutcome(
-                    stableEventId = "followup-promote-${followup.id}",
-                    title = "Follow-up promoted",
-                    body = "Added ${result.task.title} to Google Tasks.",
-                    target = GposDeepLinkTarget.TASKS,
-                    isError = false,
-                )
-                refreshFollowupsInternal(token)
-                onSuccess()
-            }.onFailure { error ->
-                _state.update { it.copy(followupsLoading = false, followupsError = error.safeInteractionMessage()) }
-            }
+        if (_state.value.capabilities?.taskActionV1 != true) {
+            _state.update { it.copy(followupsError = "Task promotion is not advertised by this backend.") }
+            return
         }
+        queueFollowup(followup, DeferredMutationType.FOLLOWUP_PROMOTE, "promoted")
+        onSuccess()
     }
 
     fun setAiMode(mode: String) {
@@ -279,32 +259,33 @@ class AegisInteractionViewModel(
         _state.update { it.copy(calendar = CalendarInteractionUiState()) }
     }
 
-    private fun mutateFollowup(
-        followup: AegisFollowup,
-        verb: String,
-        mutation: suspend (String) -> Unit,
-    ) {
+    private fun queueFollowup(followup: AegisFollowup, type: DeferredMutationType, verb: String) {
+        if (followup.id in _state.value.pendingFollowupIds) return
+        _state.update { it.copy(pendingFollowupIds = it.pendingFollowupIds + followup.id) }
         viewModelScope.launch {
-            val token = currentToken() ?: return@launch
-            if (_state.value.capabilities?.followupsV1 != true) {
-                _state.update { it.copy(followupsError = "Follow-up actions are not available from this backend.") }
+            val owner = credentials.read()?.workspaceOwner().orEmpty()
+            if (owner.isBlank() || _state.value.capabilities?.followupsV1 != true) {
+                _state.update { it.copy(
+                    pendingFollowupIds = it.pendingFollowupIds - followup.id,
+                    followupsError = "Follow-up actions require a connected Google account.",
+                ) }
                 return@launch
             }
-            _state.update { it.copy(followupsLoading = true, followupsError = null) }
-            runCatching { mutation(token) }
-                .onSuccess {
-                    notifications.publishOutcome(
-                        stableEventId = "followup-$verb-${followup.id}",
-                        title = "Follow-up $verb",
-                        body = followup.title,
-                        target = GposDeepLinkTarget.FOLLOW_UPS,
-                        isError = false,
-                    )
-                    refreshFollowupsInternal(token)
-                }
-                .onFailure { error ->
-                    _state.update { it.copy(followupsLoading = false, followupsError = error.safeInteractionMessage()) }
-                }
+            val now = System.currentTimeMillis()
+            deferredQueue.stage(DeferredMutation(
+                id = UUID.randomUUID().toString(), owner = owner, type = type, entityId = followup.id,
+                title = followup.title, notes = followup.summary, createdAtEpochMs = now, syncAfterEpochMs = now,
+            ))
+            _state.update { current -> current.copy(
+                followups = current.followups.filterNot { it.id == followup.id },
+                followupsLoading = false,
+                followupsError = null,
+                taskMessage = if (type == DeferredMutationType.FOLLOWUP_PROMOTE) "Promoted locally • sync pending" else current.taskMessage,
+            ) }
+            notifications.publishOutcome(
+                stableEventId = "followup-queued-${followup.id}", title = "Follow-up $verb",
+                body = "Saved locally; Google sync is pending.", target = GposDeepLinkTarget.FOLLOW_UPS, isError = false,
+            )
         }
     }
 
