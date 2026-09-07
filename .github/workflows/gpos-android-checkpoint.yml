@@ -7,6 +7,7 @@ on:
       - agent/android-0.7.1-daily-reliability
       - agent/android-0.7.2-daily-customization
       - agent/android-0.7.3-offline-sync
+      - agent/android-0.7.4-auth-continuity
     paths:
       - 'android/**'
       - '.github/workflows/gpos-android-checkpoint.yml'
@@ -57,8 +58,8 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk \
             | head -n 1 | tee android/app/build/outputs/apk/debug/package-metadata.txt
           grep -q "name='com.cokkles.gpos'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionCode='15'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionName='0.7.3-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionCode='16'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionName='0.7.4-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
           {
             echo "package=com.cokkles.gpos"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
@@ -70,7 +71,7 @@ jobs:
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.7.3-offline-sync-debug
+          name: aegis-android-0.7.4-auth-continuity-debug
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/apk/debug/signing-fingerprint.txt
@@ -81,7 +82,7 @@ jobs:
       - name: Upload Android instrumentation APK
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.7.3-offline-sync-androidTest
+          name: aegis-android-0.7.4-auth-continuity-androidTest
           path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
@@ -119,7 +120,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.7.3-navigation-results
+          name: aegis-android-0.7.4-navigation-results
           path: |
             android/app/build/reports/androidTests/connected/
             android/workspace-screenshots/

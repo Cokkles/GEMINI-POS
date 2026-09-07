@@ -24,6 +24,7 @@ import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import com.cokkles.gpos.platform.security.CredentialStore
 import com.cokkles.gpos.platform.security.StoredCredential
 import com.cokkles.gpos.platform.sync.CanonicalSyncScheduler
+import com.cokkles.gpos.platform.sync.AuthenticationRecovery
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -93,7 +94,10 @@ class GposRuntimeViewModel(
             _uiState.update {
                 it.copy(
                     backend = it.backend.copy(checking = true, error = null),
-                    auth = AuthState.Restoring,
+                    auth = if (storedCredential == null) AuthState.Restoring else AuthState.OfflineRestored(
+                        expiresAtEpochMs = storedCredential.expiresAtEpochMs,
+                        reason = "Secure local session restored while Google authorization is checked in the background.",
+                    ),
                 )
             }
 
@@ -148,7 +152,11 @@ class GposRuntimeViewModel(
         }
     }
 
-    fun authenticateWithIdToken(idToken: String) {
+    fun authenticateWithIdToken(idToken: String) = authenticateWithIdToken(idToken, showProgress = true)
+
+    fun renewWithIdToken(idToken: String) = authenticateWithIdToken(idToken, showProgress = false)
+
+    private fun authenticateWithIdToken(idToken: String, showProgress: Boolean) {
         if (idToken.isBlank()) {
             reportAuthFailure("Google did not return a usable identity token.")
             return
@@ -158,7 +166,7 @@ class GposRuntimeViewModel(
         sessionJob = viewModelScope.launch {
             val previousAuth = _uiState.value.auth
             val previousCredential = credentialStore.read()
-            _uiState.update { it.copy(auth = AuthState.Authenticating) }
+            if (showProgress) _uiState.update { it.copy(auth = AuthState.Authenticating) }
             runCatching { backend.authenticate(idToken) }
                 .onSuccess { session ->
                     credentialStore.replace(
@@ -168,6 +176,7 @@ class GposRuntimeViewModel(
                         ),
                     )
                     syncScheduler.schedule()
+                    AuthenticationRecovery(getApplication()).resumePending()
                     _uiState.update {
                         it.copy(
                             auth = AuthState.Authenticated(
@@ -371,6 +380,7 @@ class GposRuntimeViewModel(
         if (session != null) {
             credentialStore.replace(StoredCredential(credential.idToken, session.expiresAtEpochMs))
             syncScheduler.schedule()
+            AuthenticationRecovery(getApplication()).resumePending()
             _uiState.update {
                 it.copy(
                     auth = AuthState.Authenticated(
@@ -422,6 +432,7 @@ class GposRuntimeViewModel(
 
     private suspend fun clearPrivateSession() {
         syncScheduler.cancel()
+        AuthenticationRecovery(getApplication()).clearAttention()
         credentialStore.clear()
         cacheDao.clear()
         clearPrivateUiState()

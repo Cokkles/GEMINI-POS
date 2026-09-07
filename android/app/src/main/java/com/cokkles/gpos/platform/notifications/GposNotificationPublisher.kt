@@ -107,4 +107,8 @@ class GposNotificationPublisher(
             // Permission can be revoked between the explicit check and dispatch. Fail closed.
         }
     }
+
+    fun cancel(stableEventId: String) {
+        NotificationManagerCompat.from(context).cancel(stableEventId.hashCode())
+    }
 }

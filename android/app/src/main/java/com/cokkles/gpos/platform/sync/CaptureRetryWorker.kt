@@ -19,6 +19,7 @@ import com.cokkles.gpos.data.local.ProtectedLocalLedger
 import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.security.BackgroundAuthenticationPolicy
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.sync.Mutex
@@ -79,8 +80,8 @@ class CaptureSubmissionProcessor(
         if (manual && !receipt.manualRetryAllowed) return@withLock CaptureProcessOutcome.Ignored
         val kind = CaptureKind.entries.firstOrNull { it.wireName == receipt.kind } ?: return@withLock CaptureProcessOutcome.Ignored
         val credential = credentialStore.read() ?: return@withLock CaptureProcessOutcome.Ignored
-        if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
-            return@withLock failIfStillOwned(receiptId, kind, "Reconnect Google before retrying this capture.", receipt.attempts)
+        if (BackgroundAuthenticationPolicy.requiresForegroundRenewal(credential.expiresAtEpochMs, System.currentTimeMillis())) {
+            return@withLock deferForAuthentication(receiptId)
         }
 
         val attempt = receipt.attempts + 1
@@ -106,6 +107,9 @@ class CaptureSubmissionProcessor(
         }
 
         val error = result.exceptionOrNull() ?: return@withLock CaptureProcessOutcome.Failed
+        if (BackgroundAuthenticationPolicy.isAuthenticationFailure(error)) {
+            return@withLock deferForAuthentication(receiptId)
+        }
         val certified = CaptureReliabilityPolicy.isGeminiDependent(kind) &&
             CaptureReliabilityPolicy.isCertifiedSafeCapacityFailure(error) &&
             runCatching { interactionClient.readCapabilities(credential.idToken).captureReliabilityV1 }.getOrDefault(false)
@@ -138,5 +142,23 @@ class CaptureSubmissionProcessor(
         return CaptureProcessOutcome.Failed
     }
 
-    companion object { private val mutex = Mutex() }
+    private fun deferForAuthentication(receiptId: String): CaptureProcessOutcome {
+        val now = System.currentTimeMillis()
+        ledgerStore.update { current -> current.copy(receipts = current.receipts.map { receipt ->
+            if (receipt.id == receiptId) receipt.copy(
+                state = LocalReceiptState.QUEUED,
+                updatedAtEpochMs = now,
+                result = "Waiting for Google authorization; capture remains queued.",
+                error = null,
+                nextRetryAtEpochMs = null,
+                manualRetryAllowed = false,
+            ) else receipt
+        }) }
+        AuthenticationRecovery(appContext).requireForegroundRenewal()
+        return CaptureProcessOutcome.Queued
+    }
+
+    companion object {
+        private val mutex = Mutex()
+    }
 }

@@ -27,6 +27,7 @@ import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
 import com.cokkles.gpos.platform.notifications.GposNotificationChannels
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.security.BackgroundAuthenticationPolicy
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -65,7 +66,8 @@ class TaskQueueProcessor(
 
     private suspend fun processDue(force: Boolean): TaskQueueProcessResult {
         val credential = credentialStore.read() ?: return TaskQueueProcessResult()
-        if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
+        if (BackgroundAuthenticationPolicy.requiresForegroundRenewal(credential.expiresAtEpochMs, System.currentTimeMillis())) {
+            AuthenticationRecovery(context).requireForegroundRenewal()
             return TaskQueueProcessResult()
         }
         val now = System.currentTimeMillis()
@@ -102,8 +104,14 @@ class TaskQueueProcessor(
                 completed += 1
                 markConfirmed(pending)
             } else {
+                val failure = outcome.exceptionOrNull()
+                if (BackgroundAuthenticationPolicy.isAuthenticationFailure(failure)) {
+                    markWaitingForAuthentication(pending)
+                    AuthenticationRecovery(context).requireForegroundRenewal()
+                    break
+                }
                 val nextAttempt = pending.attempts + 1
-                val message = outcome.exceptionOrNull()?.message
+                val message = failure?.message
                     ?.takeIf(String::isNotBlank)
                     ?: "Task synchronization could not be verified."
                 if (nextAttempt >= MAX_TASK_ATTEMPTS) {
@@ -162,6 +170,20 @@ class TaskQueueProcessor(
             isError = false,
             channelId = GposNotificationChannels.TASKS,
         )
+    }
+
+    private fun markWaitingForAuthentication(pending: PendingTaskMutation) {
+        val now = System.currentTimeMillis()
+        ledgerStore.update { ledger -> ledger.copy(
+            receipts = ledger.receipts.map { receipt ->
+                if (receipt.id == pending.id) receipt.copy(
+                    state = LocalReceiptState.QUEUED,
+                    updatedAtEpochMs = now,
+                    result = "Waiting for Google authorization; task completion remains queued.",
+                    error = null,
+                ) else receipt
+            },
+        ) }
     }
 
     private fun markFailed(pending: PendingTaskMutation, message: String) {

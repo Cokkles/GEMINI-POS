@@ -58,7 +58,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
                     if (generation == currentGeneration) _state.update { it.copy(error = "Saved tasks could not be read.") }
                 }
             }
-            _state.update { it.copy(canWrite = auth is AuthState.Authenticated) }
+            _state.update { it.copy(canWrite = auth is AuthState.Authenticated || auth is AuthState.OfflineRestored || auth is AuthState.ReconnectRequired) }
             if (auth is AuthState.Authenticated) refresh()
         }
     }

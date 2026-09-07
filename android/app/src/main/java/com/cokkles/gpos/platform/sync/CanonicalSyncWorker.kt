@@ -15,6 +15,7 @@ import com.cokkles.gpos.data.remote.NotificationSeverity
 import com.cokkles.gpos.data.remote.NotificationsPayloadMapper
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.security.BackgroundAuthenticationPolicy
 import org.json.JSONObject
 
 /**
@@ -33,9 +34,8 @@ class CanonicalSyncWorker(
         val credentialStore = AndroidKeystoreCredentialStore(applicationContext)
         val credential = credentialStore.read() ?: return Result.success()
         val now = System.currentTimeMillis()
-        if (credential.expiresAtEpochMs?.let { it <= now } == true) {
-            credentialStore.clear()
-            openDao().clear()
+        if (BackgroundAuthenticationPolicy.requiresForegroundRenewal(credential.expiresAtEpochMs, now)) {
+            AuthenticationRecovery(applicationContext).requireForegroundRenewal()
             return Result.success()
         }
 
@@ -103,9 +103,8 @@ class CanonicalSyncWorker(
 
             Result.success()
         } catch (error: AegisBackendException) {
-            if (error.code in AUTH_FAILURE_CODES) {
-                credentialStore.clear()
-                dao.clear()
+            if (BackgroundAuthenticationPolicy.isAuthenticationFailure(error)) {
+                AuthenticationRecovery(applicationContext).requireForegroundRenewal()
                 Result.success()
             } else if (runAttemptCount < MAX_RETRIES) {
                 Result.retry()
@@ -150,6 +149,5 @@ class CanonicalSyncWorker(
         const val UNIQUE_WORK_NAME = "gpos-canonical-read-sync"
         private const val FINANCE_HOURS = 72
         private const val MAX_RETRIES = 2
-        private val AUTH_FAILURE_CODES = setOf("AEGIS_AUTH_REQUIRED", "AEGIS_AUTH_FAILED")
     }
 }

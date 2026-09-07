@@ -17,6 +17,7 @@ import com.cokkles.gpos.data.local.LocalReceiptState
 import com.cokkles.gpos.data.local.ProtectedLocalLedger
 import com.cokkles.gpos.data.workspace.WorkspaceTask
 import com.cokkles.gpos.data.workspace.workspaceOwner
+import com.cokkles.gpos.platform.security.BackgroundAuthenticationPolicy
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -40,7 +41,8 @@ class DeferredMutationProcessor(private val context: Context) {
 
     suspend fun flush(force: Boolean): DeferredMutationResult = lock.withLock {
         val credential = credentials.read() ?: return@withLock DeferredMutationResult(remaining = ledger.read().deferredMutations.size)
-        if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
+        if (BackgroundAuthenticationPolicy.requiresForegroundRenewal(credential.expiresAtEpochMs, System.currentTimeMillis())) {
+            AuthenticationRecovery(context).requireForegroundRenewal()
             return@withLock DeferredMutationResult(remaining = ledger.read().deferredMutations.size)
         }
         val owner = credential.workspaceOwner()
@@ -58,8 +60,14 @@ class DeferredMutationProcessor(private val context: Context) {
                 confirmed++
                 finish(item, true, "Synced to Google.")
             } else {
+                val error = outcome.exceptionOrNull()
+                if (BackgroundAuthenticationPolicy.isAuthenticationFailure(error)) {
+                    AuthenticationRecovery(context).requireForegroundRenewal()
+                    markWaitingForAuthentication(item)
+                    break
+                }
                 failed++
-                finish(item, false, outcome.exceptionOrNull()?.message ?: "Background synchronization failed.")
+                finish(item, false, error?.message ?: "Background synchronization failed.")
             }
         }
         DeferredMutationResult(confirmed, failed, ledger.read().deferredMutations.count { it.owner == owner })
@@ -99,6 +107,19 @@ class DeferredMutationProcessor(private val context: Context) {
         }
     }
 
+    private fun markWaitingForAuthentication(item: DeferredMutation) {
+        ledger.update { current -> current.copy(
+            receipts = current.receipts.map { receipt ->
+                if (receipt.id == item.id) receipt.copy(
+                    state = LocalReceiptState.QUEUED,
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                    result = "Waiting for Google authorization; the change remains queued.",
+                    error = null,
+                ) else receipt
+            },
+        ) }
+    }
+
     private companion object { val lock = Mutex() }
 }
 
@@ -126,6 +147,14 @@ class DeferredMutationQueue(context: Context) {
     fun schedule() {
         val request = OneTimeWorkRequestBuilder<DeferredMutationWorker>()
             .setInitialDelay(DEBOUNCE_MS, TimeUnit.MILLISECONDS)
+            .setConstraints(constraints)
+            .addTag(WORK_TAG)
+            .build()
+        work.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    fun scheduleNow() {
+        val request = OneTimeWorkRequestBuilder<DeferredMutationWorker>()
             .setConstraints(constraints)
             .addTag(WORK_TAG)
             .build()
