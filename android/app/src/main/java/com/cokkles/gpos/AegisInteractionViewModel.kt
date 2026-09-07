@@ -10,6 +10,7 @@ import com.cokkles.gpos.data.interaction.CalendarInteractionResult
 import com.cokkles.gpos.data.interaction.InteractionCapabilities
 import com.cokkles.gpos.data.local.DeferredMutation
 import com.cokkles.gpos.data.local.DeferredMutationType
+import com.cokkles.gpos.data.local.ProtectedLocalLedger
 import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
@@ -53,6 +54,7 @@ class AegisInteractionViewModel(
     private val credentials = AndroidKeystoreCredentialStore(application)
     private val notifications = GposNotificationPublisher(application)
     private val deferredQueue = DeferredMutationQueue(application)
+    private val localLedger = ProtectedLocalLedger(application)
 
     private val _state = MutableStateFlow(AegisInteractionUiState())
     val state: StateFlow<AegisInteractionUiState> = _state.asStateFlow()
@@ -293,9 +295,15 @@ class AegisInteractionViewModel(
         _state.update { it.copy(followupsLoading = true, followupsError = null) }
         runCatching { client.readFollowups(token) }
             .onSuccess { result ->
+                val owner = credentials.read()?.workspaceOwner().orEmpty()
+                val pending = localLedger.read().deferredMutations
+                    .filter { it.owner == owner && it.type.name.startsWith("FOLLOWUP") }
+                    .map { it.entityId }
+                    .toSet()
                 _state.update {
                     it.copy(
-                        followups = result.items,
+                        followups = result.items.filterNot { item -> item.id in pending },
+                        pendingFollowupIds = pending,
                         followupsLoading = false,
                         followupsError = null,
                     )
