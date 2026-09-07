@@ -1,6 +1,5 @@
 package com.cokkles.gpos.ui.daily
 
-import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -19,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -37,6 +35,26 @@ internal val CalendarAccent = Color(0xFF78B7FF)
 internal val TaskAccent = Color(0xFF58CCB5)
 internal val NotesAccent = Color(0xFFE8B764)
 internal val NewsAccent = Color(0xFFC2A3F5)
+
+@Composable
+internal fun CollapsibleSectionHeader(
+    title: String,
+    count: Int? = null,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    accent: Color = MaterialTheme.colorScheme.primary,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(top = 12.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        count?.let { Text(it.toString(), color = accent, style = MaterialTheme.typography.labelLarge) }
+        Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+            if (expanded) "Collapse $title" else "Expand $title", tint = accent)
+    }
+    HorizontalDivider(color = accent.copy(alpha = .45f))
+}
 
 @Composable
 internal fun AegisCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null,
@@ -86,6 +104,7 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
     var listEditor by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<WorkspaceList?>(null) }
     var listName by rememberSaveable { mutableStateOf("") }
+    var historyExpanded by rememberSaveable { mutableStateOf(false) }
     val available = state.canWrite && !state.mutating
     val tasks = state.workspace.tasks.filter { state.selectedList == null || it.listId == state.selectedList }
     val pending = queue.ledger.pendingTasks.filter { it.owner == state.owner || it.owner.isBlank() }
@@ -138,8 +157,8 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
             Text("Sync queued sends completions now. Refresh only reads your lists.", style = MaterialTheme.typography.bodySmall)
         }
         queue.lastMessage?.let { item { Text(it, style = MaterialTheme.typography.bodySmall) } }
-        item { WorkspaceHeading("Completed history", Icons.Outlined.History, TaskAccent) }
-        if (state.capabilities.taskHistoryV1) {
+        item { CollapsibleSectionHeader("Completed history", state.history.size, historyExpanded, { historyExpanded = !historyExpanded }, TaskAccent) }
+        if (historyExpanded && state.capabilities.taskHistoryV1) {
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(7,30).forEach { days -> FilterChip(state.days == days, { vm.historyDays(days) }, label = { Text("$days days") }) } } }
             state.historyError?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
             val history = state.history.filter { state.selectedList == null || it.listId == state.selectedList }
@@ -153,7 +172,7 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
                     }
                 }
             }
-        } else item { Text("Completed history is available when advertised by your backend.", style = MaterialTheme.typography.bodySmall) }
+        } else if (historyExpanded) item { Text("Completed history is available when advertised by your backend.", style = MaterialTheme.typography.bodySmall) }
     }
     if (editor) TaskEditor(editing, state, { editor = false }) { listId, title, notes, due -> vm.saveTask(listId, editing, title, notes, due) { editor = false } }
     deleting?.let { task -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete task?") }, text = { Text("${task.title}\nFrom ${task.listTitle}. This cannot be undone.") }, confirmButton = { TextButton(onClick = { deleting = null; vm.deleteTask(task) }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } }) }
@@ -182,7 +201,6 @@ private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismis
 
 @Composable
 internal fun RunningNotesScreen(state: RunningNotesUiState, vm: RunningNotesViewModel, canSync: Boolean) {
-    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var confirm by remember { mutableStateOf(false) }
     var reconcile by remember { mutableStateOf(false) }
@@ -213,10 +231,9 @@ internal fun RunningNotesScreen(state: RunningNotesUiState, vm: RunningNotesView
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = vm::checkpoint, enabled = state.ready && !state.syncing && doc.text.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Checkpoint") }
                 OutlinedButton(onClick = { clipboard.setText(AnnotatedString(doc.text)) }, enabled = doc.text.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Copy") }
-                OutlinedButton(onClick = { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, doc.text), "Share Running Notes")) }, enabled = doc.text.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Share") }
             }
         }
-        item { TextButton(onClick = { history = !history }) { Text("${if (history) "Hide" else "Show"} recovery history · ${doc.revisions.size}") } }
+        item { CollapsibleSectionHeader("Recovery history", doc.revisions.size, history, { history = !history }, NotesAccent) }
         if (history) items(doc.revisions, key = { it.id }) { revision ->
             AegisCard(Modifier.fillMaxWidth(), accent = NotesAccent) { Column(Modifier.padding(14.dp)) {
                 Text("${revision.kind} · ${noteTime(revision.time)}", style = MaterialTheme.typography.labelLarge)

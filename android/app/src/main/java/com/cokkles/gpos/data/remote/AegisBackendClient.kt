@@ -236,4 +236,7 @@ class AegisBackendClient(
 class AegisBackendException(
     val code: String,
     override val message: String,
+    val contract: String? = null,
+    val retryable: Boolean? = null,
+    val writeState: String? = null,
 ) : Exception(message)

@@ -145,6 +145,9 @@ class AegisCommandClient(
             throw AegisBackendException(
                 code.ifBlank { "AEGIS_COMMAND_FAILED" },
                 json.optString("error", "AEGIS command failed."),
+                contract = json.optString("contract").takeIf(String::isNotBlank),
+                retryable = json.takeIf { it.has("retryable") }?.optBoolean("retryable"),
+                writeState = json.optString("write_state").takeIf(String::isNotBlank),
             )
         }
     }

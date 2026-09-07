@@ -72,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -201,6 +202,7 @@ fun DailyUxApp(
     onTaskSyncNow: () -> Unit,
     onTaskCreate: (String, String) -> Unit,
     onCaptureSubmit: (CaptureKind, String) -> Unit,
+    onCaptureRetry: (String) -> Unit,
     onLocalAlertAck: (String) -> Unit,
     onServerNotificationAck: (String) -> Unit,
     onInteractionRefresh: () -> Unit,
@@ -267,7 +269,7 @@ fun DailyUxApp(
                         }
                     },
                     actions = {
-                        TextButton(onClick = { navigate(system.route) }) {
+                        TextButton(onClick = { if (authenticated) navigate(system.route) else onSignIn() }) {
                             Text(connectionLabel(runtimeState.auth), style = MaterialTheme.typography.labelMedium)
                         }
                         IconButton(onClick = onRefreshCanonical, enabled = !runtimeState.refreshing && !parityState.refreshing) {
@@ -355,6 +357,7 @@ fun DailyUxApp(
                     authenticated,
                     onLocalAlertAck,
                     onServerNotificationAck,
+                    onCaptureRetry,
                 )
             }
             composable("notifications") {
@@ -366,6 +369,7 @@ fun DailyUxApp(
                     authenticated,
                     onLocalAlertAck,
                     onServerNotificationAck,
+                    onCaptureRetry,
                 )
             }
             composable(briefing.route) { BriefingScreen(runtimeState) }
@@ -662,6 +666,7 @@ private fun TasksScreen(
     val pendingByTask = queueState.ledger.pendingTasks.associateBy { it.taskId }
     var title by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var historyExpanded by rememberSaveable { mutableStateOf(false) }
     val canCreate = interactionState.capabilities?.taskActionV1 == true
 
     ScreenList {
@@ -728,10 +733,10 @@ private fun TasksScreen(
                 Text(if (queueState.syncing) "Synchronizing…" else "Sync & refresh Tasks")
             }
         }
-        item { SectionTitle("Completed history") }
-        if (!parityState.taskHistory.contractAvailable) {
+        item { CollapsibleSectionHeader("Completed history", parityState.taskHistory.snapshot?.size ?: 0, historyExpanded, { historyExpanded = !historyExpanded }, TaskAccent) }
+        if (historyExpanded && !parityState.taskHistory.contractAvailable) {
             item { SummaryCard("History unavailable", "Active Tasks and delayed completion still work normally.") }
-        } else {
+        } else if (historyExpanded) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(parityState.taskHistoryDays == 7, { onHistoryDays(7) }, label = { Text("7 days") })
@@ -1042,6 +1047,7 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
     val dashboardCalories = runtime.dashboard?.snapshot?.totalCalories
     val today = snapshot?.today
     val loggedDays = snapshot?.daily.orEmpty().filter { it.calories != null || (it.mealCount ?: 0) > 0 }
+    var historyExpanded by rememberSaveable { mutableStateOf(false) }
     fun average(value: (NutritionDay) -> Double?): Double? {
         val values = loggedDays.mapNotNull(value)
         return if (values.isEmpty()) null else values.average()
@@ -1062,19 +1068,20 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
         if (!parity.nutrition.contractAvailable) {
             item { SummaryCard("Detailed history unavailable", "Today's calorie total remains available from the Dashboard.") }
         } else {
-            item {
+            item { CollapsibleSectionHeader("Nutrition history", loggedDays.size, historyExpanded, { historyExpanded = !historyExpanded }, NotesAccent) }
+            if (historyExpanded) item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(parity.nutritionDays == 7, { onDays(7) }, label = { Text("7 days") })
                     FilterChip(parity.nutritionDays == 30, { onDays(30) }, label = { Text("30 days") })
                 }
             }
-            item {
+            if (historyExpanded) item {
                 SummaryCard(
                     countLabel(loggedDays.size, "logged day"),
                     "Avg ${formatNumber(average { it.calories })} cal • ${formatNumber(average { it.protein })}g protein • ${formatNumber(average { it.carbs })}g carbs • ${formatNumber(average { it.fat })}g fat",
                 )
             }
-            snapshot?.daily?.takeLast(if (parity.nutritionDays == 7) 7 else 14)?.forEach { day ->
+            if (historyExpanded) snapshot?.daily?.takeLast(if (parity.nutritionDays == 7) 7 else 14)?.forEach { day ->
                 item {
                     AegisCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
@@ -1091,9 +1098,9 @@ private fun NutritionScreen(runtime: RuntimeUiState, parity: ParityUiState, onDa
                     }
                 }
             }
-            item { SectionTitle("Meal history") }
-            if (snapshot?.meals.isNullOrEmpty()) item { SummaryCard("No meals returned", "No meal history is available for this range.") }
-            else items(snapshot!!.meals.take(50)) { meal ->
+            if (historyExpanded) item { SectionTitle("Meal history") }
+            if (historyExpanded && snapshot?.meals.isNullOrEmpty()) item { SummaryCard("No meals returned", "No meal history is available for this range.") }
+            else if (historyExpanded) items(snapshot!!.meals.take(50)) { meal ->
                 SummaryCard(
                     meal.item,
                     listOfNotNull(
@@ -1118,9 +1125,11 @@ private fun AlertsScreen(
     canMutate: Boolean,
     onLocalAlertAck: (String) -> Unit,
     onServerAck: (String) -> Unit,
+    onCaptureRetry: (String) -> Unit,
 ) {
     val localLedger = mergeLedger(captureState, taskQueueState)
     val server = runtimeState.notifications?.snapshot?.active.orEmpty()
+    var confirmationsExpanded by rememberSaveable { mutableStateOf(false) }
     ScreenList {
         item { Text("Alerts & Receipts", style = MaterialTheme.typography.headlineMedium) }
         item { SummaryCard("Active attention", "${server.size} server • ${localLedger.first.count { !it.acknowledged }} local • ${localLedger.second.size} confirmations") }
@@ -1128,9 +1137,9 @@ private fun AlertsScreen(
             item { ServerAlertCard(notification, canMutate && notification.id !in notificationCommandState.submittingIds, onServerAck) }
         }
         localLedger.first.filterNot { it.acknowledged }.forEach { alert -> item { LocalAlertCard(alert, onLocalAlertAck) } }
-        item { SectionTitle("Recent confirmations") }
-        if (localLedger.second.isEmpty()) item { SummaryCard("No local confirmations yet", "Capture and delayed Task changes will appear here.") }
-        else items(localLedger.second.take(40)) { receipt -> ReceiptCard(receipt) }
+        item { CollapsibleSectionHeader("Recent confirmations", localLedger.second.size, confirmationsExpanded, { confirmationsExpanded = !confirmationsExpanded }) }
+        if (confirmationsExpanded && localLedger.second.isEmpty()) item { SummaryCard("No local confirmations yet", "Capture and delayed Task changes will appear here.") }
+        else if (confirmationsExpanded) items(localLedger.second.take(40)) { receipt -> ReceiptCard(receipt, onCaptureRetry) }
     }
 }
 
@@ -1387,14 +1396,28 @@ private fun LocalAlertCard(alert: LocalAlert, onAck: (String) -> Unit) {
 }
 
 @Composable
-private fun ReceiptCard(receipt: LocalReceipt) {
+private fun ReceiptCard(receipt: LocalReceipt, onRetry: (String) -> Unit) {
     AegisCard(Modifier.fillMaxWidth()) {
-        ListItem(
+        Column {
+            ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(receipt.summary, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            supportingContent = { Text(listOfNotNull(humanizeToken(receipt.kind), receipt.result, receipt.error, formatTime(receipt.updatedAtEpochMs)).joinToString(" • ")) },
+            supportingContent = { Text(listOfNotNull(
+                humanizeToken(receipt.kind),
+                receipt.result,
+                receipt.error,
+                receipt.attempts.takeIf { it > 0 }?.let { "Attempt $it of 3" },
+                receipt.nextRetryAtEpochMs?.let { "Retry ${formatTime(it)}" },
+                formatTime(receipt.updatedAtEpochMs),
+            ).joinToString(" • ")) },
             trailingContent = { Text(humanizeToken(receipt.state.name) ?: receipt.state.name) },
-        )
+            )
+            if (receipt.manualRetryAllowed) {
+                OutlinedButton(onClick = { onRetry(receipt.id) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text("Retry")
+                }
+            }
+        }
     }
 }
 
@@ -1449,6 +1472,7 @@ private fun horizonFreshness(epochMs: Long?): String {
 private fun connectionLabel(auth: AuthState): String = when (auth) {
     is AuthState.Authenticated -> "● Connected"
     is AuthState.OfflineRestored -> "● Offline"
+    is AuthState.ReconnectRequired -> "Reconnect"
     is AuthState.Error -> "Sign in"
     AuthState.Authenticating -> "Connecting…"
     AuthState.Restoring -> "Connecting…"

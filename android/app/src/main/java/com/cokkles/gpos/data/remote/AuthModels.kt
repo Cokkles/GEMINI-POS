@@ -39,6 +39,11 @@ sealed interface AuthState {
         val expiresAtEpochMs: Long?,
         val reason: String,
     ) : Error("Offline session restored from secure local state. $reason")
+
+    class ReconnectRequired(
+        val expiresAtEpochMs: Long?,
+        val reason: String,
+    ) : Error("Google reconnect required. $reason")
 }
 
 enum class RuntimeDataSource {

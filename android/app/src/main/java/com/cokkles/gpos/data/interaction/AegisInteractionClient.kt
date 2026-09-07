@@ -29,6 +29,7 @@ data class InteractionCapabilities(
     val taskCrudV1: Boolean = false,
     val taskListsV1: Boolean = false,
     val taskHistoryV1: Boolean = false,
+    val captureReliabilityV1: Boolean = false,
 )
 
 data class AegisFollowup(
@@ -132,6 +133,7 @@ class AegisInteractionClient(
             taskCrudV1 = ux.optBoolean("task_crud_v1"),
             taskListsV1 = ux.optBoolean("task_lists_v1"),
             taskHistoryV1 = ux.optBoolean("tasks_history_v1"),
+            captureReliabilityV1 = ux.optBoolean("capture_reliability_v1"),
         )
     }
 

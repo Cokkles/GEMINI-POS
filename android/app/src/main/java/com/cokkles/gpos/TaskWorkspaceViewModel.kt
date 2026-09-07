@@ -35,7 +35,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
 
     fun activate(auth: AuthState) {
         if (auth == AuthState.Restoring || auth == AuthState.Authenticating) return
-        if (auth !is AuthState.Authenticated && auth !is AuthState.OfflineRestored) { activationJob?.cancel(); detach(); return }
+        if (auth !is AuthState.Authenticated && auth !is AuthState.OfflineRestored && auth !is AuthState.ReconnectRequired) { activationJob?.cancel(); detach(); return }
         activationJob?.cancel()
         activationJob = viewModelScope.launch {
             val owner = credentials.read()?.workspaceOwner().orEmpty()

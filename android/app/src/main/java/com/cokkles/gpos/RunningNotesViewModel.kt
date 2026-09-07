@@ -43,7 +43,7 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
     fun activate(auth: AuthState) {
         if (auth == AuthState.Restoring || auth == AuthState.Authenticating) return
         val localOnly = auth == AuthState.SignedOut && continuity.wasAuthenticated()
-        if (auth !is AuthState.Authenticated && auth !is AuthState.OfflineRestored && !localOnly) { detach(); return }
+        if (auth !is AuthState.Authenticated && auth !is AuthState.OfflineRestored && auth !is AuthState.ReconnectRequired && !localOnly) { detach(); return }
         activation?.cancel()
         activation = viewModelScope.launch {
             val credentialOwner = credentials.read()?.workspaceOwner().orEmpty()

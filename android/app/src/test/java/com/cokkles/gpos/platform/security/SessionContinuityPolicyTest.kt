@@ -14,6 +14,7 @@ class SessionContinuityPolicyTest {
         assertTrue(SessionContinuityPolicy.shouldRenew(connected(now - 1), true, now))
         assertTrue(SessionContinuityPolicy.shouldRenew(connected(now + 120_000), true, now))
         assertTrue(SessionContinuityPolicy.shouldRenew(AuthState.SignedOut, true, now))
+        assertTrue(SessionContinuityPolicy.shouldRenew(AuthState.ReconnectRequired(now - 1, "Expired"), true, now))
     }
 
     @Test fun neverAutoSignsInAfterExplicitLogoutOrOnFirstUse() {

@@ -12,6 +12,7 @@ object SessionContinuityPolicy {
             AuthState.SignedOut -> true
             is AuthState.Authenticated -> auth.expiresAtEpochMs?.let { it <= now + RENEW_BEFORE_MS } == true
             is AuthState.OfflineRestored -> auth.expiresAtEpochMs?.let { it <= now + RENEW_BEFORE_MS } == true
+            is AuthState.ReconnectRequired -> true
             else -> false // Do not retry backend authorization/configuration errors.
         }
     }

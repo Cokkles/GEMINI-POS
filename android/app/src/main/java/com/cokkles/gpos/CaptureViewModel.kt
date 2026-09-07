@@ -3,16 +3,15 @@ package com.cokkles.gpos
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.cokkles.gpos.data.command.AegisCommandClient
+import com.cokkles.gpos.data.command.CaptureInputNormalizer
 import com.cokkles.gpos.data.command.CaptureKind
-import com.cokkles.gpos.data.local.LocalAlert
 import com.cokkles.gpos.data.local.LocalLedger
 import com.cokkles.gpos.data.local.LocalReceipt
 import com.cokkles.gpos.data.local.LocalReceiptState
 import com.cokkles.gpos.data.local.ProtectedLocalLedger
-import com.cokkles.gpos.platform.notifications.GposDeepLinkTarget
-import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
-import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.sync.CaptureProcessOutcome
+import com.cokkles.gpos.platform.sync.CaptureRetryScheduler
+import com.cokkles.gpos.platform.sync.CaptureSubmissionProcessor
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,137 +26,62 @@ data class CaptureUiState(
     val error: String? = null,
 )
 
-class CaptureViewModel(
-    application: Application,
-) : AndroidViewModel(application) {
-    private val commandClient = AegisCommandClient()
-    private val credentialStore = AndroidKeystoreCredentialStore(application)
+class CaptureViewModel(application: Application) : AndroidViewModel(application) {
     private val ledgerStore = ProtectedLocalLedger(application)
-    private val notifications = GposNotificationPublisher(application)
-
+    private val processor = CaptureSubmissionProcessor(application)
+    private val scheduler = CaptureRetryScheduler(application)
     private val _state = MutableStateFlow(CaptureUiState(ledger = ledgerStore.read()))
     val state: StateFlow<CaptureUiState> = _state.asStateFlow()
 
-    fun refreshLedger() {
-        _state.update { it.copy(ledger = ledgerStore.read()) }
-    }
+    fun refreshLedger() = _state.update { it.copy(ledger = ledgerStore.read()) }
 
     fun submit(kind: CaptureKind, text: String) {
-        val body = text.trim()
+        val body = CaptureInputNormalizer.normalize(kind, text)
         if (body.isBlank() || _state.value.submitting) return
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
-        val summary = body.replace(Regex("\\s+"), " ").take(120)
         val sending = LocalReceipt(
             id = id,
             kind = kind.wireName,
-            summary = summary,
+            summary = body.replace(Regex("\\s+"), " ").take(120),
             state = LocalReceiptState.SENDING,
             createdAtEpochMs = now,
             updatedAtEpochMs = now,
+            payload = body,
         )
-        val stagedLedger = ledgerStore.update { current ->
-            current.copy(receipts = current.receipts + sending)
-        }
-        _state.value = CaptureUiState(
-            ledger = stagedLedger,
-            submitting = true,
-            lastMessage = "Submitting ${kind.displayName.lowercase()} to canonical AEGIS…",
-        )
-
+        val ledger = ledgerStore.update { it.copy(receipts = it.receipts + sending) }
+        _state.value = CaptureUiState(ledger, true, "Submitting ${kind.displayName.lowercase()} to canonical AEGIS…")
         viewModelScope.launch {
-            val credential = credentialStore.read()
-            if (credential == null || credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
-                finishFailure(id, kind, "A current authenticated session is required before submitting.")
-                return@launch
+            val outcome = processor.process(id)
+            val current = ledgerStore.read()
+            _state.value = when (outcome) {
+                CaptureProcessOutcome.Confirmed -> CaptureUiState(current, false, "Capture confirmed.")
+                CaptureProcessOutcome.Queued -> CaptureUiState(current, false, "Gemini is busy. AEGIS will retry automatically.")
+                CaptureProcessOutcome.Failed -> CaptureUiState(current, false, error = current.receipts.firstOrNull { it.id == id }?.error)
+                CaptureProcessOutcome.Ignored -> CaptureUiState(current, false, error = "Capture was not sent. Reconnect and try again.")
             }
+        }
+    }
 
-            runCatching { commandClient.submitCapture(credential.idToken, kind, body, id) }
-                .onSuccess { result ->
-                    val completedAt = System.currentTimeMillis()
-                    val updated = ledgerStore.update { current ->
-                        current.copy(
-                            receipts = current.receipts.map { receipt ->
-                                if (receipt.id == id) {
-                                    receipt.copy(
-                                        state = LocalReceiptState.CONFIRMED,
-                                        updatedAtEpochMs = completedAt,
-                                        result = result.message.take(500),
-                                        error = null,
-                                    )
-                                } else receipt
-                            },
-                        )
-                    }
-                    _state.value = CaptureUiState(
-                        ledger = updated,
-                        submitting = false,
-                        lastMessage = result.message,
-                    )
-                    notifications.publishOutcome(
-                        stableEventId = id,
-                        title = "${kind.displayName} submitted",
-                        body = result.message,
-                        target = GposDeepLinkTarget.ALERTS,
-                        isError = false,
-                    )
-                }
-                .onFailure { error ->
-                    finishFailure(id, kind, error.message ?: "Capture submission failed.")
-                }
+    fun retry(id: String) {
+        if (_state.value.submitting) return
+        _state.update { it.copy(submitting = true, error = null, lastMessage = "Retrying capture…") }
+        viewModelScope.launch {
+            processor.process(id, manual = true)
+            _state.update { it.copy(ledger = ledgerStore.read(), submitting = false) }
         }
     }
 
     fun acknowledgeLocalAlert(id: String) {
-        val updated = ledgerStore.update { current ->
-            current.copy(
-                alerts = current.alerts.map { alert ->
-                    if (alert.id == id) alert.copy(acknowledged = true) else alert
-                },
-            )
-        }
+        val updated = ledgerStore.update { current -> current.copy(alerts = current.alerts.map {
+            if (it.id == id) it.copy(acknowledged = true) else it
+        }) }
         _state.update { it.copy(ledger = updated) }
     }
 
     fun clearProtectedLedger() {
+        scheduler.cancelAll()
         ledgerStore.clear()
         _state.value = CaptureUiState()
-    }
-
-    private fun finishFailure(id: String, kind: CaptureKind, message: String) {
-        val completedAt = System.currentTimeMillis()
-        val alert = LocalAlert(
-            id = UUID.randomUUID().toString(),
-            severity = "error",
-            title = "${kind.displayName} failed",
-            detail = message.take(500),
-            createdAtEpochMs = completedAt,
-        )
-        val updated = ledgerStore.update { current ->
-            current.copy(
-                receipts = current.receipts.map { receipt ->
-                    if (receipt.id == id) {
-                        receipt.copy(
-                            state = LocalReceiptState.FAILED,
-                            updatedAtEpochMs = completedAt,
-                            error = message.take(500),
-                        )
-                    } else receipt
-                },
-                alerts = current.alerts + alert,
-            )
-        }
-        _state.value = CaptureUiState(
-            ledger = updated,
-            submitting = false,
-            error = message,
-        )
-        notifications.publishOutcome(
-            stableEventId = id,
-            title = "Submission failed",
-            body = message,
-            target = GposDeepLinkTarget.ALERTS,
-            isError = true,
-        )
     }
 }

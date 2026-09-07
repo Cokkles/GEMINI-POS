@@ -183,8 +183,9 @@ class GposRuntimeViewModel(
                         val stillValid = previousCredential?.expiresAtEpochMs?.let { it > System.currentTimeMillis() } == true
                         if (!isAuthenticationFailure(error) && stillValid) {
                             _uiState.update { it.copy(auth = previousAuth, backend = it.backend.copy(error = error.safeMessage())) }
+                        } else if (previousCredential != null) {
+                            enterReconnectRequired(previousCredential, error.safeMessage())
                         } else {
-                            clearPrivateSession()
                             _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
                         }
                 }
@@ -192,7 +193,17 @@ class GposRuntimeViewModel(
     }
 
     fun reportAuthFailure(message: String) {
-        _uiState.update { it.copy(auth = AuthState.Error(message)) }
+        val previous = _uiState.value.auth
+        viewModelScope.launch {
+            val credential = credentialStore.read()
+            val stillValid = credential?.expiresAtEpochMs?.let { it > System.currentTimeMillis() } == true
+            when {
+                credential == null -> _uiState.update { it.copy(auth = AuthState.Error(message)) }
+                stillValid && (previous is AuthState.Authenticated || previous is AuthState.OfflineRestored) ->
+                    _uiState.update { it.copy(auth = previous, backend = it.backend.copy(error = message)) }
+                else -> enterReconnectRequired(credential, message)
+            }
+        }
     }
 
     fun signOut() {
@@ -351,8 +362,7 @@ class GposRuntimeViewModel(
 
         val expiry = credential.expiresAtEpochMs
         if (expiry != null && expiry <= System.currentTimeMillis()) {
-            clearPrivateSession()
-            _uiState.update { it.copy(auth = AuthState.SignedOut) }
+            enterReconnectRequired(credential, "The stored Google session expired.")
             return
         }
 
@@ -376,8 +386,7 @@ class GposRuntimeViewModel(
         val error = result.exceptionOrNull() ?: return
         if (error is CancellationException) throw error
         if (isAuthenticationFailure(error)) {
-            clearPrivateSession()
-            _uiState.update { it.copy(auth = AuthState.Error(error.safeMessage())) }
+            enterReconnectRequired(credential, error.safeMessage())
         } else {
             syncScheduler.schedule()
             _uiState.update {
@@ -396,8 +405,8 @@ class GposRuntimeViewModel(
         val credential = credentialStore.read() ?: return false
         val expiry = credential.expiresAtEpochMs
         if (expiry != null && expiry <= System.currentTimeMillis()) {
-            clearPrivateSession()
-            return false
+            enterReconnectRequired(credential, "The stored Google session expired while AEGIS was offline.")
+            return true
         }
         syncScheduler.schedule()
         _uiState.update {
@@ -533,12 +542,23 @@ class GposRuntimeViewModel(
         val message = error.safeMessage()
         viewModelScope.launch {
             if (isAuthenticationFailure(error)) {
-                clearPrivateSession()
-                _uiState.update { it.copy(auth = AuthState.Error(message)) }
+                val credential = credentialStore.read()
+                if (credential != null) enterReconnectRequired(credential, message)
+                else _uiState.update { it.copy(auth = AuthState.Error(message)) }
             }
             _uiState.update {
                 it.copy(backend = it.backend.copy(lastProtectedRead = "Protected read failed", error = message))
             }
+        }
+    }
+
+    private fun enterReconnectRequired(credential: StoredCredential, reason: String) {
+        syncScheduler.cancel()
+        _uiState.update {
+            it.copy(
+                auth = AuthState.ReconnectRequired(credential.expiresAtEpochMs, reason),
+                backend = it.backend.copy(error = reason),
+            )
         }
     }
 

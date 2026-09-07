@@ -83,8 +83,8 @@ class ParityActivity : ComponentActivity() {
                 notesViewModel.activate(runtimeState.auth)
                 if (runtimeState.auth is AuthState.Authenticated) {
                     authContinuity.markAuthenticated()
-                    attemptAuthorizedSessionContinuity()
                 }
+                attemptAuthorizedSessionContinuity()
             }
 
             GposTheme(selectedTheme) {
@@ -165,6 +165,7 @@ class ParityActivity : ComponentActivity() {
                         }
                     },
                     onCaptureSubmit = captureViewModel::submit,
+                    onCaptureRetry = captureViewModel::retry,
                     onLocalAlertAck = captureViewModel::acknowledgeLocalAlert,
                     onServerNotificationAck = { id ->
                         notificationCommandViewModel.acknowledge(
