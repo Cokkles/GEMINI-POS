@@ -31,6 +31,7 @@ class TaskQueueViewModel(
     private val scheduler = TaskQueueSyncScheduler(application)
     private val processor = TaskQueueProcessor(application)
     private val deferredProcessor = DeferredMutationProcessor(application)
+    private val deferredQueue = com.cokkles.gpos.platform.sync.DeferredMutationQueue(application)
 
     private val _state = MutableStateFlow(TaskQueueUiState(ledger = ledgerStore.read()))
     val state: StateFlow<TaskQueueUiState> = _state.asStateFlow()
@@ -129,6 +130,7 @@ class TaskQueueViewModel(
 
     fun clearProtectedLedger() {
         scheduler.cancelAll()
+        deferredQueue.cancelAll()
         ledgerStore.clear()
         _state.value = TaskQueueUiState()
     }
