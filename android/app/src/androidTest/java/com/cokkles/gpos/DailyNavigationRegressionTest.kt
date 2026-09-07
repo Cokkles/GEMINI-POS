@@ -29,13 +29,13 @@ class DailyNavigationRegressionTest {
     }
 
     @Test fun homeShortcutThenBottomTabsAlwaysOpenNamedPage() {
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Tasks • 0"))
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Tasks"))
         composeRule.onNodeWithTag("home_tasks").performClick()
         composeRule.onNodeWithTag("current_destination").assertTextEquals("Tasks")
         repeat(2) {
             tab("calendar", "Calendar")
             tab("tasks", "Tasks")
-            tab("capture", "Capture")
+            tab("capture", "Notes")
             tab("home", "Home")
         }
     }
@@ -47,9 +47,9 @@ class DailyNavigationRegressionTest {
         composeRule.onNodeWithTag("current_destination").assertTextEquals("Search")
         tab("calendar", "Calendar")
         tab("more", "More")
-        tab("capture", "Capture")
-        scrollTo("View confirmations & receipts • 0")
-        composeRule.onNodeWithText("View confirmations & receipts • 0").performClick()
+        tab("capture", "Notes")
+        scrollTo("Open confirmations · 0")
+        composeRule.onNodeWithText("Open confirmations · 0").performClick()
         composeRule.onNodeWithTag("current_destination").assertTextEquals("Alerts & Receipts")
         tab("tasks", "Tasks")
         tab("more", "More")
@@ -71,7 +71,7 @@ class DailyNavigationRegressionTest {
         tab("home", "Home")
         composeRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("home_running_notes"))
         composeRule.onNodeWithTag("home_running_notes").performClick()
-        composeRule.onNodeWithTag("current_destination").assertTextEquals("Running Notes")
+        composeRule.onNodeWithTag("current_destination").assertTextEquals("Notes")
         composeRule.onNodeWithTag("running_notes_editor").assertExists()
         tab("tasks", "Tasks")
         composeRule.onNodeWithTag("task_list_picker").assertExists()

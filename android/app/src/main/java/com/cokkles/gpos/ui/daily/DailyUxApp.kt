@@ -26,6 +26,8 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
@@ -67,6 +69,9 @@ import com.cokkles.gpos.TaskWorkspaceUiState
 import com.cokkles.gpos.RunningNotesUiState
 import com.cokkles.gpos.data.workspace.NewsPreferences
 import com.cokkles.gpos.data.workspace.HeadlinerPolicy
+import com.cokkles.gpos.data.workspace.HomeTaskPreferences
+import com.cokkles.gpos.data.workspace.HomeTaskVisibilityPolicy
+import com.cokkles.gpos.data.workspace.NewsSectionOrder
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -131,7 +136,7 @@ private data class Destination(
 private val home = Destination("home", "Home", Icons.Outlined.Home)
 private val calendar = Destination("calendar", "Calendar", Icons.Outlined.Event)
 private val tasks = Destination("tasks", "Tasks", Icons.Outlined.CheckCircle)
-private val capture = Destination("capture", "Capture", Icons.Outlined.Inbox)
+private val capture = Destination("capture", "Notes", Icons.Outlined.EditNote)
 private val more = Destination("more", "More", Icons.Outlined.MoreHoriz)
 private val runningNotes = Destination("running_notes", "Running Notes", Icons.Outlined.EditNote)
 private val askAegis = Destination("aegis", "Ask AEGIS", Icons.Outlined.Description)
@@ -145,8 +150,8 @@ private val search = Destination("search", "Search", Icons.Outlined.Search)
 private val system = Destination("system", "Settings", Icons.Outlined.Settings)
 
 private val bottomDestinations = listOf(home, calendar, tasks, capture, more)
-private val secondaryDestinations = listOf(runningNotes, askAegis, followups, news, nutrition, alerts, briefing, finances, search, system)
-private val allDestinations = bottomDestinations + secondaryDestinations
+private val secondaryDestinations = listOf(followups, news, nutrition, alerts, briefing, finances, search, system)
+private val allDestinations = bottomDestinations + secondaryDestinations + listOf(runningNotes, askAegis)
 
 private val dateTimeFormatter = DateTimeFormatter.ofPattern("MMM d • h:mm a").withZone(ZoneId.systemDefault())
 private val currencyFormatter = NumberFormat.getCurrencyInstance()
@@ -224,6 +229,9 @@ fun DailyUxApp(
     val context = LocalContext.current
     val newsPreferences = remember { NewsPreferences(context) }
     val headlineOverrides by newsPreferences.overrides.collectAsStateWithLifecycle()
+    val newsSectionOrder by newsPreferences.sectionOrder.collectAsStateWithLifecycle()
+    val homeTaskPreferences = remember { HomeTaskPreferences(context) }
+    val hiddenHomeTaskLists by homeTaskPreferences.hiddenListIds.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: home.route
@@ -302,7 +310,9 @@ fun DailyUxApp(
             modifier = Modifier.padding(padding),
         ) {
             composable(home.route) {
-                HomeScreen(runtimeState, parityState, taskQueueState, workspaceState, notesState, headlineOverrides, ::navigate, onRefreshCanonical)
+                HomeScreen(runtimeState, parityState, taskQueueState, workspaceState, notesState, interactionState,
+                    headlineOverrides, hiddenHomeTaskLists, homeTaskPreferences::setVisible, onFollowupDismiss, onFollowupPromote,
+                    ::navigate, onRefreshCanonical)
             }
             composable(calendar.route) {
                 CalendarScreen(
@@ -323,14 +333,9 @@ fun DailyUxApp(
                     stage = { task -> queueVm.stageInList(task.id, task.title, task.listId, workspaceState.owner) },
                     undo = onTaskUndo, sync = onTaskSyncNow)
             }
-            composable(runningNotes.route) { RunningNotesScreen(notesState, notesVm, authenticated) }
+            composable(runningNotes.route) { NotesScreen(notesState, notesVm, authenticated, captureState, onCaptureSubmit) { navigate(alerts.route) } }
             composable(capture.route) {
-                CaptureScreen(
-                    state = captureState,
-                    canMutate = authenticated,
-                    onSubmit = onCaptureSubmit,
-                    onOpenAlerts = { navigate(alerts.route) },
-                )
+                NotesScreen(notesState, notesVm, authenticated, captureState, onCaptureSubmit) { navigate(alerts.route) }
             }
             composable(more.route) { MoreScreen(::navigate) }
             composable(askAegis.route) {
@@ -346,7 +351,8 @@ fun DailyUxApp(
                     onFollowupPromote,
                 )
             }
-            composable(news.route) { NewsScreen(parityState, headlineOverrides, newsPreferences::set, onRefreshIntelligence) }
+            composable(news.route) { NewsScreen(parityState, headlineOverrides, newsSectionOrder, newsPreferences::set,
+                { category, direction, categories -> newsPreferences.move(category, direction, categories) }, onRefreshIntelligence) }
             composable(nutrition.route) { NutritionScreen(runtimeState, parityState, onNutritionDays) }
             composable(alerts.route) {
                 AlertsScreen(
@@ -401,7 +407,12 @@ private fun HomeScreen(
     queue: TaskQueueUiState,
     workspace: TaskWorkspaceUiState,
     notesState: RunningNotesUiState,
+    interaction: AegisInteractionUiState,
     headlineOverrides: Map<String, Boolean>,
+    hiddenTaskLists: Set<String>,
+    onTaskListVisible: (String, Boolean) -> Unit,
+    onFollowupDismiss: (AegisFollowup) -> Unit,
+    onFollowupPromote: (AegisFollowup) -> Unit,
     navigate: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -410,26 +421,25 @@ private fun HomeScreen(
     val newsItems = HeadlinerPolicy.select(parity.intelligence.snapshot?.items.orEmpty(), headlineOverrides, 4)
     val nutritionToday = parity.nutrition.snapshot?.today
     val uriHandler = LocalUriHandler.current
+    val taskGroups = HomeTaskVisibilityPolicy.groupedTasks(workspace.workspace, hiddenTaskLists)
+    val activeFollowups = interaction.followups.filter { !it.status.equals("RESOLVED", true) && !it.status.equals("DISMISSED", true) }
+    var taskListsExpanded by rememberSaveable { mutableStateOf(false) }
+    var followupsExpanded by rememberSaveable { mutableStateOf(false) }
 
     ScreenList {
+        item { QuoteCard() }
         item {
             Text(LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")), style = MaterialTheme.typography.headlineMedium)
             Text("Your day at a glance", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 3.dp))
         }
-        item { QuoteCard() }
         item {
             AegisCard(onClick = { navigate(briefing.route) }, modifier = Modifier.fillMaxWidth().testTag("home_briefing"), accent = NotesAccent) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("HORIZON", style = MaterialTheme.typography.titleMedium)
-                        Text(humanizeToken(horizonFreshness(horizonTime)) ?: "Unknown", style = MaterialTheme.typography.labelMedium,
-                            color = if (horizonFreshness(horizonTime) == "CURRENT") MaterialTheme.colorScheme.primary else NotesAccent)
-                    }
-                    Text(
-                        horizonTime?.let { "Updated ${formatTime(it)}" } ?: "No canonical report loaded yet.",
-                        modifier = Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+                ListItem(
+                    headlineContent = { Text("HORIZON · ${humanizeToken(horizonFreshness(horizonTime)) ?: "Unknown"}", style = MaterialTheme.typography.titleSmall) },
+                    supportingContent = { Text(horizonTime?.let { "Updated ${formatTime(it)}" } ?: "No canonical report loaded") },
+                    trailingContent = { Icon(Icons.Outlined.KeyboardArrowRight, "Open HORIZON") },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
             }
         }
         item { WorkspaceHeading("Calendar · Today", Icons.Outlined.Event, CalendarAccent, { navigate(calendar.route) }, Modifier.testTag("home_calendar")) }
@@ -441,27 +451,50 @@ private fun HomeScreen(
         item {
             AegisCard(onClick = { navigate(tasks.route) }, modifier = Modifier.fillMaxWidth().testTag("home_tasks"), accent = TaskAccent) {
                 Column(Modifier.padding(16.dp)) {
-                    val taskList = workspace.workspace.tasks
-                    Text("Tasks • ${taskList.size}", style = MaterialTheme.typography.titleMedium)
-                    if (taskList.isEmpty()) Text("No active tasks · Open Tasks to add", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 5.dp))
-                    taskList.take(4).forEach { task ->
-                        val pending = queue.ledger.pendingTasks.any { it.taskId == task.id && it.taskListId == task.listId }
-                        Text(
-                            "• ${task.title}${if (pending) " • Pending" else ""}",
-                            modifier = Modifier.padding(top = 5.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("Tasks", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { navigate(tasks.route) }) { Text("Open") }
+                    }
+                    if (taskGroups.isEmpty()) Text("No tasks in the lists shown on Home.", style = MaterialTheme.typography.bodySmall)
+                    taskGroups.forEach { (list, listTasks) ->
+                        Text("${list.title} · ${listTasks.size}", style = MaterialTheme.typography.labelLarge, color = TaskAccent, modifier = Modifier.padding(top = 8.dp))
+                        listTasks.take(3).forEach { task ->
+                            val pending = queue.ledger.pendingTasks.any { it.taskId == task.id && it.taskListId == task.listId }
+                            Text("• ${task.title}${if (pending) " · Pending" else ""}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    TextButton(onClick = { taskListsExpanded = !taskListsExpanded }, Modifier.fillMaxWidth()) {
+                        Text(if (taskListsExpanded) "Hide Home list settings" else "Choose lists shown on Home")
+                    }
+                    if (taskListsExpanded) workspace.workspace.lists.forEach { list ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(list.title, Modifier.weight(1f))
+                            Switch(list.id !in hiddenTaskLists, { onTaskListVisible(list.id, it) })
+                        }
+                    }
+                }
+            }
+        }
+        item { CollapsibleSectionHeader("Follow-ups", activeFollowups.size, followupsExpanded, { followupsExpanded = !followupsExpanded }, NotesAccent) }
+        if (followupsExpanded && activeFollowups.isEmpty()) item { Text("No active recommended follow-ups.", style = MaterialTheme.typography.bodySmall) }
+        if (followupsExpanded) items(activeFollowups, key = { it.id }) { followup ->
+            AegisCard(Modifier.fillMaxWidth(), accent = NotesAccent) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(followup.title, style = MaterialTheme.typography.titleMedium)
+                    if (followup.summary.isNotBlank()) Text(followup.summary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button({ onFollowupPromote(followup) }, Modifier.weight(1f), enabled = !interaction.followupsLoading && interaction.capabilities?.taskActionV1 == true) { Text("Promote") }
+                        OutlinedButton({ onFollowupDismiss(followup) }, Modifier.weight(1f), enabled = !interaction.followupsLoading) { Text("Dismiss") }
                     }
                 }
             }
         }
         item {
-            AegisCard(onClick = { navigate(runningNotes.route) }, modifier = Modifier.fillMaxWidth().testTag("home_running_notes"), accent = NotesAccent) {
+            AegisCard(onClick = { navigate(capture.route) }, modifier = Modifier.fillMaxWidth().testTag("home_running_notes"), accent = NotesAccent) {
                 ListItem(headlineContent = { Text("Running Notes", style = MaterialTheme.typography.titleMedium) },
                     supportingContent = { Text(if (notesState.document.text.isBlank()) "Open your daily scratchpad" else notesState.document.text, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                     leadingContent = { Icon(Icons.Outlined.EditNote, null, tint = NotesAccent) },
-                    trailingContent = { Icon(Icons.Outlined.KeyboardArrowRight, "Open Running Notes") },
+                    trailingContent = { Icon(Icons.Outlined.KeyboardArrowRight, "Open Notes") },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
         }
@@ -521,10 +554,8 @@ private fun QuoteCard() {
     }
     val quote = quotes[(seed + step) % quotes.size]
     AegisCard(modifier = Modifier.fillMaxWidth().clickable { step += 1 }) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("“${quote.text}”", style = MaterialTheme.typography.bodyMedium)
-            Text("— ${quote.author}", style = MaterialTheme.typography.bodySmall)
-        }
+        Text("“${quote.text}” — ${quote.author}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -960,14 +991,22 @@ private fun FollowupsScreen(
 }
 
 @Composable
-private fun NewsScreen(state: ParityUiState, overrides: Map<String, Boolean>, onEligibility: (String, Boolean) -> Unit, onRefresh: () -> Unit) {
+private fun NewsScreen(
+    state: ParityUiState,
+    overrides: Map<String, Boolean>,
+    sectionOrder: List<String>,
+    onEligibility: (String, Boolean) -> Unit,
+    onMove: (String, Int, Collection<String>) -> Unit,
+    onRefresh: () -> Unit,
+) {
     val snapshot = state.intelligence.snapshot
     val uriHandler = LocalUriHandler.current
     var expanded by remember { mutableStateOf(setOf<String>()) }
     val allStories = snapshot?.items.orEmpty()
     val headliners = HeadlinerPolicy.select(allStories, overrides, 5)
     var settings by remember { mutableStateOf(false) }
-    val categories = allStories.groupBy { it.category }.toSortedMap()
+    val grouped = allStories.groupBy { it.category }
+    val categories = NewsSectionOrder.arrange(grouped.keys, sectionOrder).associateWith { grouped[it].orEmpty() }
 
     ScreenList {
         item {
@@ -984,6 +1023,10 @@ private fun NewsScreen(state: ParityUiState, overrides: Map<String, Boolean>, on
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(humanizeToken(category) ?: category, Modifier.weight(1f))
+                        if (category in grouped) {
+                            IconButton(onClick = { onMove(category, -1, grouped.keys) }) { Icon(Icons.Outlined.KeyboardArrowUp, "Move up") }
+                            IconButton(onClick = { onMove(category, 1, grouped.keys) }) { Icon(Icons.Outlined.KeyboardArrowDown, "Move down") }
+                        }
                         Switch(checked = HeadlinerPolicy.eligible(category, overrides), onCheckedChange = { onEligibility(category, it) }, modifier = Modifier.testTag("headline_${HeadlinerPolicy.key(category)}"))
                     }
                 }

@@ -39,3 +39,4 @@ logs/
 tmp/
 .cache/
 .gradle/
+.kotlin/

@@ -1,5 +1,6 @@
 package com.cokkles.gpos.ui.daily
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -18,12 +19,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.cokkles.gpos.*
+import com.cokkles.gpos.data.command.CaptureKind
 import com.cokkles.gpos.data.workspace.*
 import com.cokkles.gpos.data.local.LocalReceiptState
 import java.time.Instant
@@ -188,24 +191,49 @@ private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismis
     var due by rememberSaveable { mutableStateOf(task?.due?.take(10).orEmpty()) }
     var listId by rememberSaveable { mutableStateOf(task?.listId ?: state.selectedList ?: state.workspace.lists.firstOrNull()?.id) }
     val validDate = due.isBlank() || runCatching { LocalDate.parse(due) }.isSuccess
+    val context = LocalContext.current
+    fun openDatePicker() {
+        val initial = runCatching { LocalDate.parse(due) }.getOrDefault(LocalDate.now())
+        DatePickerDialog(context, { _, year, month, day -> due = LocalDate.of(year, month + 1, day).toString() },
+            initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
+    }
     AlertDialog(onDismissRequest = { if (!state.mutating) dismiss() }, title = { Text(if (task == null) "Add task" else "Edit task") }, text = {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { if (task == null) TaskListPicker(state.workspace.lists, listId, false, { listId = it }, enabled = !state.mutating) else Text(task.listTitle) }
             item { OutlinedTextField(title, { title = it.take(1024) }, enabled = !state.mutating, label = { Text("Title") }, modifier = Modifier.testTag("task_title")) }
             item { OutlinedTextField(notes, { notes = it.take(8000) }, enabled = !state.mutating, label = { Text("Notes") }, minLines = 3) }
-            item { OutlinedTextField(due, { due = it.take(10) }, enabled = !state.mutating, label = { Text("Due date · YYYY-MM-DD") }, supportingText = { Text("Leave empty for no due date") }, isError = !validDate, singleLine = true) }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedButton(onClick = ::openDatePicker, enabled = !state.mutating, modifier = Modifier.fillMaxWidth().testTag("task_due_picker")) {
+                        Icon(Icons.Outlined.CalendarMonth, null)
+                        Text(if (due.isBlank()) "Choose due day" else LocalDate.parse(due).format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")), Modifier.padding(start = 8.dp))
+                    }
+                    if (due.isNotBlank()) TextButton(onClick = { due = "" }, enabled = !state.mutating) { Text("Remove due day") }
+                    Text("Google Tasks stores a due day, not a reminder time.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
             state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         }
     }, confirmButton = { TextButton(onClick = { listId?.let { save(it, title, notes, due) } }, enabled = state.canWrite && !state.mutating && title.isNotBlank() && listId != null && validDate) { Text(if (state.mutating) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = dismiss, enabled = !state.mutating) { Text("Cancel") } })
 }
 
 @Composable
-internal fun RunningNotesScreen(state: RunningNotesUiState, vm: RunningNotesViewModel, canSync: Boolean) {
+internal fun NotesScreen(
+    state: RunningNotesUiState,
+    vm: RunningNotesViewModel,
+    canSync: Boolean,
+    captureState: CaptureUiState,
+    onCapture: (CaptureKind, String) -> Unit,
+    onOpenAlerts: () -> Unit,
+) {
     val clipboard = LocalClipboardManager.current
     var confirm by remember { mutableStateOf(false) }
     var reconcile by remember { mutableStateOf(false) }
     var restore by remember { mutableStateOf<NoteRevision?>(null) }
     var history by rememberSaveable { mutableStateOf(false) }
+    var captureKind by remember { mutableStateOf(CaptureKind.NOTE) }
+    var captureText by rememberSaveable { mutableStateOf("") }
+    val captureKinds = listOf(CaptureKind.NOTE, CaptureKind.JOURNAL, CaptureKind.CALORIES, CaptureKind.RECEIPT)
     val doc = state.document
     LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -240,6 +268,46 @@ internal fun RunningNotesScreen(state: RunningNotesUiState, vm: RunningNotesView
                 Text(revision.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 TextButton(onClick = { restore = revision }, enabled = !state.syncing) { Text("Restore copy") }
             } }
+        }
+        item {
+            WorkspaceHeading("One-time capture", Icons.Outlined.Inbox, NotesAccent)
+            Text("Quick notes, journal entries, meals, and receipts are saved through canonical AEGIS.", style = MaterialTheme.typography.bodySmall)
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                captureKinds.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { kind ->
+                            FilterChip(captureKind == kind, { captureKind = kind }, { Text(kind.displayName.substringBefore(" /")) }, Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = captureText,
+                onValueChange = { captureText = it.take(8000) },
+                modifier = Modifier.fillMaxWidth().testTag("one_time_capture"),
+                minLines = 5,
+                label = { Text(when (captureKind) {
+                    CaptureKind.CALORIES -> "What did you eat or drink?"
+                    CaptureKind.RECEIPT -> "Expense or receipt details"
+                    CaptureKind.JOURNAL -> "Journal entry"
+                    else -> "Quick note"
+                }) },
+                enabled = canSync && !captureState.submitting,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            )
+        }
+        item {
+            Button(onClick = { onCapture(captureKind, captureText); captureText = "" }, Modifier.fillMaxWidth(),
+                enabled = canSync && captureText.isNotBlank() && !captureState.submitting) {
+                Text(if (captureState.submitting) "Saving…" else "Save ${captureKind.displayName.substringBefore(" /")}")
+            }
+            captureState.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 5.dp)) }
+            captureState.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            TextButton(onClick = onOpenAlerts, Modifier.fillMaxWidth()) { Text("Open confirmations · ${captureState.ledger.receipts.size}") }
         }
     }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text(if (doc.pendingId == null) "Sync this section?" else "Retry previous submission?") }, text = {

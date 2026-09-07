@@ -34,7 +34,7 @@ class WorkspaceVisualTest {
         val vm = RunningNotesViewModel(app)
         val state = RunningNotesUiState(owner = "fixture@example.invalid", ready = true,
             document = RunningNotesDocument(text = "Friday thoughts\n\nA few things to work through today.\n\nPlan the afternoon, collect ideas, and keep room for anything that comes up.\n\nTomorrow\nRevisit the ideas worth keeping.", updatedAt = 1788523200000))
-        compose.setContent { GposTheme(GposThemeOption.NORD) { RunningNotesScreen(state, vm, false) } }
+        compose.setContent { GposTheme(GposThemeOption.NORD) { NotesScreen(state, vm, false, CaptureUiState(), { _, _ -> }, {}) } }
         screenshot("running-notes")
     }
     private fun screenshot(name: String) {
