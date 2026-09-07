@@ -46,7 +46,23 @@ enum class GposThemeOption(
         storageKey = "nord",
         displayName = "Nord",
         description = "Cool arctic blue-grey palette with restrained contrast.",
-    );
+    ),
+    CATPPUCCIN_MOCHA("catppuccin_mocha", "Catppuccin Mocha", "Pastel accents over a soft espresso-dark canvas."),
+    TOKYO_NIGHT("tokyo_night", "Tokyo Night", "Midnight blue with crisp blue and violet accents."),
+    ONE_DARK("one_dark", "One Dark", "Balanced Atom-style charcoal with muted developer colors."),
+    KANAGAWA("kanagawa", "Kanagawa", "Warm sumi ink with wave blue and autumn green."),
+    GRUVBOX("gruvbox", "Gruvbox", "Warm retro earth tones with strong hierarchy."),
+    ROSE_PINE("rose_pine", "Rosé Pine", "Soft pine, rose, foam, and gold on deep plum."),
+    EVERFOREST("everforest", "Everforest", "Natural green-tinted surfaces designed for long sessions."),
+    GITHUB_DARK("github_dark", "GitHub Dark", "Crisp dark surfaces, visible borders, and restrained blue."),
+    CARBON_DARK("carbon_dark", "Carbon Gray 100", "Industrial near-black IBM-inspired surfaces and blue actions."),
+    AYU_MIRAGE("ayu_mirage", "Ayu Mirage", "Slate-blue surfaces with sky and gold highlights."),
+    FLEXOKI_LIGHT("flexoki_light", "Flexoki Light", "Warm paper and ink colors for reading and writing."),
+    ZENBURN("zenburn", "Zenburn", "Low-contrast soot, parchment, sage, and clay."),
+    SYNTHWAVE("synthwave", "Synthwave", "Neon cyan, magenta, and electric yellow on violet."),
+    SHADES_OF_PURPLE("shades_of_purple", "Shades of Purple", "Royal violet with bright gold and lavender."),
+    COBALT2("cobalt2", "Cobalt2", "Deep ocean blue with vivid blue and gold."),
+    PALENIGHT("palenight", "Palenight", "Smooth Material-inspired violet with periwinkle accents.");
 
     companion object {
         fun fromStorageKey(value: String?): GposThemeOption =
@@ -168,4 +184,42 @@ fun colorSchemeFor(option: GposThemeOption): ColorScheme = when (option) {
         outlineVariant = Color(0xFF3F5771),
         onSurfaceVariant = Color(0xFFD8DEE9),
     )
+
+    GposThemeOption.CATPPUCCIN_MOCHA -> themedDark(0xFF1E1E2E, 0xFF262637, 0xFFCDD6F4, 0xFF89B4FA, 0xFFA6E3A1, 0xFFF38BA8)
+    GposThemeOption.TOKYO_NIGHT -> themedDark(0xFF1A1B26, 0xFF24283B, 0xFFA9B1D6, 0xFF7AA2F7, 0xFFBB9AF7, 0xFF9ECE6A)
+    GposThemeOption.ONE_DARK -> themedDark(0xFF21252B, 0xFF282C34, 0xFFABB2BF, 0xFF61AFEF, 0xFF98C379, 0xFFC678DD)
+    GposThemeOption.KANAGAWA -> themedDark(0xFF1F1F28, 0xFF2A2A37, 0xFFDCD7BA, 0xFF7E9CD8, 0xFF98BB6C, 0xFFE6C384)
+    GposThemeOption.GRUVBOX -> themedDark(0xFF1D2021, 0xFF282828, 0xFFEBDBB2, 0xFFFABD2F, 0xFFB8BB26, 0xFF83A598)
+    GposThemeOption.ROSE_PINE -> themedDark(0xFF191724, 0xFF26233A, 0xFFE0DEF4, 0xFFEB6F92, 0xFF9CCFD8, 0xFFF6C177)
+    GposThemeOption.EVERFOREST -> themedDark(0xFF232A2E, 0xFF2D353B, 0xFFD3C6AA, 0xFFA7C080, 0xFF7FBBB3, 0xFFE69875)
+    GposThemeOption.GITHUB_DARK -> themedDark(0xFF0D1117, 0xFF161B22, 0xFFC9D1D9, 0xFF58A6FF, 0xFF3FB950, 0xFFD2A8FF)
+    GposThemeOption.CARBON_DARK -> themedDark(0xFF161616, 0xFF262626, 0xFFF4F4F4, 0xFF78A9FF, 0xFF42BE65, 0xFFBE95FF)
+    GposThemeOption.AYU_MIRAGE -> themedDark(0xFF1F2430, 0xFF252B38, 0xFFCBCCC6, 0xFF73D0FF, 0xFFFFCC66, 0xFFD4BFFF)
+    GposThemeOption.FLEXOKI_LIGHT -> lightColorScheme(
+        primary = Color(0xFF205EA6), onPrimary = Color.White,
+        primaryContainer = Color(0xFFDCE6F2), onPrimaryContainer = Color(0xFF102A43),
+        secondary = Color(0xFF66800B), onSecondary = Color.White,
+        tertiary = Color(0xFFAF3029), onTertiary = Color.White,
+        background = Color(0xFFFFFCF0), onBackground = Color(0xFF100F0F),
+        surface = Color(0xFFF2F0E5), onSurface = Color(0xFF100F0F),
+        surfaceVariant = Color(0xFFE6E4D9), onSurfaceVariant = Color(0xFF403E3C),
+        outline = Color(0xFF878580), outlineVariant = Color(0xFFCECDC3),
+    )
+    GposThemeOption.ZENBURN -> themedDark(0xFF303030, 0xFF3F3F3F, 0xFFDCDCCC, 0xFF7F9F7F, 0xFFDFaf8F, 0xFF8CD0D3)
+    GposThemeOption.SYNTHWAVE -> themedDark(0xFF262335, 0xFF312E46, 0xFFF4F4F8, 0xFF36F9F6, 0xFFF92AAD, 0xFFFFE64D)
+    GposThemeOption.SHADES_OF_PURPLE -> themedDark(0xFF222044, 0xFF2D2B55, 0xFFF2F1FF, 0xFFFAD000, 0xFFA599E9, 0xFFFF628C)
+    GposThemeOption.COBALT2 -> themedDark(0xFF122738, 0xFF193549, 0xFFFFFFFF, 0xFF0088FF, 0xFFFFC600, 0xFFFF9D00)
+    GposThemeOption.PALENIGHT -> themedDark(0xFF242735, 0xFF292D3E, 0xFFA6ACCD, 0xFF82AAFF, 0xFFC792EA, 0xFF89DDFF)
 }
+
+private fun themedDark(background: Long, surface: Long, text: Long, primary: Long, secondary: Long, tertiary: Long): ColorScheme =
+    darkColorScheme(
+        primary = Color(primary), onPrimary = Color(background),
+        primaryContainer = Color(surface), onPrimaryContainer = Color(text),
+        secondary = Color(secondary), onSecondary = Color(background),
+        tertiary = Color(tertiary), onTertiary = Color(background),
+        background = Color(background), onBackground = Color(text),
+        surface = Color(surface), onSurface = Color(text),
+        surfaceVariant = Color(surface), onSurfaceVariant = Color(text),
+        outline = Color(primary), outlineVariant = Color(surface),
+    )
