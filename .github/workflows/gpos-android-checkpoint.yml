@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-android:
@@ -68,24 +68,36 @@ jobs:
           grep -qi 'd2a0806649d000b1b84fff45a9c6df768dfc31ea' android/app/build/outputs/apk/debug/signing-fingerprint.txt
           grep -qi 'a6cc789c3d294886dab55da142105aaab0df20b40c3718140325a87da461f8ac' android/app/build/outputs/apk/debug/signing-fingerprint.txt
 
-      - name: Upload Android debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: aegis-android-0.7.4.1-calorie-capture-hotfix-debug
-          path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/debug/signing-fingerprint.txt
+      - name: Package verified Android test release
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk AEGIS-Android-0.7.4.1-hotfix.apk
+          zip -j AEGIS-Android-0.7.4.1-verified-ci.zip \
+            AEGIS-Android-0.7.4.1-hotfix.apk \
+            android/app/build/outputs/apk/debug/signing-fingerprint.txt \
             android/app/build/outputs/apk/debug/package-metadata.txt
-          if-no-files-found: error
-          retention-days: 14
+          sha256sum AEGIS-Android-0.7.4.1-hotfix.apk AEGIS-Android-0.7.4.1-verified-ci.zip \
+            | tee AEGIS-Android-0.7.4.1-SHA256SUMS.txt
 
-      - name: Upload Android instrumentation APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: aegis-android-0.7.4.1-calorie-capture-hotfix-androidTest
-          path: android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-          if-no-files-found: error
-          retention-days: 14
+      - name: Publish private GitHub prerelease assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='android-0.7.4.1-hotfix-test'
+          assets=(
+            AEGIS-Android-0.7.4.1-hotfix.apk
+            AEGIS-Android-0.7.4.1-verified-ci.zip
+            AEGIS-Android-0.7.4.1-SHA256SUMS.txt
+          )
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title 'AEGIS Android 0.7.4.1 Calorie Capture Hotfix Test' \
+              --notes 'Private test checkpoint. Preserves Meal / Calories text exactly; Apps Script 2.8.0 is unchanged.' \
+              --prerelease
+          fi
 
   navigation-regressions:
     runs-on: ubuntu-latest
@@ -118,6 +130,7 @@ jobs:
             adb pull /sdcard/Pictures/AEGIS-Tests android/workspace-screenshots
       - name: Upload navigation results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: aegis-android-0.7.4.1-navigation-results
