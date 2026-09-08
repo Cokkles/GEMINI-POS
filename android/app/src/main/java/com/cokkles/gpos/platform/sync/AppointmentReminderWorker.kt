@@ -127,11 +127,16 @@ class AppointmentReminderWorker(
         val threshold = inputData.getInt(AppointmentReminderScheduler.KEY_THRESHOLD_MINUTES, 0)
         if (expectedStart <= 0L || threshold !in AppointmentReminderPolicy.thresholdsMinutes) return Result.success()
 
-        val cached = Room.databaseBuilder(
+        val database = Room.databaseBuilder(
             applicationContext,
             GposDatabase::class.java,
             CanonicalCachePolicy.DATABASE_NAME,
-        ).build().use { database -> database.canonicalSnapshotDao().read(CanonicalCachePolicy.CALENDAR_RANGE_KEY) }
+        ).build()
+        val cached = try {
+            database.canonicalSnapshotDao().read(CanonicalCachePolicy.CALENDAR_RANGE_KEY)
+        } finally {
+            database.close()
+        }
 
         var title: String? = null
         if (cached != null) {
