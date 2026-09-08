@@ -1,6 +1,7 @@
 package com.cokkles.gpos.data.command
 
 import com.cokkles.gpos.data.remote.AegisBackendException
+import org.json.JSONObject
 
 object CaptureInputNormalizer {
     fun normalize(kind: CaptureKind, input: String): String {
@@ -43,5 +44,42 @@ object CaptureReliabilityPolicy {
         return "macros pending" in normalized ||
             "gemini_api_key" in normalized ||
             ("high volume" in normalized && "try again" in normalized)
+    }
+
+    fun diagnosticCode(error: Throwable): String = when (error) {
+        is AegisBackendException -> error.code.ifBlank { "AEGIS_COMMAND_FAILED" }
+        else -> error::class.java.simpleName.ifBlank { "UNKNOWN_FAILURE" }
+    }
+}
+
+data class CaptureConfirmation(
+    val message: String,
+    val backendStatus: String?,
+    val contract: String?,
+    val totalCalories: Double?,
+)
+
+object CaptureCompletionParser {
+    fun parse(json: JSONObject, kind: CaptureKind): CaptureConfirmation {
+        val totalCalories = json.takeIf { it.has("totalCalories") && !it.isNull("totalCalories") }
+            ?.optDouble("totalCalories")
+            ?.takeIf(Double::isFinite)
+        val message = sequenceOf("result", "answer", "message")
+            .map { json.optString(it).trim() }
+            .firstOrNull(String::isNotBlank)
+            ?: if (kind == CaptureKind.CALORIES && totalCalories != null) {
+                "Meal accepted by AEGIS. Daily total: ${totalCalories.toInt()} kcal."
+            } else {
+                throw AegisBackendException(
+                    "CAPTURE_RESULT_MISSING",
+                    "AEGIS accepted the connection but returned no meaningful capture result.",
+                )
+            }
+        return CaptureConfirmation(
+            message = message,
+            backendStatus = json.optString("status").trim().takeIf(String::isNotBlank),
+            contract = json.optString("contract").trim().takeIf(String::isNotBlank),
+            totalCalories = totalCalories,
+        )
     }
 }

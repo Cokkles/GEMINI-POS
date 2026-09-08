@@ -70,6 +70,8 @@ data class LocalReceipt(
     val attempts: Int = 0,
     val nextRetryAtEpochMs: Long? = null,
     val manualRetryAllowed: Boolean = false,
+    val diagnosticCode: String? = null,
+    val requestDurationMs: Long? = null,
 )
 
 data class LocalAlert(
@@ -186,6 +188,8 @@ class ProtectedLocalLedger(
                                 put("attempts", item.attempts)
                                 item.nextRetryAtEpochMs?.let { put("next_retry_at", it) }
                                 put("manual_retry_allowed", item.manualRetryAllowed)
+                                item.diagnosticCode?.let { put("diagnostic_code", it) }
+                                item.requestDurationMs?.let { put("request_duration_ms", it) }
                             },
                     )
                 }
@@ -302,6 +306,8 @@ private fun parseLedger(json: JSONObject): LocalLedger = LocalLedger(
             attempts = item.optInt("attempts", 0),
             nextRetryAtEpochMs = item.optLong("next_retry_at").takeIf { it > 0 },
             manualRetryAllowed = item.optBoolean("manual_retry_allowed", false),
+            diagnosticCode = item.optString("diagnostic_code").trim().takeIf(String::isNotBlank),
+            requestDurationMs = item.optLong("request_duration_ms").takeIf { it > 0 },
         )
     }.filter { it.id.isNotBlank() },
     alerts = json.optJSONArray("alerts").mapObjects { item ->

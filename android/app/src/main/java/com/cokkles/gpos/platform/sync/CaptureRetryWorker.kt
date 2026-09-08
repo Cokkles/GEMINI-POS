@@ -94,12 +94,21 @@ class CaptureSubmissionProcessor(
         if (credentialStore.read() == null || ledgerStore.read().receipts.none { it.id == receiptId }) return@withLock CaptureProcessOutcome.Ignored
         result.getOrNull()?.let { confirmed ->
             if (CaptureReliabilityPolicy.isUnconfirmedResult(confirmed.message)) {
-                return@withLock failIfStillOwned(receiptId, kind, "AEGIS did not confirm a completed ${kind.displayName.lowercase()} write. Check the destination before retrying.", attempt)
+                return@withLock failIfStillOwned(
+                    receiptId,
+                    kind,
+                    "AEGIS returned an unconfirmed ${kind.displayName.lowercase()} result: ${confirmed.message.take(240)}",
+                    attempt,
+                    diagnosticCode = "CAPTURE_UNCONFIRMED_RESULT",
+                    requestDurationMs = confirmed.durationMs,
+                )
             }
             val now = System.currentTimeMillis()
             ledgerStore.update { current -> current.copy(receipts = current.receipts.map {
                 if (it.id == receiptId) it.copy(state = LocalReceiptState.CONFIRMED, updatedAtEpochMs = now,
-                    result = confirmed.message.take(500), error = null, nextRetryAtEpochMs = null, manualRetryAllowed = false) else it
+                    result = confirmed.message.take(500), error = null, nextRetryAtEpochMs = null,
+                    manualRetryAllowed = false, diagnosticCode = "CONFIRMED",
+                    requestDurationMs = confirmed.durationMs) else it
             }) }
             scheduler.cancel(receiptId)
             notifications.publishOutcome(receiptId, "${kind.displayName} submitted", confirmed.message, GposDeepLinkTarget.ALERTS, false)
@@ -123,18 +132,29 @@ class CaptureSubmissionProcessor(
             scheduler.schedule(receiptId, delay)
             return@withLock CaptureProcessOutcome.Queued
         }
-        failIfStillOwned(receiptId, kind, error.message ?: "Capture submission failed.", attempt, certified)
+        failIfStillOwned(
+            receiptId,
+            kind,
+            error.message ?: "Capture submission failed.",
+            attempt,
+            certified,
+            diagnosticCode = CaptureReliabilityPolicy.diagnosticCode(error),
+        )
     }
 
     private suspend fun failIfStillOwned(receiptId: String, kind: CaptureKind, message: String, attempts: Int,
-        manualRetryAllowed: Boolean = false): CaptureProcessOutcome {
+        manualRetryAllowed: Boolean = false,
+        diagnosticCode: String? = null,
+        requestDurationMs: Long? = null,
+    ): CaptureProcessOutcome {
         if (credentialStore.read() == null || ledgerStore.read().receipts.none { it.id == receiptId }) return CaptureProcessOutcome.Ignored
         val now = System.currentTimeMillis()
         val alert = LocalAlert(UUID.randomUUID().toString(), "error", "${kind.displayName} failed", message.take(500), now)
         ledgerStore.update { current -> current.copy(
             receipts = current.receipts.map { if (it.id == receiptId) it.copy(state = LocalReceiptState.FAILED,
                 updatedAtEpochMs = now, error = message.take(500), attempts = attempts,
-                nextRetryAtEpochMs = null, manualRetryAllowed = manualRetryAllowed) else it },
+                nextRetryAtEpochMs = null, manualRetryAllowed = manualRetryAllowed,
+                diagnosticCode = diagnosticCode, requestDurationMs = requestDurationMs) else it },
             alerts = current.alerts + alert,
         ) }
         scheduler.cancel(receiptId)

@@ -3,6 +3,9 @@ package com.cokkles.gpos.data.command
 import com.cokkles.gpos.BuildConfig
 import com.cokkles.gpos.data.remote.AegisBackendException
 import java.util.concurrent.TimeUnit
+import java.io.IOException
+import java.net.SocketTimeoutException
+import android.os.SystemClock
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
@@ -100,15 +103,32 @@ class AegisCommandClient(
         text: String,
         submissionId: String,
     ): CaptureSubmissionResult {
-        val json = postAuthenticated(idToken, capturePayload(kind, text, submissionId))
-        val message = json.optString("result").trim().takeIf(String::isNotBlank)
-            ?: json.optString("answer").trim().takeIf(String::isNotBlank)
-            ?: json.optString("message").trim().takeIf(String::isNotBlank)
-            ?: throw AegisBackendException(
-                "CAPTURE_RESULT_MISSING",
-                "AEGIS accepted the connection but returned no meaningful capture result.",
+        val startedAt = SystemClock.elapsedRealtime()
+        try {
+            val json = postAuthenticated(idToken, capturePayload(kind, text, submissionId))
+            val confirmation = CaptureCompletionParser.parse(json, kind)
+            return CaptureSubmissionResult(
+                message = confirmation.message,
+                durationMs = SystemClock.elapsedRealtime() - startedAt,
+                backendStatus = confirmation.backendStatus,
+                contract = confirmation.contract,
+                totalCalories = confirmation.totalCalories,
             )
-        return CaptureSubmissionResult(message)
+        } catch (error: SocketTimeoutException) {
+            throw AegisBackendException(
+                code = "CAPTURE_TIMEOUT",
+                message = "AEGIS did not respond within ${CALL_TIMEOUT_SECONDS} seconds. The write state is unknown; check Nutrition before manually retrying.",
+                retryable = false,
+                writeState = "UNKNOWN",
+            )
+        } catch (error: IOException) {
+            throw AegisBackendException(
+                code = "CAPTURE_NETWORK_FAILURE",
+                message = "The AEGIS connection ended before a confirmation was received. The write state is unknown; check Nutrition before manually retrying.",
+                retryable = false,
+                writeState = "UNKNOWN",
+            )
+        }
     }
 
     suspend fun acknowledgeNotification(
@@ -191,8 +211,10 @@ class AegisCommandClient(
     private companion object {
         val JSON_MEDIA_TYPE = "text/plain;charset=utf-8".toMediaType()
         const val CONNECT_TIMEOUT_SECONDS = 10L
-        const val READ_TIMEOUT_SECONDS = 30L
-        const val CALL_TIMEOUT_SECONDS = 35L
+        // Apps Script + Gemini + Sheets can legitimately exceed the short read window used by
+        // ordinary AEGIS commands. The request runs in WorkManager, so this does not block UI.
+        const val READ_TIMEOUT_SECONDS = 180L
+        const val CALL_TIMEOUT_SECONDS = 185L
         const val MAX_RESPONSE_BYTES = 2L * 1024L * 1024L
     }
 }

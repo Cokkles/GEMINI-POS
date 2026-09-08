@@ -1450,6 +1450,8 @@ private fun ReceiptCard(receipt: LocalReceipt, onRetry: (String) -> Unit) {
                 receipt.result,
                 receipt.error,
                 receipt.attempts.takeIf { it > 0 }?.let { "Attempt $it of 3" },
+                receipt.diagnosticCode?.let { "Diagnostic $it" },
+                receipt.requestDurationMs?.let { "${it / 1000.0}s" },
                 receipt.nextRetryAtEpochMs?.let { "Retry ${formatTime(it)}" },
                 formatTime(receipt.updatedAtEpochMs),
             ).joinToString(" • ")) },

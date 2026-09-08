@@ -18,6 +18,10 @@ enum class CaptureKind(
 
 data class CaptureSubmissionResult(
     val message: String,
+    val durationMs: Long,
+    val backendStatus: String? = null,
+    val contract: String? = null,
+    val totalCalories: Double? = null,
 )
 
 internal fun capturePayload(
