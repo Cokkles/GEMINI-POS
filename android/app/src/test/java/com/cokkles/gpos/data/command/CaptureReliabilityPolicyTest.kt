@@ -7,8 +7,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CaptureReliabilityPolicyTest {
-    @Test fun `comma separated calories become a structured list`() {
-        assertEquals("• eggs\n• toast\n• coffee", CaptureInputNormalizer.normalize(CaptureKind.CALORIES, "eggs, toast, coffee"))
+    @Test fun `comma separated calories preserve original meal format`() {
+        assertEquals("eggs, toast, coffee", CaptureInputNormalizer.normalize(CaptureKind.CALORIES, "  eggs, toast, coffee  "))
+    }
+
+    @Test fun `newline separated calories preserve original meal format`() {
+        assertEquals("eggs\ntoast\ncoffee", CaptureInputNormalizer.normalize(CaptureKind.CALORIES, "\neggs\ntoast\ncoffee\n"))
+    }
+
+    @Test fun `single calorie item preserves original wording`() {
+        assertEquals("Oikos Pro vanilla protein shake", CaptureInputNormalizer.normalize(CaptureKind.CALORIES, " Oikos Pro vanilla protein shake "))
     }
 
     @Test fun `ordinary notes preserve punctuation`() {

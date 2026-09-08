@@ -4,12 +4,11 @@ import com.cokkles.gpos.data.remote.AegisBackendException
 
 object CaptureInputNormalizer {
     fun normalize(kind: CaptureKind, input: String): String {
-        val trimmed = input.trim()
-        if (kind != CaptureKind.CALORIES) return trimmed
-        val parts = trimmed.split(Regex("[,;\\n]+"))
-            .map(String::trim)
-            .filter(String::isNotBlank)
-        return if (parts.size > 1) parts.joinToString("\n") { "• $it" } else trimmed
+        // Preserve the user's wording for every capture kind. In particular, do not translate
+        // comma-separated meals into a Unicode bullet list: Apps Script 2.8.0 forwards this text
+        // to Gemini, and changing its format can turn an otherwise parseable meal into the
+        // backend's zero-macro fallback row.
+        return input.trim()
     }
 }
 
