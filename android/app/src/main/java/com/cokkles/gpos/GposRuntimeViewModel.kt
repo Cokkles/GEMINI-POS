@@ -22,7 +22,9 @@ import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import com.cokkles.gpos.platform.security.CredentialStore
+import com.cokkles.gpos.platform.security.SessionContinuityPolicy
 import com.cokkles.gpos.platform.security.StoredCredential
+import com.cokkles.gpos.platform.sync.AppointmentReminderScheduler
 import com.cokkles.gpos.platform.sync.CanonicalSyncScheduler
 import com.cokkles.gpos.platform.sync.AuthenticationRecovery
 import java.time.Instant
@@ -42,6 +44,7 @@ class GposRuntimeViewModel(
     private val backend = AegisBackendClient()
     private val credentialStore: CredentialStore = AndroidKeystoreCredentialStore(application)
     private val syncScheduler = CanonicalSyncScheduler(application)
+    private val appointmentReminderScheduler = AppointmentReminderScheduler(application)
     private val cacheDao = Room.databaseBuilder(
         application,
         GposDatabase::class.java,
@@ -52,17 +55,20 @@ class GposRuntimeViewModel(
     val uiState: StateFlow<RuntimeUiState> = _uiState.asStateFlow()
 
     private val activeReads = mutableSetOf<String>()
+    private val visibleReads = mutableSetOf<String>()
     private var sessionJob: Job? = null
     private val readJobs = mutableMapOf<String, Job>()
 
-    private fun launchRead(key: String, block: suspend () -> Unit) {
+    private fun launchRead(key: String, showProgress: Boolean = true, block: suspend () -> Unit) {
         if (!activeReads.add(key)) return
-        _uiState.update { it.copy(refreshing = true) }
+        if (showProgress) visibleReads.add(key)
+        _uiState.update { it.copy(refreshing = visibleReads.isNotEmpty()) }
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try { block() } finally {
                 readJobs.remove(key)
                 activeReads.remove(key)
-                _uiState.update { it.copy(refreshing = activeReads.isNotEmpty()) }
+                visibleReads.remove(key)
+                _uiState.update { it.copy(refreshing = visibleReads.isNotEmpty()) }
             }
         }
         readJobs[key] = job
@@ -81,6 +87,9 @@ class GposRuntimeViewModel(
         if (sessionJob?.isActive == true) return
         sessionJob = viewModelScope.launch {
             val storedCredential = credentialStore.read()
+            val restoredUser = storedCredential?.let {
+                SessionContinuityPolicy.restoredUser(it, System.currentTimeMillis())
+            }
             if (storedCredential != null) {
                 loadCachedDashboard()
                 loadCachedBriefing()
@@ -94,10 +103,17 @@ class GposRuntimeViewModel(
             _uiState.update {
                 it.copy(
                     backend = it.backend.copy(checking = true, error = null),
-                    auth = if (storedCredential == null) AuthState.Restoring else AuthState.OfflineRestored(
-                        expiresAtEpochMs = storedCredential.expiresAtEpochMs,
-                        reason = "Secure local session restored while Google authorization is checked in the background.",
-                    ),
+                    auth = when {
+                        storedCredential == null -> AuthState.Restoring
+                        restoredUser != null -> AuthState.Authenticated(
+                            user = restoredUser,
+                            expiresAtEpochMs = storedCredential.expiresAtEpochMs,
+                        )
+                        else -> AuthState.OfflineRestored(
+                            expiresAtEpochMs = storedCredential.expiresAtEpochMs,
+                            reason = "Secure local session restored while Google authorization is checked in the background.",
+                        )
+                    },
                 )
             }
 
@@ -173,6 +189,10 @@ class GposRuntimeViewModel(
                         StoredCredential(
                             idToken = idToken,
                             expiresAtEpochMs = session.expiresAtEpochMs,
+                            userEmail = session.user.email,
+                            userName = session.user.name,
+                            userPictureUrl = session.user.pictureUrl,
+                            validatedAtEpochMs = System.currentTimeMillis(),
                         ),
                     )
                     syncScheduler.schedule()
@@ -185,7 +205,7 @@ class GposRuntimeViewModel(
                             ),
                         )
                     }
-                    refreshCanonicalReads()
+                    refreshCanonicalReads(showProgress = showProgress)
                 }
                 .onFailure { error ->
                         if (error is CancellationException) throw error
@@ -233,16 +253,20 @@ class GposRuntimeViewModel(
         }
     }
 
-    fun refreshCanonicalReads() {
-        refreshProtectedReads()
-        refreshDashboard()
-        refreshLatestHorizon()
-        refreshFinance()
-        refreshNotifications()
+    fun refreshCanonicalReads() = refreshCanonicalReads(showProgress = true)
+
+    fun refreshCanonicalReads(showProgress: Boolean) {
+        refreshProtectedReads(showProgress)
+        refreshDashboard(showProgress)
+        refreshLatestHorizon(showProgress)
+        refreshFinance(showProgress)
+        refreshNotifications(showProgress)
     }
 
-    fun refreshProtectedReads() {
-        launchRead("refreshProtectedReads") {
+    fun refreshProtectedReads() = refreshProtectedReads(showProgress = true)
+
+    fun refreshProtectedReads(showProgress: Boolean) {
+        launchRead("refreshProtectedReads", showProgress) {
             val credential = credentialStore.read()
             if (credential == null) {
                 _uiState.update { it.copy(auth = AuthState.SignedOut) }
@@ -265,8 +289,10 @@ class GposRuntimeViewModel(
         }
     }
 
-    fun refreshDashboard() {
-        launchRead("refreshDashboard") {
+    fun refreshDashboard() = refreshDashboard(showProgress = true)
+
+    fun refreshDashboard(showProgress: Boolean) {
+        launchRead("refreshDashboard", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readDashboard(credential.idToken)
@@ -288,8 +314,10 @@ class GposRuntimeViewModel(
         }
     }
 
-    fun refreshLatestHorizon() {
-        launchRead("refreshLatestHorizon") {
+    fun refreshLatestHorizon() = refreshLatestHorizon(showProgress = true)
+
+    fun refreshLatestHorizon(showProgress: Boolean) {
+        launchRead("refreshLatestHorizon", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readLatestHorizon(credential.idToken)
@@ -314,8 +342,10 @@ class GposRuntimeViewModel(
         }
     }
 
-    fun refreshFinance() {
-        launchRead("refreshFinance") {
+    fun refreshFinance() = refreshFinance(showProgress = true)
+
+    fun refreshFinance(showProgress: Boolean) {
+        launchRead("refreshFinance", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readRecentFinance(credential.idToken, FINANCE_HOURS)
@@ -337,8 +367,10 @@ class GposRuntimeViewModel(
         }
     }
 
-    fun refreshNotifications() {
-        launchRead("refreshNotifications") {
+    fun refreshNotifications() = refreshNotifications(showProgress = true)
+
+    fun refreshNotifications(showProgress: Boolean) {
+        launchRead("refreshNotifications", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
                 val json = backend.readNotifications(credential.idToken)
@@ -378,7 +410,16 @@ class GposRuntimeViewModel(
         val result = runCatching { backend.validateSession(credential.idToken) }
         val session = result.getOrNull()
         if (session != null) {
-            credentialStore.replace(StoredCredential(credential.idToken, session.expiresAtEpochMs))
+            credentialStore.replace(
+                StoredCredential(
+                    idToken = credential.idToken,
+                    expiresAtEpochMs = session.expiresAtEpochMs,
+                    userEmail = session.user.email,
+                    userName = session.user.name,
+                    userPictureUrl = session.user.pictureUrl,
+                    validatedAtEpochMs = System.currentTimeMillis(),
+                ),
+            )
             syncScheduler.schedule()
             AuthenticationRecovery(getApplication()).resumePending()
             _uiState.update {
@@ -389,7 +430,7 @@ class GposRuntimeViewModel(
                     ),
                 )
             }
-            refreshCanonicalReads()
+            refreshCanonicalReads(showProgress = false)
             return
         }
 
@@ -432,6 +473,7 @@ class GposRuntimeViewModel(
 
     private suspend fun clearPrivateSession() {
         syncScheduler.cancel()
+        appointmentReminderScheduler.cancelAll()
         AuthenticationRecovery(getApplication()).clearAttention()
         credentialStore.clear()
         cacheDao.clear()

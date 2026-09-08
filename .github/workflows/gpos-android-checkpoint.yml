@@ -9,6 +9,7 @@ on:
       - agent/android-0.7.3-offline-sync
       - agent/android-0.7.4-auth-continuity
       - agent/android-0.7.4.2-capture-transport
+      - agent/android-0.7.5-session-background
     paths:
       - 'android/**'
       - '.github/workflows/gpos-android-checkpoint.yml'
@@ -59,8 +60,8 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk \
             | head -n 1 | tee android/app/build/outputs/apk/debug/package-metadata.txt
           grep -q "name='com.cokkles.gpos'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionCode='18'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionName='0.7.4.2-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionCode='19'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionName='0.7.5-dev'" android/app/build/outputs/apk/debug/package-metadata.txt
           {
             echo "package=com.cokkles.gpos"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
@@ -71,23 +72,23 @@ jobs:
 
       - name: Package verified Android test release
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk AEGIS-Android-0.7.4.2-capture-transport.apk
-          zip -j AEGIS-Android-0.7.4.2-verified-ci.zip \
-            AEGIS-Android-0.7.4.2-capture-transport.apk \
+          cp android/app/build/outputs/apk/debug/app-debug.apk AEGIS-Android-0.7.5-session-background.apk
+          zip -j AEGIS-Android-0.7.5-verified-ci.zip \
+            AEGIS-Android-0.7.5-session-background.apk \
             android/app/build/outputs/apk/debug/signing-fingerprint.txt \
             android/app/build/outputs/apk/debug/package-metadata.txt
-          sha256sum AEGIS-Android-0.7.4.2-capture-transport.apk AEGIS-Android-0.7.4.2-verified-ci.zip \
-            | tee AEGIS-Android-0.7.4.2-SHA256SUMS.txt
+          sha256sum AEGIS-Android-0.7.5-session-background.apk AEGIS-Android-0.7.5-verified-ci.zip \
+            | tee AEGIS-Android-0.7.5-SHA256SUMS.txt
 
       - name: Publish private GitHub prerelease assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag='android-0.7.4.2-capture-transport-test'
+          tag='android-0.7.5-session-background-test'
           assets=(
-            AEGIS-Android-0.7.4.2-capture-transport.apk
-            AEGIS-Android-0.7.4.2-verified-ci.zip
-            AEGIS-Android-0.7.4.2-SHA256SUMS.txt
+            AEGIS-Android-0.7.5-session-background.apk
+            AEGIS-Android-0.7.5-verified-ci.zip
+            AEGIS-Android-0.7.5-SHA256SUMS.txt
           )
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
@@ -95,8 +96,8 @@ jobs:
             gh release create "$tag" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title 'AEGIS Android 0.7.4.2 Capture Transport Reliability Test' \
-              --notes 'Private test checkpoint. Background capture transport, extended Apps Script/Gemini wait window, and diagnostic receipts; Apps Script 2.8.0 is unchanged.' \
+              --title 'AEGIS Android 0.7.5 Session & Background Reliability Test' \
+              --notes 'Private test checkpoint. Immediate secure session restore, quiet background refresh, 15-minute canonical sync, and locally mirrored Calendar reminders; Apps Script 2.8.0 is unchanged.' \
               --prerelease
           fi
 
@@ -134,7 +135,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.7.4.2-navigation-results
+          name: aegis-android-0.7.5-navigation-results
           path: |
             android/app/build/reports/androidTests/connected/
             android/workspace-screenshots/

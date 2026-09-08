@@ -252,13 +252,6 @@ fun DailyUxApp(
         }
     }
 
-    LaunchedEffect(runtimeState.auth) {
-        if (runtimeState.auth is AuthState.Authenticated) {
-            onParityRefresh()
-            onInteractionRefresh()
-        }
-    }
-
     LaunchedEffect(deepLinkTarget) {
         deepLinkTarget?.let { target ->
             navigate(target.route)
@@ -1354,6 +1347,7 @@ private fun SystemScreen(
         item { SourceCard("News", parityState.intelligence.source, parityState.intelligence.fetchedAtEpochMs, parityState.intelligence.error) }
         item { SourceCard("Finance", runtimeState.finance?.source, runtimeState.finance?.fetchedAtEpochMs, runtimeState.finance?.error) }
         item { SummaryCard("Background reads", "Every ${CanonicalSyncScheduler.REPEAT_MINUTES} minutes when connected and battery is not low. Routine refresh never generates HORIZON or submits Capture entries.") }
+        item { SummaryCard("Calendar reminders", "Timed events already loaded for the next seven days are mirrored into best-effort local reminders at 60 and 15 minutes. Android battery optimization can delay delivery.") }
         item { SummaryCard("Task completion queue", "Five-minute Undo grace period with a WorkManager safety net every ${TaskQueueSyncScheduler.PERIODIC_MINUTES} minutes.") }
         item {
             AegisCard(Modifier.fillMaxWidth()) {

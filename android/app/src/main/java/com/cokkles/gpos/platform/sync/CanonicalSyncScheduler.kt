@@ -40,6 +40,6 @@ class CanonicalSyncScheduler(
     }
 
     companion object {
-        const val REPEAT_MINUTES = 30L
+        const val REPEAT_MINUTES = 15L
     }
 }

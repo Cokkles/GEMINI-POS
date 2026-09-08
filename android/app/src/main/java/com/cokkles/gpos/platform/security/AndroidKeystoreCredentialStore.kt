@@ -27,6 +27,10 @@ class AndroidKeystoreCredentialStore(
             StoredCredential(
                 idToken = json.getString("id_token"),
                 expiresAtEpochMs = json.optLong("expires_at_epoch_ms").takeIf { it > 0L },
+                userEmail = json.optString("user_email").takeIf(String::isNotBlank),
+                userName = json.optString("user_name").takeIf(String::isNotBlank),
+                userPictureUrl = json.optString("user_picture_url").takeIf(String::isNotBlank),
+                validatedAtEpochMs = json.optLong("validated_at_epoch_ms").takeIf { it > 0L },
             )
         }.getOrElse {
             clear()
@@ -39,6 +43,10 @@ class AndroidKeystoreCredentialStore(
             .put("id_token", credential.idToken)
             .apply {
                 credential.expiresAtEpochMs?.let { put("expires_at_epoch_ms", it) }
+                credential.userEmail?.let { put("user_email", it) }
+                credential.userName?.let { put("user_name", it) }
+                credential.userPictureUrl?.let { put("user_picture_url", it) }
+                credential.validatedAtEpochMs?.let { put("validated_at_epoch_ms", it) }
             }
             .toString()
 

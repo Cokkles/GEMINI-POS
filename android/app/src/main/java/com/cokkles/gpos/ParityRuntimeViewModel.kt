@@ -20,6 +20,7 @@ import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.TaskHistoryItem
 import com.cokkles.gpos.data.remote.TaskHistoryPayloadMapper
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
+import com.cokkles.gpos.platform.sync.AppointmentReminderScheduler
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -59,6 +60,7 @@ class ParityRuntimeViewModel(
 ) : AndroidViewModel(application) {
     private val backend = AegisBackendClient()
     private val credentialStore = AndroidKeystoreCredentialStore(application)
+    private val appointmentReminderScheduler = AppointmentReminderScheduler(application)
     private val cacheDao = Room.databaseBuilder(
         application,
         GposDatabase::class.java,
@@ -75,12 +77,14 @@ class ParityRuntimeViewModel(
     private var refreshJob: Job? = null
     private var calendarRequest = 0L
 
-    fun refreshAll() {
+    fun refreshAll() = refreshAll(showProgress = true)
+
+    fun refreshAll(showProgress: Boolean) {
         if (refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
             val credential = credentialStore.read() ?: return@launch
             if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) return@launch
-            _state.update { it.copy(refreshing = true) }
+            if (showProgress) _state.update { it.copy(refreshing = true) }
             try {
                 val capabilities = runCatching { CapabilityPayloadMapper.map(backend.readCapabilities(credential.idToken)) }
                 capabilities.onSuccess { snapshot ->
@@ -117,7 +121,9 @@ class ParityRuntimeViewModel(
                         )
                     }
                 }
-            } finally { _state.update { it.copy(refreshing = false) } }
+            } finally {
+                if (showProgress) _state.update { it.copy(refreshing = false) }
+            }
         }
     }
 
@@ -199,6 +205,7 @@ class ParityRuntimeViewModel(
             )
         }.onSuccess { domain ->
             if (request == calendarRequest && range == monthRange(_state.value.selectedMonth)) {
+                domain.snapshot?.let { appointmentReminderScheduler.replaceUpcoming(it) }
                 _state.update { it.copy(calendar = domain) }
             }
         }.onFailure { error ->
@@ -303,6 +310,7 @@ class ParityRuntimeViewModel(
         val start = json.optString("_android_start_date").ifBlank { return false }
         val end = json.optString("_android_end_date").ifBlank { return false }
         val snapshot = runCatching { CalendarRangePayloadMapper.map(json, start, end) }.getOrNull() ?: return false
+        appointmentReminderScheduler.replaceUpcoming(snapshot)
         _state.update {
             it.copy(
                 calendar = ParityDomainState(

@@ -15,4 +15,8 @@ interface CredentialStore {
 data class StoredCredential(
     val idToken: String,
     val expiresAtEpochMs: Long? = null,
+    val userEmail: String? = null,
+    val userName: String? = null,
+    val userPictureUrl: String? = null,
+    val validatedAtEpochMs: Long? = null,
 )

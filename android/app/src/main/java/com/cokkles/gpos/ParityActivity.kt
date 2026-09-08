@@ -83,6 +83,8 @@ class ParityActivity : ComponentActivity() {
                 notesViewModel.activate(runtimeState.auth)
                 if (runtimeState.auth is AuthState.Authenticated) {
                     authContinuity.markAuthenticated()
+                    parityViewModel.refreshAll(showProgress = false)
+                    interactionViewModel.refreshCapabilitiesAndFollowups()
                 }
                 attemptAuthorizedSessionContinuity()
             }
@@ -140,7 +142,7 @@ class ParityActivity : ComponentActivity() {
                         captureViewModel.refreshLedger()
                     },
                     onRefreshBackend = runtimeViewModel::refreshBackendAndRestoreSession,
-                    onParityRefresh = parityViewModel::refreshAll,
+                    onParityRefresh = { parityViewModel.refreshAll() },
                     onShiftMonth = parityViewModel::shiftMonth,
                     onTodayMonth = parityViewModel::goToToday,
                     onSelectDate = parityViewModel::selectDate,
@@ -208,7 +210,7 @@ class ParityActivity : ComponentActivity() {
         notesViewModel.activate(runtimeViewModel.uiState.value.auth)
         captureViewModel.refreshLedger()
         if (runtimeViewModel.uiState.value.auth is AuthState.Authenticated) {
-            parityViewModel.refreshAll()
+            parityViewModel.refreshAll(showProgress = false)
             interactionViewModel.refreshCapabilitiesAndFollowups()
         }
     }
@@ -226,7 +228,7 @@ class ParityActivity : ComponentActivity() {
             // Wait for their result instead of abandoning renewal after three seconds.
             val settled = withTimeoutOrNull(45_000L) {
                 runtimeViewModel.uiState.first {
-                    it.auth != AuthState.Restoring && it.auth != AuthState.Authenticating
+                    !it.backend.checking && it.auth != AuthState.Restoring && it.auth != AuthState.Authenticating
                 }
             } ?: return@launch
             val expiry = (settled.auth as? AuthState.Authenticated)?.expiresAtEpochMs
@@ -241,7 +243,13 @@ class ParityActivity : ComponentActivity() {
             runCatching {
                 googleSignInCoordinator.requestAuthorizedIdToken(BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID)
             }.onSuccess { token ->
-                if (authContinuity.wasAuthenticated()) runtimeViewModel.authenticateWithIdToken(token)
+                if (authContinuity.wasAuthenticated()) runtimeViewModel.renewWithIdToken(token)
+            }.onFailure { error ->
+                if (runtimeViewModel.uiState.value.auth is AuthState.ReconnectRequired) {
+                    runtimeViewModel.reportAuthFailure(
+                        "Silent Google renewal was unavailable. Open System and reconnect when convenient. ${error.message.orEmpty()}".trim(),
+                    )
+                }
             }
         }
     }
