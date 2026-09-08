@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "backend_version": "2.8.0",
+  "compatibility_posture": "additive",
+  "source_path": "shared-backend/Code.gs",
+  "source_status": "PENDING_EXACT_SOURCE_CHECKPOINT",
+  "source_sha256": null,
+  "deployment_id": null,
+  "deployment_verification": "PENDING",
+  "registry_document_id": "1RaxZU2JNl5Dr4-puIvy01q8nmbiJlbx0RhOir2oWvCY",
+  "mirror_repositories": [
+    "Cokkles/GEMINI-POS",
+    "Cokkles/AEGIS-Windows"
+  ],
+  "preserved_android_contract_floor": "2.7.0",
+  "preflight_required": true,
+  "notes": "Do not create Code.gs until the exact authoritative 2.8.0 source is available for byte-exact hashing."
+}
