@@ -1,5 +1,6 @@
 package com.cokkles.gpos.data.command
 
+import com.cokkles.gpos.BuildConfig
 import org.json.JSONObject
 
 enum class CaptureKind(
@@ -20,8 +21,12 @@ data class CaptureSubmissionResult(
     val message: String,
     val durationMs: Long,
     val backendStatus: String? = null,
+    val captureStatus: String? = null,
     val contract: String? = null,
     val totalCalories: Double? = null,
+    val confidence: String? = null,
+    val lookupDepth: Int? = null,
+    val deduplicated: Boolean = false,
 )
 
 internal fun capturePayload(
@@ -38,6 +43,16 @@ internal fun capturePayload(
         else -> ""
     }
     return JSONObject()
+        .apply {
+            if (kind == CaptureKind.CALORIES) {
+                put("action", "capture_nutrition")
+                put("capture_id", submissionId)
+                put("nutrition_contract", "AEGIS_NUTRITION_CAPTURE_V2")
+                put("source_policy", "OFFICIAL_USDA_OPEN_FOOD_FACTS_COMPONENT_ESTIMATE_V1")
+            }
+        }
         .put("message", "${kind.prefix} $mode$body")
         .put("submission_id", submissionId)
+        .put("client_id", "GPOS_ANDROID")
+        .put("client_version", BuildConfig.VERSION_NAME)
 }

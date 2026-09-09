@@ -5,10 +5,19 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class CaptureReliabilityPolicyTest {
     @Test fun `comma separated calories preserve original meal format`() {
         assertEquals("eggs, toast, coffee", CaptureInputNormalizer.normalize(CaptureKind.CALORIES, "  eggs, toast, coffee  "))
+    }
+
+    @Test fun `calorie payload requests structured nutrition while retaining legacy message`() {
+        val payload = capturePayload(CaptureKind.CALORIES, "eggs, toast", "capture-1234")
+        assertEquals("capture_nutrition", payload.getString("action"))
+        assertEquals("capture-1234", payload.getString("capture_id"))
+        assertEquals("/calories eggs, toast", payload.getString("message"))
+        assertEquals("GPOS_ANDROID", payload.getString("client_id"))
     }
 
     @Test fun `newline separated calories preserve original meal format`() {
@@ -36,5 +45,55 @@ class CaptureReliabilityPolicyTest {
         assertEquals(60_000L, CaptureReliabilityPolicy.retryDelayMs(1))
         assertEquals(120_000L, CaptureReliabilityPolicy.retryDelayMs(2))
         assertEquals(null, CaptureReliabilityPolicy.retryDelayMs(3))
+    }
+
+    @Test fun `backend 2_8 calorie response is confirmed`() {
+        val parsed = CaptureCompletionParser.parse(
+            JSONObject().put("result", "✅ LOGGED NUTRITION VIA GEMINI AI").put("totalCalories", 340),
+            CaptureKind.CALORIES,
+        )
+        assertEquals("✅ LOGGED NUTRITION VIA GEMINI AI", parsed.message)
+        assertEquals(340.0, parsed.totalCalories)
+    }
+
+    @Test fun `structured nutrition metadata is retained`() {
+        val parsed = CaptureCompletionParser.parse(
+            JSONObject()
+                .put("status", "success")
+                .put("capture_status", "CONFIRMED")
+                .put("contract", "AEGIS_NUTRITION_CAPTURE_V2")
+                .put("result", "Logged burger")
+                .put("confidence", "MEDIUM_LOW")
+                .put("lookup_depth", 5)
+                .put("deduplicated", true),
+            CaptureKind.CALORIES,
+        )
+        assertEquals("CONFIRMED", parsed.captureStatus)
+        assertEquals("MEDIUM_LOW", parsed.confidence)
+        assertEquals(5, parsed.lookupDepth)
+        assertTrue(parsed.deduplicated)
+    }
+
+    @Test fun `nutrition contract capacity failure is safe to retry`() {
+        assertTrue(
+            CaptureReliabilityPolicy.isCertifiedSafeCapacityFailure(
+                AegisBackendException(
+                    "GEMINI_RATE_LIMITED",
+                    "busy",
+                    CaptureReliabilityPolicy.NUTRITION_CONTRACT,
+                    true,
+                    "NOT_STARTED",
+                ),
+            ),
+        )
+    }
+
+    @Test fun `calorie total is a valid fallback confirmation`() {
+        val parsed = CaptureCompletionParser.parse(JSONObject().put("totalCalories", 340), CaptureKind.CALORIES)
+        assertTrue(parsed.message.contains("Daily total: 340 kcal"))
+    }
+
+    @Test fun `unconfirmed backend fallback remains unsafe`() {
+        assertTrue(CaptureReliabilityPolicy.isUnconfirmedResult("Macros pending - verify GEMINI_API_KEY"))
     }
 }

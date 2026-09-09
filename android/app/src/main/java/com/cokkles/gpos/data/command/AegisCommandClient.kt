@@ -111,8 +111,12 @@ class AegisCommandClient(
                 message = confirmation.message,
                 durationMs = SystemClock.elapsedRealtime() - startedAt,
                 backendStatus = confirmation.backendStatus,
+                captureStatus = confirmation.captureStatus,
                 contract = confirmation.contract,
                 totalCalories = confirmation.totalCalories,
+                confidence = confirmation.confidence,
+                lookupDepth = confirmation.lookupDepth,
+                deduplicated = confirmation.deduplicated,
             )
         } catch (error: SocketTimeoutException) {
             throw AegisBackendException(

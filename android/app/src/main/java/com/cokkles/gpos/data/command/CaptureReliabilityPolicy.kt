@@ -15,6 +15,7 @@ object CaptureInputNormalizer {
 
 object CaptureReliabilityPolicy {
     const val CONTRACT = "AEGIS_CAPTURE_RELIABILITY_V1"
+    const val NUTRITION_CONTRACT = "AEGIS_NUTRITION_CAPTURE_V2"
     const val MAX_ATTEMPTS = 3
 
     fun isGeminiDependent(kind: CaptureKind): Boolean =
@@ -28,7 +29,7 @@ object CaptureReliabilityPolicy {
 
     fun isCertifiedSafeCapacityFailure(error: Throwable): Boolean {
         val backend = error as? AegisBackendException ?: return false
-        return backend.contract == CONTRACT &&
+        return backend.contract in setOf(CONTRACT, NUTRITION_CONTRACT) &&
             backend.retryable == true &&
             backend.writeState == "NOT_STARTED" &&
             backend.code in setOf(
@@ -55,8 +56,12 @@ object CaptureReliabilityPolicy {
 data class CaptureConfirmation(
     val message: String,
     val backendStatus: String?,
+    val captureStatus: String?,
     val contract: String?,
     val totalCalories: Double?,
+    val confidence: String?,
+    val lookupDepth: Int?,
+    val deduplicated: Boolean,
 )
 
 object CaptureCompletionParser {
@@ -78,8 +83,12 @@ object CaptureCompletionParser {
         return CaptureConfirmation(
             message = message,
             backendStatus = json.optString("status").trim().takeIf(String::isNotBlank),
+            captureStatus = json.optString("capture_status").trim().takeIf(String::isNotBlank),
             contract = json.optString("contract").trim().takeIf(String::isNotBlank),
             totalCalories = totalCalories,
+            confidence = json.optString("confidence").trim().takeIf(String::isNotBlank),
+            lookupDepth = json.optInt("lookup_depth").takeIf { it in 1..5 },
+            deduplicated = json.optBoolean("deduplicated", false),
         )
     }
 }

@@ -1,10 +1,13 @@
 {
   "schema_version": 1,
-  "backend_version": "2.8.0",
+  "backend_version": "2.8.1",
+  "deployed_backend_version": "2.8.0",
   "compatibility_posture": "additive",
   "source_path": "shared-backend/Code.gs",
-  "source_status": "PENDING_EXACT_SOURCE_CHECKPOINT",
+  "source_status": "ADDITIVE_PATCH_READY_AUTHORITATIVE_BASE_PENDING",
   "source_sha256": null,
+  "additive_patch_path": "shared-backend/patches/2.8.1-nutrition-reliability.gs",
+  "additive_patch_sha256": "fe3282093a9d32ef42c117527ede91e24fdf9a1d36119a12bda619c471de7556",
   "deployment_id": null,
   "deployment_verification": "PENDING",
   "registry_document_id": "1RaxZU2JNl5Dr4-puIvy01q8nmbiJlbx0RhOir2oWvCY",
@@ -14,5 +17,5 @@
   ],
   "preserved_android_contract_floor": "2.7.0",
   "preflight_required": true,
-  "notes": "Do not create Code.gs until the exact authoritative 2.8.0 source is available for byte-exact hashing."
+  "notes": "2.8.1 nutrition patch is ready but not deployed. Do not create Code.gs until the exact authoritative 2.8.0 source is migrated; install the additive module and documented router stanza into the live authority."
 }

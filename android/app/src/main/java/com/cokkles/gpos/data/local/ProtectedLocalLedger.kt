@@ -182,7 +182,7 @@ class ProtectedLocalLedger(
                             .put("created_at", item.createdAtEpochMs)
                             .put("updated_at", item.updatedAtEpochMs)
                             .apply {
-                                item.result?.let { put("result", it) }
+                                item.result?.let { put("result", it.take(1000)) }
                                 item.error?.let { put("error", it) }
                                 item.payload?.let { put("payload", it) }
                                 put("attempts", item.attempts)

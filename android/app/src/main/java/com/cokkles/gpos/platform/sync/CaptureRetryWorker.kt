@@ -87,12 +87,40 @@ class CaptureSubmissionProcessor(
         val attempt = receipt.attempts + 1
         ledgerStore.update { current -> current.copy(receipts = current.receipts.map {
             if (it.id == receiptId) it.copy(state = LocalReceiptState.SENDING, attempts = attempt,
-                nextRetryAtEpochMs = null, manualRetryAllowed = false, updatedAtEpochMs = System.currentTimeMillis(), error = null) else it
+                nextRetryAtEpochMs = null, manualRetryAllowed = false,
+                updatedAtEpochMs = System.currentTimeMillis(), error = null,
+                result = "Submitting to AEGIS…") else it
         }) }
 
         val result = runCatching { commandClient.submitCapture(credential.idToken, kind, receipt.payload, receipt.id) }
         if (credentialStore.read() == null || ledgerStore.read().receipts.none { it.id == receiptId }) return@withLock CaptureProcessOutcome.Ignored
         result.getOrNull()?.let { confirmed ->
+            if (confirmed.captureStatus.equals("QUEUED", ignoreCase = true)) {
+                val delay = CaptureReliabilityPolicy.retryDelayMs(attempt)
+                    ?: return@withLock failIfStillOwned(
+                        receiptId,
+                        kind,
+                        "AEGIS could not complete the capture after ${CaptureReliabilityPolicy.MAX_ATTEMPTS} attempts.",
+                        attempt,
+                        manualRetryAllowed = true,
+                        diagnosticCode = "CAPTURE_RETRY_EXHAUSTED",
+                        requestDurationMs = confirmed.durationMs,
+                    )
+                val next = System.currentTimeMillis() + delay
+                ledgerStore.update { current -> current.copy(receipts = current.receipts.map {
+                    if (it.id == receiptId) it.copy(
+                        state = LocalReceiptState.QUEUED,
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                        result = "AEGIS is temporarily busy. Retry ${attempt + 1}/${CaptureReliabilityPolicy.MAX_ATTEMPTS} is queued.",
+                        error = null,
+                        attempts = attempt,
+                        nextRetryAtEpochMs = next,
+                        manualRetryAllowed = false,
+                    ) else it
+                }) }
+                scheduler.schedule(receiptId, delay)
+                return@withLock CaptureProcessOutcome.Queued
+            }
             if (CaptureReliabilityPolicy.isUnconfirmedResult(confirmed.message)) {
                 return@withLock failIfStillOwned(
                     receiptId,
@@ -106,7 +134,12 @@ class CaptureSubmissionProcessor(
             val now = System.currentTimeMillis()
             ledgerStore.update { current -> current.copy(receipts = current.receipts.map {
                 if (it.id == receiptId) it.copy(state = LocalReceiptState.CONFIRMED, updatedAtEpochMs = now,
-                    result = confirmed.message.take(500), error = null, nextRetryAtEpochMs = null,
+                    result = buildString {
+                        append(confirmed.message)
+                        confirmed.confidence?.let { append(" • Confidence: ").append(it.replace('_', ' ')) }
+                        confirmed.lookupDepth?.let { append(" • Lookup depth: ").append(it) }
+                        if (confirmed.deduplicated) append(" • Duplicate safely ignored")
+                    }.take(1000), error = null, nextRetryAtEpochMs = null,
                     manualRetryAllowed = false, diagnosticCode = "CONFIRMED",
                     requestDurationMs = confirmed.durationMs) else it
             }) }
