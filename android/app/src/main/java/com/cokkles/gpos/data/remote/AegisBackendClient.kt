@@ -1,6 +1,7 @@
 package com.cokkles.gpos.data.remote
 
 import com.cokkles.gpos.BuildConfig
+import com.cokkles.gpos.platform.security.GoogleIdTokenExpiry
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
@@ -52,10 +53,10 @@ class AegisBackendClient(
     }
 
     suspend fun authenticate(idToken: String): AuthenticatedSession =
-        parseAuthenticatedSession(postJson("auth_login", idToken))
+        parseAuthenticatedSession(postJson("auth_login", idToken), idToken)
 
     suspend fun validateSession(idToken: String): AuthenticatedSession =
-        parseAuthenticatedSession(postJson("auth_session", idToken))
+        parseAuthenticatedSession(postJson("auth_session", idToken), idToken)
 
     suspend fun logout(idToken: String) {
         runCatching { postJson("auth_logout", idToken) }
@@ -147,7 +148,7 @@ class AegisBackendClient(
         return json
     }
 
-    private fun parseAuthenticatedSession(json: JSONObject): AuthenticatedSession {
+    private fun parseAuthenticatedSession(json: JSONObject, idToken: String): AuthenticatedSession {
         if (!json.optBoolean("authenticated", false)) {
             throw AegisBackendException(
                 code = json.optString("code", "AEGIS_AUTH_FAILED"),
@@ -157,10 +158,15 @@ class AegisBackendClient(
         val userJson = json.optJSONObject("user")
             ?: throw AegisBackendException("AEGIS_AUTH_FAILED", "Authenticated response did not contain a user.")
         val sessionJson = json.optJSONObject("session")
-        val expiresAt = sessionJson
+        val backendExpiry = sessionJson
             ?.optString("expires_at")
             ?.takeIf { it.isNotBlank() }
             ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+        val tokenExpiry = GoogleIdTokenExpiry.parseEpochMs(idToken)
+        // The backend remains the authority for authentication. This local decode is used only
+        // to schedule renewal; the earlier valid boundary is deliberately chosen.
+        val expiresAt = listOfNotNull(backendExpiry, tokenExpiry).minOrNull()
+            ?: System.currentTimeMillis() + UNKNOWN_EXPIRY_RECHECK_MS
 
         return AuthenticatedSession(
             user = AuthenticatedUser(
@@ -216,6 +222,7 @@ class AegisBackendClient(
         const val CONNECT_TIMEOUT_SECONDS = 10L
         const val READ_TIMEOUT_SECONDS = 15L
         const val CALL_TIMEOUT_SECONDS = 20L
+        const val UNKNOWN_EXPIRY_RECHECK_MS = 30L * 60L * 1000L
         const val MAX_RESPONSE_BYTES = 2L * 1024L * 1024L
 
         val READ_ONLY_ACTIONS = setOf(
