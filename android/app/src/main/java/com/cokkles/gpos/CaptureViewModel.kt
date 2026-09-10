@@ -36,6 +36,22 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val body = CaptureInputNormalizer.normalize(kind, text)
         if (body.isBlank() || _state.value.submitting) return
         val now = System.currentTimeMillis()
+        _state.update { it.copy(submitting = true, error = null) }
+        val duplicate = ledgerStore.read().receipts.firstOrNull {
+            it.kind == kind.wireName &&
+                it.payload == body &&
+                it.state !in setOf(LocalReceiptState.CONFIRMED, LocalReceiptState.CANCELLED) &&
+                now - it.createdAtEpochMs <= DUPLICATE_TAP_WINDOW_MS
+        }
+        if (duplicate != null) {
+            scheduler.schedule(duplicate.id, 0L)
+            _state.value = CaptureUiState(
+                ledger = ledgerStore.read(),
+                submitting = false,
+                lastMessage = "This capture is already queued. Reusing its original ID (${duplicate.id.take(8)}).",
+            )
+            return
+        }
         val id = UUID.randomUUID().toString()
         val sending = LocalReceipt(
             id = id,
@@ -57,17 +73,27 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     fun retry(id: String) {
         if (_state.value.submitting) return
+        _state.update { it.copy(submitting = true, error = null) }
+        val target = ledgerStore.read().receipts.firstOrNull { it.id == id }
+        if (target == null || (!target.manualRetryAllowed && !target.serverManaged)) {
+            _state.update { it.copy(submitting = false) }
+            return
+        }
         val updated = ledgerStore.update { current -> current.copy(receipts = current.receipts.map {
-            if (it.id == id && it.manualRetryAllowed) it.copy(
-                state = LocalReceiptState.QUEUED,
+            if (it.id == id) it.copy(
+                state = if (it.serverManaged) LocalReceiptState.WAITING else LocalReceiptState.QUEUED,
                 updatedAtEpochMs = System.currentTimeMillis(),
-                result = "Manual retry queued.",
+                result = if (it.serverManaged) "Server status check queued." else "Manual retry queued with the same capture ID.",
                 error = null,
-                manualRetryAllowed = false,
+                attempts = if (it.serverManaged) it.attempts else 0,
             ) else it
         }) }
-        scheduler.schedule(id, 0L)
-        _state.value = CaptureUiState(updated, false, "Retry queued in the background.")
+        scheduler.schedule(id, 0L, manual = true)
+        _state.value = CaptureUiState(
+            updated,
+            false,
+            if (target.serverManaged) "Checking the existing server capture." else "Retry queued with the original duplicate-safe ID.",
+        )
     }
 
     fun acknowledgeLocalAlert(id: String) {
@@ -81,5 +107,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         scheduler.cancelAll()
         ledgerStore.clear()
         _state.value = CaptureUiState()
+    }
+
+    private companion object {
+        const val DUPLICATE_TAP_WINDOW_MS = 15_000L
     }
 }
