@@ -117,6 +117,10 @@ class AegisCommandClient(
                 confidence = confirmation.confidence,
                 lookupDepth = confirmation.lookupDepth,
                 deduplicated = confirmation.deduplicated,
+                terminal = confirmation.terminal,
+                serverManaged = confirmation.serverManaged,
+                retryAfterMs = confirmation.retryAfterMs,
+                diagnosticCode = confirmation.diagnosticCode,
             )
         } catch (error: SocketTimeoutException) {
             throw AegisBackendException(
@@ -133,6 +137,62 @@ class AegisCommandClient(
                 writeState = "UNKNOWN",
             )
         }
+    }
+
+    suspend fun enqueueNutritionCapture(
+        idToken: String,
+        text: String,
+        submissionId: String,
+    ): CaptureSubmissionResult =
+        submitCapturePayload(
+            idToken = idToken,
+            kind = CaptureKind.CALORIES,
+            payload = enqueueNutritionPayload(text, submissionId),
+        )
+
+    suspend fun readNutritionCaptureStatus(
+        idToken: String,
+        submissionId: String,
+    ): CaptureSubmissionResult =
+        submitCapturePayload(
+            idToken = idToken,
+            kind = CaptureKind.CALORIES,
+            payload = nutritionCaptureStatusPayload(submissionId),
+        )
+
+    suspend fun retryNutritionCapture(
+        idToken: String,
+        submissionId: String,
+    ): CaptureSubmissionResult =
+        submitCapturePayload(
+            idToken = idToken,
+            kind = CaptureKind.CALORIES,
+            payload = retryNutritionCapturePayload(submissionId),
+        )
+
+    private suspend fun submitCapturePayload(
+        idToken: String,
+        kind: CaptureKind,
+        payload: JSONObject,
+    ): CaptureSubmissionResult {
+        val startedAt = SystemClock.elapsedRealtime()
+        val json = postAuthenticated(idToken, payload)
+        val confirmation = CaptureCompletionParser.parse(json, kind)
+        return CaptureSubmissionResult(
+            message = confirmation.message,
+            durationMs = SystemClock.elapsedRealtime() - startedAt,
+            backendStatus = confirmation.backendStatus,
+            captureStatus = confirmation.captureStatus,
+            contract = confirmation.contract,
+            totalCalories = confirmation.totalCalories,
+            confidence = confirmation.confidence,
+            lookupDepth = confirmation.lookupDepth,
+            deduplicated = confirmation.deduplicated,
+            terminal = confirmation.terminal,
+            serverManaged = confirmation.serverManaged,
+            retryAfterMs = confirmation.retryAfterMs,
+            diagnosticCode = confirmation.diagnosticCode,
+        )
     }
 
     suspend fun acknowledgeNotification(
