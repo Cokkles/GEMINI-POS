@@ -31,6 +31,8 @@ data class InteractionCapabilities(
     val taskHistoryV1: Boolean = false,
     val captureReliabilityV1: Boolean = false,
     val nutritionCaptureV2: Boolean = false,
+    val nutritionCaptureAsyncV1: Boolean = false,
+    val nutritionCaptureStatusV1: Boolean = false,
 )
 
 data class AegisFollowup(
@@ -136,6 +138,8 @@ class AegisInteractionClient(
             taskHistoryV1 = ux.optBoolean("tasks_history_v1"),
             captureReliabilityV1 = ux.optBoolean("capture_reliability_v1"),
             nutritionCaptureV2 = ux.optBoolean("nutrition_capture_v2"),
+            nutritionCaptureAsyncV1 = ux.optBoolean("nutrition_capture_async_v1"),
+            nutritionCaptureStatusV1 = ux.optBoolean("nutrition_capture_status_v1"),
         )
     }
 
