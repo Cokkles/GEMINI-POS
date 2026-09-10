@@ -1,14 +1,27 @@
 # AEGIS shared backend changelog
 
-## 2.8.1 — nutrition reliability candidate
+## 2.8.2 — durable nutrition processing candidate
+
+- Added an asynchronous server-side nutrition queue with stable `capture_id` lookup, leases,
+  scheduled capacity retries, explicit status polling, and operator-controlled retry.
+- Android can stop resubmitting after server acceptance; Gemini latency and HTTP 429/503 no
+  longer occupy the mobile request or create ambiguous client-side write state.
+- Added exact input-conflict detection, cached reuse of prior confirmed identical estimates,
+  post-write row-count verification, and zero-macro rejection.
+- Preserves the 2.8.1 `capture_nutrition` action, legacy `/calories` behavior, and Nutrition A:X.
+- Deployment status: candidate only. The 2.8.1 deployment remains the live rollback point until
+  Apps Script tests, a new deployment, capability checks, and cross-client smoke tests pass.
+
+## 2.8.1 — deployed nutrition reliability checkpoint
 
 - Added the optional `capture_nutrition` POST action while retaining the legacy `/calories` message route.
 - Added Capture-ID idempotency, explicit `CONFIRMED`/`QUEUED`/`FAILED` states, retryability and write-state metadata.
 - Added grounded source priority: official restaurant/manufacturer, USDA FoodData Central, Open Food Facts, component reconstruction, then transparent conservative estimation.
 - Added strict JSON validation and expanded nutrition fields in additive sheet columns K:X; legacy A:J remain unchanged.
 - Added high-volume handling for Gemini HTTP 429/503 and forbids zero-macro placeholder rows.
-- Source is an additive module because the authoritative full 2.8.0 `Code.gs` has not yet been migrated into either Git mirror.
-- Deployment status: pending Apps Script installation, new deployment version, runtime capability verification, and cross-client smoke testing.
+- Runtime `auth_config.backend_version` was observed as 2.8.1 and the V281 input/validation tests passed.
+- Android exposed the remaining limitation: Gemini HTTP 429 leaves processing dependent on client retries;
+  this deployment is the rollback point for the 2.8.2 durable queue candidate.
 
 ## 2.8.0 — declared cross-client baseline
 
