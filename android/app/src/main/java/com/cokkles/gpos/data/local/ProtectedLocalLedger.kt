@@ -14,9 +14,12 @@ import org.json.JSONObject
 
 enum class LocalReceiptState {
     SENDING,
+    ACCEPTED,
+    WAITING,
     CONFIRMED,
     QUEUED,
     FAILED,
+    NEEDS_REVIEW,
     CANCELLED,
 }
 
@@ -72,6 +75,10 @@ data class LocalReceipt(
     val manualRetryAllowed: Boolean = false,
     val diagnosticCode: String? = null,
     val requestDurationMs: Long? = null,
+    val serverManaged: Boolean = false,
+    val serverAcceptedAtEpochMs: Long? = null,
+    val statusChecks: Int = 0,
+    val lastServerStatus: String? = null,
 )
 
 data class LocalAlert(
@@ -190,6 +197,10 @@ class ProtectedLocalLedger(
                                 put("manual_retry_allowed", item.manualRetryAllowed)
                                 item.diagnosticCode?.let { put("diagnostic_code", it) }
                                 item.requestDurationMs?.let { put("request_duration_ms", it) }
+                                put("server_managed", item.serverManaged)
+                                item.serverAcceptedAtEpochMs?.let { put("server_accepted_at", it) }
+                                put("status_checks", item.statusChecks)
+                                item.lastServerStatus?.let { put("last_server_status", it) }
                             },
                     )
                 }
@@ -308,6 +319,10 @@ private fun parseLedger(json: JSONObject): LocalLedger = LocalLedger(
             manualRetryAllowed = item.optBoolean("manual_retry_allowed", false),
             diagnosticCode = item.optString("diagnostic_code").trim().takeIf(String::isNotBlank),
             requestDurationMs = item.optLong("request_duration_ms").takeIf { it > 0 },
+            serverManaged = item.optBoolean("server_managed", false),
+            serverAcceptedAtEpochMs = item.optLong("server_accepted_at").takeIf { it > 0 },
+            statusChecks = item.optInt("status_checks", 0).coerceAtLeast(0),
+            lastServerStatus = item.optString("last_server_status").trim().takeIf(String::isNotBlank),
         )
     }.filter { it.id.isNotBlank() },
     alerts = json.optJSONArray("alerts").mapObjects { item ->
