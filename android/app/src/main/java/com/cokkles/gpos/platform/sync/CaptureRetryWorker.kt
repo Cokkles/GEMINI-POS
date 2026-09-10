@@ -270,7 +270,7 @@ class CaptureSubmissionProcessor(
         return CaptureProcessOutcome.Queued
     }
 
-    private fun applyServerManagedResult(
+    private suspend fun applyServerManagedResult(
         receipt: LocalReceipt,
         kind: CaptureKind,
         response: com.cokkles.gpos.data.command.CaptureSubmissionResult,
@@ -349,7 +349,7 @@ class CaptureSubmissionProcessor(
         }
     }
 
-    private fun queueSafeSubmissionRetry(
+    private suspend fun queueSafeSubmissionRetry(
         receipt: LocalReceipt,
         kind: CaptureKind,
         attempt: Int,
@@ -381,7 +381,7 @@ class CaptureSubmissionProcessor(
         return CaptureProcessOutcome.Queued
     }
 
-    private fun confirmIfStillOwned(
+    private suspend fun confirmIfStillOwned(
         receiptId: String,
         kind: CaptureKind,
         confirmed: com.cokkles.gpos.data.command.CaptureSubmissionResult,
@@ -423,7 +423,7 @@ class CaptureSubmissionProcessor(
         return CaptureProcessOutcome.Confirmed
     }
 
-    private fun failIfStillOwned(receiptId: String, kind: CaptureKind, message: String, attempts: Int,
+    private suspend fun failIfStillOwned(receiptId: String, kind: CaptureKind, message: String, attempts: Int,
         manualRetryAllowed: Boolean = false,
         diagnosticCode: String? = null,
         requestDurationMs: Long? = null,
