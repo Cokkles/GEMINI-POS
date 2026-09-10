@@ -31,9 +31,15 @@ class SessionContinuityPolicyTest {
     }
 
     @Test fun preservesHealthyOrUnknownLifetimeSession() {
-        assertFalse(SessionContinuityPolicy.shouldRenew(connected(now + 120_001), true, now))
+        assertFalse(SessionContinuityPolicy.shouldRenew(connected(now + SessionContinuityPolicy.RENEW_BEFORE_MS + 1), true, now))
         assertFalse(SessionContinuityPolicy.shouldRenew(connected(null), true, now))
-        assertFalse(SessionContinuityPolicy.shouldRenew(AuthState.OfflineRestored(now + 600_000, "Offline"), true, now))
+        assertFalse(SessionContinuityPolicy.shouldRenew(AuthState.OfflineRestored(now + SessionContinuityPolicy.RENEW_BEFORE_MS + 1, "Offline"), true, now))
+    }
+
+    @Test fun renewalFailuresUseBoundedBackoff() {
+        assertTrue(SessionContinuityPolicy.renewalRetryDelayMs(1) == 30_000L)
+        assertTrue(SessionContinuityPolicy.renewalRetryDelayMs(3) == 120_000L)
+        assertTrue(SessionContinuityPolicy.renewalRetryDelayMs(99) == 600_000L)
     }
 
     @Test fun restoresAStillValidEncryptedProfileWithoutWaitingForNetworkValidation() {

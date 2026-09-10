@@ -224,32 +224,64 @@ class ParityActivity : ComponentActivity() {
     private fun attemptAuthorizedSessionContinuity() {
         if (!authContinuity.wasAuthenticated() || continuityJob?.isActive == true) return
         continuityJob = lifecycleScope.launch {
-            // Discovery and AUTH-1 validation each have a 20-second transport deadline.
-            // Wait for their result instead of abandoning renewal after three seconds.
-            val settled = withTimeoutOrNull(45_000L) {
-                runtimeViewModel.uiState.first {
-                    !it.backend.checking && it.auth != AuthState.Restoring && it.auth != AuthState.Authenticating
+            var consecutiveRenewalFailures = 0
+            while (authContinuity.wasAuthenticated()) {
+                // Discovery and AUTH-1 validation each have a 20-second transport deadline.
+                val settled = withTimeoutOrNull(45_000L) {
+                    runtimeViewModel.uiState.first {
+                        !it.backend.checking && it.auth != AuthState.Restoring && it.auth != AuthState.Authenticating
+                    }
                 }
-            } ?: return@launch
-            val expiry = (settled.auth as? AuthState.Authenticated)?.expiresAtEpochMs
-            if (expiry != null) {
-                delay((expiry - System.currentTimeMillis() - SessionContinuityPolicy.RENEW_BEFORE_MS).coerceAtLeast(0L))
-            }
-            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
-            val now = System.currentTimeMillis()
-            if (now - lastContinuityAttemptAt < 60_000L) return@launch
-            if (!SessionContinuityPolicy.shouldRenew(runtimeViewModel.uiState.value.auth, authContinuity.wasAuthenticated(), now)) return@launch
-            lastContinuityAttemptAt = now
-            runCatching {
-                googleSignInCoordinator.requestAuthorizedIdToken(BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID)
-            }.onSuccess { token ->
-                if (authContinuity.wasAuthenticated()) runtimeViewModel.renewWithIdToken(token)
-            }.onFailure { error ->
-                if (runtimeViewModel.uiState.value.auth is AuthState.ReconnectRequired) {
-                    runtimeViewModel.reportAuthFailure(
-                        "Silent Google renewal was unavailable. Open System and reconnect when convenient. ${error.message.orEmpty()}".trim(),
-                    )
+                if (settled == null) {
+                    delay(SessionContinuityPolicy.renewalRetryDelayMs(++consecutiveRenewalFailures))
+                    continue
                 }
+
+                val now = System.currentTimeMillis()
+                val expiry = when (val auth = settled.auth) {
+                    is AuthState.Authenticated -> auth.expiresAtEpochMs
+                    is AuthState.OfflineRestored -> auth.expiresAtEpochMs
+                    is AuthState.ReconnectRequired -> auth.expiresAtEpochMs
+                    else -> null
+                }
+                if (!SessionContinuityPolicy.shouldRenew(settled.auth, authContinuity.wasAuthenticated(), now)) {
+                    val untilRenewal = expiry
+                        ?.minus(now)
+                        ?.minus(SessionContinuityPolicy.RENEW_BEFORE_MS)
+                        ?.coerceAtLeast(SessionContinuityPolicy.MIN_RECHECK_MS)
+                        ?: SessionContinuityPolicy.UNKNOWN_EXPIRY_RECHECK_MS
+                    delay(untilRenewal.coerceAtMost(SessionContinuityPolicy.MAX_RECHECK_MS))
+                    continue
+                }
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    delay(SessionContinuityPolicy.MIN_RECHECK_MS)
+                    continue
+                }
+
+                val attemptAt = System.currentTimeMillis()
+                if (attemptAt - lastContinuityAttemptAt < SessionContinuityPolicy.MIN_RECHECK_MS) {
+                    delay(SessionContinuityPolicy.MIN_RECHECK_MS - (attemptAt - lastContinuityAttemptAt))
+                    continue
+                }
+                lastContinuityAttemptAt = attemptAt
+                val tokenResult = runCatching {
+                    googleSignInCoordinator.requestAuthorizedIdToken(BuildConfig.GPOS_GOOGLE_SERVER_CLIENT_ID)
+                }
+                if (tokenResult.isFailure) {
+                    consecutiveRenewalFailures++
+                    delay(SessionContinuityPolicy.renewalRetryDelayMs(consecutiveRenewalFailures))
+                    continue
+                }
+
+                runtimeViewModel.renewWithIdToken(tokenResult.getOrThrow())
+                val renewed = withTimeoutOrNull(30_000L) {
+                    runtimeViewModel.uiState.first { state ->
+                        val renewedExpiry = (state.auth as? AuthState.Authenticated)?.expiresAtEpochMs
+                        renewedExpiry != null && (expiry == null || renewedExpiry > expiry + 30_000L)
+                    }
+                } != null
+                consecutiveRenewalFailures = if (renewed) 0 else consecutiveRenewalFailures + 1
+                delay(SessionContinuityPolicy.renewalRetryDelayMs(consecutiveRenewalFailures))
             }
         }
     }

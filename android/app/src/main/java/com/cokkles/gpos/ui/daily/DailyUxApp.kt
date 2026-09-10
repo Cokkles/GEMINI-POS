@@ -103,6 +103,7 @@ import com.cokkles.gpos.data.interaction.AegisFollowup
 import com.cokkles.gpos.data.interaction.AiChatMessage
 import com.cokkles.gpos.data.local.LocalAlert
 import com.cokkles.gpos.data.local.LocalReceipt
+import com.cokkles.gpos.data.local.LocalReceiptState
 import com.cokkles.gpos.data.local.PendingTaskMutation
 import com.cokkles.gpos.data.remote.AuthState
 import com.cokkles.gpos.data.remote.CalendarRangeEvent
@@ -863,7 +864,7 @@ private fun CaptureScreen(
                 enabled = canMutate && text.isNotBlank() && !state.submitting,
             ) { Text(if (state.submitting) "Saving…" else "Save ${primaryCaptureLabel(selected)}") }
         }
-        state.lastMessage?.let { item { SummaryCard("Saved ✓", it) } }
+        state.lastMessage?.let { item { SummaryCard("Capture queued", it) } }
         state.error?.let { item { SummaryCard("Could not save", it) } }
         item {
             OutlinedButton(onClick = onOpenAlerts, modifier = Modifier.fillMaxWidth()) {
@@ -1164,18 +1165,26 @@ private fun AlertsScreen(
     onCaptureRetry: (String) -> Unit,
 ) {
     val localLedger = mergeLedger(captureState, taskQueueState)
+    val activeReceipts = localLedger.second.filter {
+        it.state !in setOf(LocalReceiptState.CONFIRMED, LocalReceiptState.CANCELLED)
+    }
+    val confirmedReceipts = localLedger.second.filter { it.state == LocalReceiptState.CONFIRMED }
     val server = runtimeState.notifications?.snapshot?.active.orEmpty()
+    var activeExpanded by rememberSaveable { mutableStateOf(true) }
     var confirmationsExpanded by rememberSaveable { mutableStateOf(false) }
     ScreenList {
         item { Text("Alerts & Receipts", style = MaterialTheme.typography.headlineMedium) }
-        item { SummaryCard("Active attention", "${server.size} server • ${localLedger.first.count { !it.acknowledged }} local • ${localLedger.second.size} confirmations") }
+        item { SummaryCard("Active attention", "${server.size} server • ${localLedger.first.count { !it.acknowledged }} local • ${activeReceipts.size} capture status") }
         server.sortedBy { severityRank(it.severity) }.forEach { notification ->
             item { ServerAlertCard(notification, canMutate && notification.id !in notificationCommandState.submittingIds, onServerAck) }
         }
         localLedger.first.filterNot { it.acknowledged }.forEach { alert -> item { LocalAlertCard(alert, onLocalAlertAck) } }
-        item { CollapsibleSectionHeader("Recent confirmations", localLedger.second.size, confirmationsExpanded, { confirmationsExpanded = !confirmationsExpanded }) }
-        if (confirmationsExpanded && localLedger.second.isEmpty()) item { SummaryCard("No local confirmations yet", "Capture and delayed Task changes will appear here.") }
-        else if (confirmationsExpanded) items(localLedger.second.take(40)) { receipt -> ReceiptCard(receipt, onCaptureRetry) }
+        item { CollapsibleSectionHeader("Capture status", activeReceipts.size, activeExpanded, { activeExpanded = !activeExpanded }) }
+        if (activeExpanded && activeReceipts.isEmpty()) item { SummaryCard("Nothing waiting", "No captures are queued, processing, or waiting for review.") }
+        else if (activeExpanded) items(activeReceipts.take(40)) { receipt -> ReceiptCard(receipt, onCaptureRetry) }
+        item { CollapsibleSectionHeader("Recent confirmations", confirmedReceipts.size, confirmationsExpanded, { confirmationsExpanded = !confirmationsExpanded }) }
+        if (confirmationsExpanded && confirmedReceipts.isEmpty()) item { SummaryCard("No local confirmations yet", "Confirmed capture and delayed Task results will appear here.") }
+        else if (confirmationsExpanded) items(confirmedReceipts.take(40)) { receipt -> ReceiptCard(receipt, onCaptureRetry) }
     }
 }
 
@@ -1443,7 +1452,10 @@ private fun ReceiptCard(receipt: LocalReceipt, onRetry: (String) -> Unit) {
                 humanizeToken(receipt.kind),
                 receipt.result,
                 receipt.error,
-                receipt.attempts.takeIf { it > 0 }?.let { "Attempt $it of 3" },
+                receipt.attempts.takeIf { it > 0 && !receipt.serverManaged }?.let { "Submission attempt ${it.coerceAtMost(3)} of 3" },
+                receipt.statusChecks.takeIf { receipt.serverManaged && it > 0 }?.let { "$it server status check${if (it == 1) "" else "s"}" },
+                receipt.lastServerStatus?.let { "Server ${humanizeToken(it)}" },
+                "ID ${receipt.id.take(8)}",
                 receipt.diagnosticCode?.let { "Diagnostic $it" },
                 receipt.requestDurationMs?.let { "${it / 1000.0}s" },
                 receipt.nextRetryAtEpochMs?.let { "Retry ${formatTime(it)}" },
@@ -1451,9 +1463,13 @@ private fun ReceiptCard(receipt: LocalReceipt, onRetry: (String) -> Unit) {
             ).joinToString(" • ")) },
             trailingContent = { Text(humanizeToken(receipt.state.name) ?: receipt.state.name) },
             )
-            if (receipt.manualRetryAllowed) {
+            if (receipt.manualRetryAllowed || (receipt.serverManaged && receipt.state !in setOf(LocalReceiptState.CONFIRMED, LocalReceiptState.CANCELLED))) {
                 OutlinedButton(onClick = { onRetry(receipt.id) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text("Retry")
+                    Text(when {
+                        !receipt.serverManaged -> "Retry"
+                        receipt.manualRetryAllowed -> "Retry processing"
+                        else -> "Check status"
+                    })
                 }
             }
         }

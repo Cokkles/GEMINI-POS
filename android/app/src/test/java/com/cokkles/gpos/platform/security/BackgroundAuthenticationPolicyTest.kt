@@ -9,7 +9,11 @@ class BackgroundAuthenticationPolicyTest {
     @Test fun expiredTokenRequiresForegroundRenewalWithoutDestroyingContinuity() {
         assertTrue(BackgroundAuthenticationPolicy.requiresForegroundRenewal(999L, 1_000L))
         assertTrue(BackgroundAuthenticationPolicy.requiresForegroundRenewal(1_000L, 1_000L))
-        assertFalse(BackgroundAuthenticationPolicy.requiresForegroundRenewal(1_001L, 1_000L))
+        assertTrue(BackgroundAuthenticationPolicy.requiresForegroundRenewal(1_001L, 1_000L))
+        assertFalse(BackgroundAuthenticationPolicy.requiresForegroundRenewal(
+            1_000L + SessionContinuityPolicy.RENEW_BEFORE_MS + 1L,
+            1_000L,
+        ))
         assertFalse(BackgroundAuthenticationPolicy.requiresForegroundRenewal(null, 1_000L))
     }
 

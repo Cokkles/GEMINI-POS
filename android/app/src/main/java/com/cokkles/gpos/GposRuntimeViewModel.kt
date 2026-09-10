@@ -631,11 +631,7 @@ class GposRuntimeViewModel(
         if (staleAfterEpochMs < System.currentTimeMillis()) RuntimeDataSource.STALE else RuntimeDataSource.CACHED
 
     private fun isAuthenticationFailure(error: Throwable): Boolean {
-        val message = error.safeMessage().lowercase()
-        return (error is AegisBackendException && error.code in AUTH_FAILURE_CODES) ||
-            message.contains("authentication") ||
-            message.contains("identity token") ||
-            message.contains("not authorized")
+        return error is AegisBackendException && error.code in AUTH_FAILURE_CODES
     }
 
     private companion object {

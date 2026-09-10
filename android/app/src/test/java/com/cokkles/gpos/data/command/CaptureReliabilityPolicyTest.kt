@@ -20,6 +20,18 @@ class CaptureReliabilityPolicyTest {
         assertEquals("GPOS_ANDROID", payload.getString("client_id"))
     }
 
+    @Test fun `async nutrition requests retain stable capture id`() {
+        val enqueue = enqueueNutritionPayload("eggs, toast", "capture-1234")
+        val status = nutritionCaptureStatusPayload("capture-1234")
+        val retry = retryNutritionCapturePayload("capture-1234")
+        assertEquals("enqueue_nutrition_capture", enqueue.getString("action"))
+        assertEquals("get_nutrition_capture_status", status.getString("action"))
+        assertEquals("retry_nutrition_capture", retry.getString("action"))
+        assertEquals("capture-1234", enqueue.getString("capture_id"))
+        assertEquals("capture-1234", status.getString("capture_id"))
+        assertEquals("capture-1234", retry.getString("capture_id"))
+    }
+
     @Test fun `newline separated calories preserve original meal format`() {
         assertEquals("eggs\ntoast\ncoffee", CaptureInputNormalizer.normalize(CaptureKind.CALORIES, "\neggs\ntoast\ncoffee\n"))
     }
@@ -72,6 +84,22 @@ class CaptureReliabilityPolicyTest {
         assertEquals("MEDIUM_LOW", parsed.confidence)
         assertEquals(5, parsed.lookupDepth)
         assertTrue(parsed.deduplicated)
+    }
+
+    @Test fun `server managed pending nutrition is not terminal`() {
+        val parsed = CaptureCompletionParser.parse(
+            JSONObject()
+                .put("status", "success")
+                .put("capture_status", "RETRY_SCHEDULED")
+                .put("result", "Capture saved; waiting for capacity")
+                .put("terminal", false)
+                .put("server_managed", true)
+                .put("retry_after_ms", 120_000),
+            CaptureKind.CALORIES,
+        )
+        assertFalse(parsed.terminal)
+        assertTrue(parsed.serverManaged)
+        assertEquals(120_000L, parsed.retryAfterMs)
     }
 
     @Test fun `nutrition contract capacity failure is safe to retry`() {

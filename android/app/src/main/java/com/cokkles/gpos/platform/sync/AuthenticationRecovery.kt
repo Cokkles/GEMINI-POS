@@ -43,7 +43,11 @@ class AuthenticationRecovery(context: Context) {
         current.receipts
             .filter { receipt ->
                 receipt.payload != null &&
-                    receipt.state == LocalReceiptState.QUEUED
+                    receipt.state in setOf(
+                        LocalReceiptState.QUEUED,
+                        LocalReceiptState.ACCEPTED,
+                        LocalReceiptState.WAITING,
+                    )
             }
             .forEach { receipt ->
                 val delay = (receipt.nextRetryAtEpochMs ?: now) - now

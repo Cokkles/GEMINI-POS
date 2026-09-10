@@ -27,6 +27,10 @@ data class CaptureSubmissionResult(
     val confidence: String? = null,
     val lookupDepth: Int? = null,
     val deduplicated: Boolean = false,
+    val terminal: Boolean = true,
+    val serverManaged: Boolean = false,
+    val retryAfterMs: Long? = null,
+    val diagnosticCode: String? = null,
 )
 
 internal fun capturePayload(
@@ -56,3 +60,22 @@ internal fun capturePayload(
         .put("client_id", "GPOS_ANDROID")
         .put("client_version", BuildConfig.VERSION_NAME)
 }
+
+internal fun enqueueNutritionPayload(
+    text: String,
+    submissionId: String,
+): JSONObject = capturePayload(CaptureKind.CALORIES, text, submissionId)
+    .put("action", "enqueue_nutrition_capture")
+    .put("nutrition_contract", "AEGIS_NUTRITION_CAPTURE_ASYNC_V1")
+
+internal fun nutritionCaptureStatusPayload(submissionId: String): JSONObject =
+    JSONObject()
+        .put("action", "get_nutrition_capture_status")
+        .put("capture_id", submissionId)
+        .put("submission_id", submissionId)
+        .put("client_id", "GPOS_ANDROID")
+        .put("client_version", BuildConfig.VERSION_NAME)
+
+internal fun retryNutritionCapturePayload(submissionId: String): JSONObject =
+    nutritionCaptureStatusPayload(submissionId)
+        .put("action", "retry_nutrition_capture")
