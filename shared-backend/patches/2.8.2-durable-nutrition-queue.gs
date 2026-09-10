@@ -19,6 +19,7 @@ var AEGIS_NUTRITION_MAX_WORKER_JOBS_V282 = 3;
 var AEGIS_NUTRITION_MAX_AI_ATTEMPTS_V282 = 6;
 var AEGIS_NUTRITION_PROCESSING_LEASE_MS_V282 = 10 * 60 * 1000;
 var AEGIS_NUTRITION_CACHE_LIMIT_V282 = 1000;
+var AEGIS_NUTRITION_CACHE_TTL_MS_V282 = 30 * 24 * 60 * 60 * 1000;
 
 var AEGIS_NUTRITION_QUEUE_HEADERS_V282 = [
   "Capture ID",
@@ -977,7 +978,9 @@ function findConfirmedNutritionFingerprintV282_(queueSheet, fingerprint) {
     if (
       job.status === "CONFIRMED" &&
       job.fingerprint === fingerprint &&
-      job.resultJson
+      job.resultJson &&
+      (job.completedAt || job.updatedAt) &&
+      Date.now() - (job.completedAt || job.updatedAt).getTime() <= AEGIS_NUTRITION_CACHE_TTL_MS_V282
     ) {
       try {
         return { job: job, result: JSON.parse(job.resultJson) };
