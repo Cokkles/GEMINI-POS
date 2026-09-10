@@ -62,6 +62,10 @@ data class CaptureConfirmation(
     val confidence: String?,
     val lookupDepth: Int?,
     val deduplicated: Boolean,
+    val terminal: Boolean,
+    val serverManaged: Boolean,
+    val retryAfterMs: Long?,
+    val diagnosticCode: String?,
 )
 
 object CaptureCompletionParser {
@@ -89,6 +93,15 @@ object CaptureCompletionParser {
             confidence = json.optString("confidence").trim().takeIf(String::isNotBlank),
             lookupDepth = json.optInt("lookup_depth").takeIf { it in 1..5 },
             deduplicated = json.optBoolean("deduplicated", false),
+            terminal = json.optBoolean(
+                "terminal",
+                json.optString("capture_status").equals("CONFIRMED", ignoreCase = true),
+            ),
+            serverManaged = json.optBoolean("server_managed", false),
+            retryAfterMs = json.optLong("retry_after_ms").takeIf { it > 0L },
+            diagnosticCode = sequenceOf("diagnostic_code", "last_error_code", "code")
+                .map { json.optString(it).trim() }
+                .firstOrNull(String::isNotBlank),
         )
     }
 }
