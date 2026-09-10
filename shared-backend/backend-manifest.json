@@ -8,7 +8,7 @@
   "source_sha256": "a349a46bdab0b8f63396d0c8aac181f9446f93ccad8ecb3c1b23a0830cc78331",
   "nutrition_2_8_1_module_sha256": "fe3282093a9d32ef42c117527ede91e24fdf9a1d36119a12bda619c471de7556",
   "additive_patch_path": "shared-backend/patches/2.8.2-durable-nutrition-queue.gs",
-  "additive_patch_sha256": "af7216cdc160b433aa0c706690a4975fdc18d1dcd494392d5c1c7632a1ad1912",
+  "additive_patch_sha256": "544f03d93668415300e40d8bcba707c486b4b73f151b9fb6c0a5cadb57076056",
   "deployment_id": null,
   "deployment_verification": "2.8.1_RUNTIME_VERSION_AND_MODULE_TESTS_PASS_2.8.2_PENDING",
   "registry_document_id": "1RaxZU2JNl5Dr4-puIvy01q8nmbiJlbx0RhOir2oWvCY",
