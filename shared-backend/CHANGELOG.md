@@ -32,3 +32,10 @@
 ## Synchronization rule
 
 Before every client phase, compare this manifest with the Drive registry, `Cokkles/ai-project-workspace`, and `Cokkles/AEGIS-Windows/shared-backend/backend-manifest.json`. Synchronize an older mirror on a small branch before feature work.
+# 2.8.3 - Device session reliability candidate
+
+- Adds an additive, signed, server-registered 30-day AEGIS device session after successful Google AUTH-1 verification.
+- Adds rolling renewal, exact-session logout revocation, per-email/device limits, scope enforcement, and tamper checks.
+- Preserves Google ID-token authentication for Windows, PWA, older Android clients, and rollback.
+- Android 0.7.6.1 never invokes Credential Manager except from an explicit Sign In action.
+- Undeployed; authoritative Code.gs is required to complete and verify the router integration.
