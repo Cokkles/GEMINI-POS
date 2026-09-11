@@ -8,11 +8,11 @@ import com.cokkles.gpos.platform.notifications.GposNotificationChannels
 import com.cokkles.gpos.platform.notifications.GposNotificationPublisher
 
 /**
- * Bridges expiring Google ID tokens and durable local work.
+ * Bridges expired or revoked AEGIS sessions and durable local work.
  *
- * Credential Manager renewal requires a resumed Activity, so workers never attempt interactive
- * authentication. They preserve account-bound work and post one stable attention notification.
- * A successful foreground renewal calls [resumePending] and drains the preserved work.
+ * Workers never attempt interactive authentication. They preserve account-bound work and post
+ * one stable attention notification. A successful explicit reconnect or backend-session restore
+ * calls [resumePending] and drains the preserved work.
  */
 class AuthenticationRecovery(context: Context) {
     private val appContext = context.applicationContext

@@ -171,6 +171,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
         val credential = credentials.read() ?: error("Connect Google to continue.")
         check(credential.workspaceOwner() == owner) { "Account changed. Reopen Tasks." }
         check((credential.expiresAtEpochMs ?: 0) > System.currentTimeMillis()) { "Reconnect Google to refresh or change Tasks." }
-        return credential.idToken
+        return credential.authToken
     }
 }
+

@@ -12,8 +12,8 @@ android {
         applicationId = "com.cokkles.gpos"
         minSdk = 29
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.7.6"
+        versionCode = 22
+        versionName = "0.7.6.1"
 
         buildConfigField(
             "String",

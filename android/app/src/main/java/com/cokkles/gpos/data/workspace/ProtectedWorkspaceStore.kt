@@ -50,7 +50,14 @@ class ProtectedWorkspaceStore(context: Context) {
 }
 
 /** Used only to partition previously validated local credentials, never to authorize backend calls. */
-fun StoredCredential.workspaceOwner(): String = runCatching {
-    val body = String(Base64.decode(idToken.split('.')[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING), Charsets.UTF_8)
-    org.json.JSONObject(body).optString("email").trim().lowercase()
-}.getOrDefault("")
+fun StoredCredential.workspaceOwner(): String =
+    userEmail?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: runCatching {
+        val body = String(
+            Base64.decode(
+                authToken.split('.')[1],
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+            ),
+            Charsets.UTF_8,
+        )
+        org.json.JSONObject(body).optString("email").trim().lowercase()
+    }.getOrDefault("")

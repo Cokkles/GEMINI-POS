@@ -22,6 +22,7 @@ import com.cokkles.gpos.data.remote.RuntimeDataSource
 import com.cokkles.gpos.data.remote.RuntimeUiState
 import com.cokkles.gpos.platform.security.AndroidKeystoreCredentialStore
 import com.cokkles.gpos.platform.security.CredentialStore
+import com.cokkles.gpos.platform.security.DeviceIdentityStore
 import com.cokkles.gpos.platform.security.SessionContinuityPolicy
 import com.cokkles.gpos.platform.security.StoredCredential
 import com.cokkles.gpos.platform.sync.AppointmentReminderScheduler
@@ -43,6 +44,7 @@ class GposRuntimeViewModel(
 ) : AndroidViewModel(application) {
     private val backend = AegisBackendClient()
     private val credentialStore: CredentialStore = AndroidKeystoreCredentialStore(application)
+    private val deviceIdentity = DeviceIdentityStore(application)
     private val syncScheduler = CanonicalSyncScheduler(application)
     private val appointmentReminderScheduler = AppointmentReminderScheduler(application)
     private val cacheDao = Room.databaseBuilder(
@@ -170,8 +172,6 @@ class GposRuntimeViewModel(
 
     fun authenticateWithIdToken(idToken: String) = authenticateWithIdToken(idToken, showProgress = true)
 
-    fun renewWithIdToken(idToken: String) = authenticateWithIdToken(idToken, showProgress = false)
-
     private fun authenticateWithIdToken(idToken: String, showProgress: Boolean) {
         if (idToken.isBlank()) {
             reportAuthFailure("Google did not return a usable identity token.")
@@ -183,11 +183,11 @@ class GposRuntimeViewModel(
             val previousAuth = _uiState.value.auth
             val previousCredential = credentialStore.read()
             if (showProgress) _uiState.update { it.copy(auth = AuthState.Authenticating) }
-            runCatching { backend.authenticate(idToken) }
+            runCatching { backend.authenticate(idToken, deviceIdentity.id()) }
                 .onSuccess { session ->
                     credentialStore.replace(
                         StoredCredential(
-                            idToken = idToken,
+                            authToken = session.authToken,
                             expiresAtEpochMs = session.expiresAtEpochMs,
                             userEmail = session.user.email,
                             userName = session.user.name,
@@ -249,7 +249,7 @@ class GposRuntimeViewModel(
                     backend = it.backend.copy(lastProtectedRead = null),
                 )
             }
-            credential?.idToken?.let { backend.logout(it) }
+            credential?.authToken?.let { backend.logout(it) }
         }
     }
 
@@ -274,8 +274,8 @@ class GposRuntimeViewModel(
             }
 
             runCatching {
-                val health = backend.readHealth(credential.idToken)
-                val capabilities = backend.readCapabilities(credential.idToken)
+                val health = backend.readHealth(credential.authToken)
+                val capabilities = backend.readCapabilities(credential.authToken)
                 val healthStatus = health.optString("status", "success")
                 val capabilityStatus = capabilities.optString("status", "success")
                 "Health: $healthStatus • Capabilities: $capabilityStatus"
@@ -295,7 +295,7 @@ class GposRuntimeViewModel(
         launchRead("refreshDashboard", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
-                val json = backend.readDashboard(credential.idToken)
+                val json = backend.readDashboard(credential.authToken)
                 val snapshot = DashboardPayloadMapper.map(json)
                 val fetchedAt = System.currentTimeMillis()
                 cache(
@@ -320,7 +320,7 @@ class GposRuntimeViewModel(
         launchRead("refreshLatestHorizon", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
-                val json = backend.readLatestHorizon(credential.idToken)
+                val json = backend.readLatestHorizon(credential.authToken)
                 val plainText = json.optString("plain_text").trim()
                 if (plainText.isBlank()) {
                     throw IllegalStateException("Canonical HORIZON response contained no plain_text briefing.")
@@ -348,7 +348,7 @@ class GposRuntimeViewModel(
         launchRead("refreshFinance", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
-                val json = backend.readRecentFinance(credential.idToken, FINANCE_HOURS)
+                val json = backend.readRecentFinance(credential.authToken, FINANCE_HOURS)
                 val snapshot = FinancePayloadMapper.map(json, FINANCE_HOURS)
                 val fetchedAt = System.currentTimeMillis()
                 cache(
@@ -373,7 +373,7 @@ class GposRuntimeViewModel(
         launchRead("refreshNotifications", showProgress) {
             val credential = credentialStore.read() ?: return@launchRead
             runCatching {
-                val json = backend.readNotifications(credential.idToken)
+                val json = backend.readNotifications(credential.authToken)
                 val snapshot = NotificationsPayloadMapper.map(json)
                 val fetchedAt = System.currentTimeMillis()
                 cache(
@@ -407,12 +407,12 @@ class GposRuntimeViewModel(
             return
         }
 
-        val result = runCatching { backend.validateSession(credential.idToken) }
+        val result = runCatching { backend.validateSession(credential.authToken) }
         val session = result.getOrNull()
         if (session != null) {
             credentialStore.replace(
                 StoredCredential(
-                    idToken = credential.idToken,
+                    authToken = session.authToken,
                     expiresAtEpochMs = session.expiresAtEpochMs,
                     userEmail = session.user.email,
                     userName = session.user.name,

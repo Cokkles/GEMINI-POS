@@ -92,7 +92,7 @@ class CaptureSubmissionProcessor(
         }
 
         if (receipt.serverManaged && kind == CaptureKind.CALORIES) {
-            return@withLock checkServerManagedCapture(receipt, kind, credential.idToken, manual)
+            return@withLock checkServerManagedCapture(receipt, kind, credential.authToken, manual)
         }
 
         val attempt = (receipt.attempts + 1).coerceAtMost(ASYNC_ENQUEUE_MAX_ATTEMPTS)
@@ -104,7 +104,7 @@ class CaptureSubmissionProcessor(
         }) }
 
         val asyncNutrition = if (kind == CaptureKind.CALORIES) {
-            runCatching { interactionClient.readCapabilities(credential.idToken) }
+            runCatching { interactionClient.readCapabilities(credential.authToken) }
         } else {
             null
         }
@@ -119,9 +119,9 @@ class CaptureSubmissionProcessor(
         } == true
         val result = runCatching {
             if (useAsyncNutrition) {
-                commandClient.enqueueNutritionCapture(credential.idToken, receipt.payload, receipt.id)
+                commandClient.enqueueNutritionCapture(credential.authToken, receipt.payload, receipt.id)
             } else {
-                commandClient.submitCapture(credential.idToken, kind, receipt.payload, receipt.id)
+                commandClient.submitCapture(credential.authToken, kind, receipt.payload, receipt.id)
             }
         }
         if (credentialStore.read() == null || ledgerStore.read().receipts.none { it.id == receiptId }) return@withLock CaptureProcessOutcome.Ignored
@@ -189,7 +189,7 @@ class CaptureSubmissionProcessor(
         }
         val certified = CaptureReliabilityPolicy.isGeminiDependent(kind) &&
             CaptureReliabilityPolicy.isCertifiedSafeCapacityFailure(error) &&
-            runCatching { interactionClient.readCapabilities(credential.idToken).captureReliabilityV1 }.getOrDefault(false)
+            runCatching { interactionClient.readCapabilities(credential.authToken).captureReliabilityV1 }.getOrDefault(false)
         val delay = if (certified) CaptureReliabilityPolicy.retryDelayMs(attempt) else null
         if (delay != null) {
             val next = System.currentTimeMillis() + delay

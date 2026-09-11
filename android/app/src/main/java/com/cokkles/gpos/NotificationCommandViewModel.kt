@@ -49,7 +49,7 @@ class NotificationCommandViewModel(
                     lastAcknowledgedId = null,
                 )
             }
-            runCatching { commandClient.acknowledgeNotification(credential.idToken, id) }
+            runCatching { commandClient.acknowledgeNotification(credential.authToken, id) }
                 .onSuccess { result ->
                     _state.update {
                         it.copy(
@@ -77,3 +77,4 @@ class NotificationCommandViewModel(
         _state.update { it.copy(lastAcknowledgedId = null, error = null) }
     }
 }
+

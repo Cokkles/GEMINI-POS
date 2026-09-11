@@ -77,32 +77,6 @@ class GoogleSignInCoordinator(
         }
     }
 
-    /**
-     * Best-effort continuity path for an account that previously authenticated successfully.
-     * This deliberately filters to previously authorized Google accounts and enables provider
-     * auto-selection. The caller must not surface failures as a fresh-login error because an
-     * unavailable silent credential simply means the normal Sign in control should remain.
-     */
-    suspend fun requestAuthorizedIdToken(serverClientId: String): String {
-        require(serverClientId.isNotBlank()) { "Google server client ID is not configured." }
-        return try {
-            val option = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(true)
-                .setAutoSelectEnabled(true)
-                .setServerClientId(serverClientId)
-                .setNonce(generateNonce())
-                .build()
-            val request = GetCredentialRequest.Builder()
-                .addCredentialOption(option)
-                .build()
-            parseIdToken(requestCredential(request))
-        } catch (error: GoogleSignInDiagnosticException) {
-            throw error
-        } catch (error: Exception) {
-            throw classifyCredentialFailure(error)
-        }
-    }
-
     suspend fun clearProviderState() {
         runCatching {
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
