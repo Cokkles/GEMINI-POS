@@ -52,11 +52,21 @@ class AegisBackendClient(
         )
     }
 
-    suspend fun authenticate(idToken: String): AuthenticatedSession =
-        parseAuthenticatedSession(postJson("auth_login", idToken), idToken)
+    suspend fun authenticate(idToken: String, deviceId: String): AuthenticatedSession =
+        parseAuthenticatedSession(
+            postJson(
+                "auth_login",
+                idToken,
+                JSONObject()
+                    .put("client_id", "android")
+                    .put("client_version", BuildConfig.VERSION_NAME)
+                    .put("device_id", deviceId),
+            ),
+            idToken,
+        )
 
-    suspend fun validateSession(idToken: String): AuthenticatedSession =
-        parseAuthenticatedSession(postJson("auth_session", idToken), idToken)
+    suspend fun validateSession(authToken: String): AuthenticatedSession =
+        parseAuthenticatedSession(postJson("auth_session", authToken), authToken)
 
     suspend fun logout(idToken: String) {
         runCatching { postJson("auth_logout", idToken) }
@@ -148,7 +158,7 @@ class AegisBackendClient(
         return json
     }
 
-    private fun parseAuthenticatedSession(json: JSONObject, idToken: String): AuthenticatedSession {
+    private fun parseAuthenticatedSession(json: JSONObject, presentedToken: String): AuthenticatedSession {
         if (!json.optBoolean("authenticated", false)) {
             throw AegisBackendException(
                 code = json.optString("code", "AEGIS_AUTH_FAILED"),
@@ -158,14 +168,22 @@ class AegisBackendClient(
         val userJson = json.optJSONObject("user")
             ?: throw AegisBackendException("AEGIS_AUTH_FAILED", "Authenticated response did not contain a user.")
         val sessionJson = json.optJSONObject("session")
+        val sessionToken = sessionJson
+            ?.optString("token")
+            ?.ifBlank { sessionJson.optString("session_token") }
+            ?.takeIf { it.isNotBlank() }
         val backendExpiry = sessionJson
             ?.optString("expires_at")
             ?.takeIf { it.isNotBlank() }
             ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
-        val tokenExpiry = GoogleIdTokenExpiry.parseEpochMs(idToken)
-        // The backend remains the authority for authentication. This local decode is used only
-        // to schedule renewal; the earlier valid boundary is deliberately chosen.
-        val expiresAt = listOfNotNull(backendExpiry, tokenExpiry).minOrNull()
+        val googleTokenExpiry = if (sessionToken == null) {
+            GoogleIdTokenExpiry.parseEpochMs(presentedToken)
+        } else {
+            null
+        }
+        // 2.8.3+ returns a backend device-session token. Older backends continue using the
+        // presented Google ID token and therefore retain their shorter expiry semantics.
+        val expiresAt = backendExpiry ?: googleTokenExpiry
             ?: System.currentTimeMillis() + UNKNOWN_EXPIRY_RECHECK_MS
 
         return AuthenticatedSession(
@@ -174,6 +192,7 @@ class AegisBackendClient(
                 name = userJson.optString("name").takeIf { it.isNotBlank() },
                 pictureUrl = userJson.optString("picture").takeIf { it.isNotBlank() },
             ),
+            authToken = sessionToken ?: presentedToken,
             expiresAtEpochMs = expiresAt,
         )
     }

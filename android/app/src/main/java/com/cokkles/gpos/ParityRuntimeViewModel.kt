@@ -86,19 +86,19 @@ class ParityRuntimeViewModel(
             if (credential.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) return@launch
             if (showProgress) _state.update { it.copy(refreshing = true) }
             try {
-                val capabilities = runCatching { CapabilityPayloadMapper.map(backend.readCapabilities(credential.idToken)) }
+                val capabilities = runCatching { CapabilityPayloadMapper.map(backend.readCapabilities(credential.authToken)) }
                 capabilities.onSuccess { snapshot ->
                     _state.update { it.copy(capabilities = snapshot, capabilityError = null) }
                 }.onFailure { error ->
                     _state.update { it.copy(capabilityError = error.safeParityMessage()) }
                 }
 
-                refreshCalendarInternal(credential.idToken)
-                refreshIntelligenceInternal(credential.idToken, force = false)
+                refreshCalendarInternal(credential.authToken)
+                refreshIntelligenceInternal(credential.authToken, force = false)
 
                 val caps = capabilities.getOrNull() ?: _state.value.capabilities
                 if (caps?.nutritionHistoryV1 == true) {
-                    refreshNutritionInternal(credential.idToken, _state.value.nutritionDays)
+                    refreshNutritionInternal(credential.authToken, _state.value.nutritionDays)
                 } else {
                     _state.update {
                         it.copy(
@@ -110,7 +110,7 @@ class ParityRuntimeViewModel(
                     }
                 }
                 if (caps?.tasksHistoryV1 == true) {
-                    refreshTaskHistoryInternal(credential.idToken, _state.value.taskHistoryDays)
+                    refreshTaskHistoryInternal(credential.authToken, _state.value.taskHistoryDays)
                 } else {
                     _state.update {
                         it.copy(
@@ -148,14 +148,14 @@ class ParityRuntimeViewModel(
     fun refreshCalendar() {
         viewModelScope.launch {
             val credential = credentialStore.read() ?: return@launch
-            refreshCalendarInternal(credential.idToken)
+            refreshCalendarInternal(credential.authToken)
         }
     }
 
     fun refreshIntelligence() {
         viewModelScope.launch {
             val credential = credentialStore.read() ?: return@launch
-            refreshIntelligenceInternal(credential.idToken, force = false)
+            refreshIntelligenceInternal(credential.authToken, force = false)
         }
     }
 
@@ -165,7 +165,7 @@ class ParityRuntimeViewModel(
         if (_state.value.capabilities?.nutritionHistoryV1 == true) {
             viewModelScope.launch {
                 val credential = credentialStore.read() ?: return@launch
-                refreshNutritionInternal(credential.idToken, bounded)
+                refreshNutritionInternal(credential.authToken, bounded)
             }
         }
     }
@@ -176,7 +176,7 @@ class ParityRuntimeViewModel(
         if (_state.value.capabilities?.tasksHistoryV1 == true) {
             viewModelScope.launch {
                 val credential = credentialStore.read() ?: return@launch
-                refreshTaskHistoryInternal(credential.idToken, bounded)
+                refreshTaskHistoryInternal(credential.authToken, bounded)
             }
         }
     }
@@ -409,3 +409,4 @@ class ParityRuntimeViewModel(
 
 private fun Throwable.safeParityMessage(): String =
     message?.takeIf(String::isNotBlank) ?: "AEGIS parity data is temporarily unavailable."
+

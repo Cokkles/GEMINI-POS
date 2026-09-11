@@ -42,7 +42,7 @@ class CanonicalSyncWorker(
         val backend = AegisBackendClient()
         val dao = openDao()
         return try {
-            val dashboardJson = backend.readDashboard(credential.idToken)
+            val dashboardJson = backend.readDashboard(credential.authToken)
             DashboardPayloadMapper.map(dashboardJson)
             cache(
                 dao = dao,
@@ -53,7 +53,7 @@ class CanonicalSyncWorker(
                 fetchedAt = now,
             )
 
-            val financeJson = backend.readRecentFinance(credential.idToken, FINANCE_HOURS)
+            val financeJson = backend.readRecentFinance(credential.authToken, FINANCE_HOURS)
             FinancePayloadMapper.map(financeJson, FINANCE_HOURS)
             cache(
                 dao = dao,
@@ -69,7 +69,7 @@ class CanonicalSyncWorker(
                 ?.let { runCatching { NotificationsPayloadMapper.map(JSONObject(it)) }.getOrNull() }
                 ?.snapshotActiveCriticalIds()
                 .orEmpty()
-            val notificationsJson = backend.readNotifications(credential.idToken)
+            val notificationsJson = backend.readNotifications(credential.authToken)
             val notifications = NotificationsPayloadMapper.map(notificationsJson)
             cache(
                 dao = dao,
@@ -87,7 +87,7 @@ class CanonicalSyncWorker(
 
             val horizonCached = dao.read(CanonicalCachePolicy.HORIZON_KEY)
             if (horizonCached == null || horizonCached.staleAfterEpochMs <= now) {
-                val horizonJson = backend.readLatestHorizon(credential.idToken)
+                val horizonJson = backend.readLatestHorizon(credential.authToken)
                 if (horizonJson.optString("plain_text").isBlank()) {
                     throw IllegalStateException("Canonical HORIZON response contained no plain_text briefing.")
                 }
@@ -151,3 +151,4 @@ class CanonicalSyncWorker(
         private const val MAX_RETRIES = 2
     }
 }
+

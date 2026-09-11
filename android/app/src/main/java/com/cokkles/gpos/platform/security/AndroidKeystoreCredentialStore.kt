@@ -25,7 +25,9 @@ class AndroidKeystoreCredentialStore(
             val plaintext = decrypt(encoded)
             val json = JSONObject(plaintext)
             StoredCredential(
-                idToken = json.getString("id_token"),
+                // Read the 0.7.6 key once so upgrades retain the existing session.
+                authToken = json.optString("auth_token")
+                    .ifBlank { json.getString("id_token") },
                 expiresAtEpochMs = json.optLong("expires_at_epoch_ms").takeIf { it > 0L },
                 userEmail = json.optString("user_email").takeIf(String::isNotBlank),
                 userName = json.optString("user_name").takeIf(String::isNotBlank),
@@ -40,7 +42,7 @@ class AndroidKeystoreCredentialStore(
 
     override suspend fun replace(credential: StoredCredential): Unit = withContext(Dispatchers.IO) {
         val payload = JSONObject()
-            .put("id_token", credential.idToken)
+            .put("auth_token", credential.authToken)
             .apply {
                 credential.expiresAtEpochMs?.let { put("expires_at_epoch_ms", it) }
                 credential.userEmail?.let { put("user_email", it) }

@@ -11,7 +11,7 @@ on:
       - agent/android-0.7.4.2-capture-transport
       - agent/android-0.7.5-session-background
       - agent/android-0.7.5.1-nutrition-reliability
-      - agent/android-0.7.6-reliability-auth
+      - agent/android-0.7.6.1-device-session
     paths:
       - 'android/**'
       - '.github/workflows/gpos-android-checkpoint.yml'
@@ -62,8 +62,8 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk \
             | head -n 1 | tee android/app/build/outputs/apk/debug/package-metadata.txt
           grep -q "name='com.cokkles.gpos'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionCode='21'" android/app/build/outputs/apk/debug/package-metadata.txt
-          grep -q "versionName='0.7.6'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionCode='22'" android/app/build/outputs/apk/debug/package-metadata.txt
+          grep -q "versionName='0.7.6.1'" android/app/build/outputs/apk/debug/package-metadata.txt
           {
             echo "package=com.cokkles.gpos"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk \
@@ -74,23 +74,23 @@ jobs:
 
       - name: Package verified Android test release
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk AEGIS-Android-0.7.6-reliability-auth.apk
-          zip -j AEGIS-Android-0.7.6-verified-ci.zip \
-            AEGIS-Android-0.7.6-reliability-auth.apk \
+          cp android/app/build/outputs/apk/debug/app-debug.apk AEGIS-Android-0.7.6.1-device-session.apk
+          zip -j AEGIS-Android-0.7.6.1-verified-ci.zip \
+            AEGIS-Android-0.7.6.1-device-session.apk \
             android/app/build/outputs/apk/debug/signing-fingerprint.txt \
             android/app/build/outputs/apk/debug/package-metadata.txt
-          sha256sum AEGIS-Android-0.7.6-reliability-auth.apk AEGIS-Android-0.7.6-verified-ci.zip \
-            | tee AEGIS-Android-0.7.6-SHA256SUMS.txt
+          sha256sum AEGIS-Android-0.7.6.1-device-session.apk AEGIS-Android-0.7.6.1-verified-ci.zip \
+            | tee AEGIS-Android-0.7.6.1-SHA256SUMS.txt
 
       - name: Publish private GitHub prerelease assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag='android-0.7.6-reliability-auth-test'
+          tag='android-0.7.6.1-device-session-test'
           assets=(
-            AEGIS-Android-0.7.6-reliability-auth.apk
-            AEGIS-Android-0.7.6-verified-ci.zip
-            AEGIS-Android-0.7.6-SHA256SUMS.txt
+            AEGIS-Android-0.7.6.1-device-session.apk
+            AEGIS-Android-0.7.6.1-verified-ci.zip
+            AEGIS-Android-0.7.6.1-SHA256SUMS.txt
           )
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
@@ -98,8 +98,8 @@ jobs:
             gh release create "$tag" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title 'AEGIS Android 0.7.6 Queue and Auth Reliability Test' \
-              --notes 'Private test checkpoint. Stable-ID server-side nutrition processing and status polling, explicit accepted/waiting/review UI states, duplicate-tap suppression, JWT expiry scheduling, recurring silent authorization renewal, and bounded auth backoff. Uses Apps Script 2.8.2 async capabilities when deployed and remains compatible with the 2.8.1/legacy capture path.' \
+              --title 'AEGIS Android 0.7.6.1 Device Session and Icon Reliability Test' \
+              --notes 'Private test checkpoint. Removes every automatic Credential Manager invocation, accepts backend-issued device sessions when advertised, migrates the encrypted 0.7.6 credential, retains queued work across reconnects, fixes the adaptive launcher safe zone, and preserves the 2.8.1 Google-token fallback plus 2.8.2 nutrition queue compatibility.' \
               --prerelease
           fi
 
@@ -137,7 +137,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-android-0.7.6-navigation-results
+          name: aegis-android-0.7.6.1-navigation-results
           path: |
             android/app/build/reports/androidTests/connected/
             android/workspace-screenshots/

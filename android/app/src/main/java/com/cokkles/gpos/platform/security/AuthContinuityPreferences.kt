@@ -5,7 +5,7 @@ import android.content.Context
 /**
  * Non-sensitive continuity hint. This stores no token, account identifier, or private data.
  * It only records whether the user previously completed an authenticated AEGIS session so the
- * launcher may attempt Credential Manager authorized-account renewal after token expiry.
+ * app may restore its backend-issued session without invoking Credential Manager.
  */
 class AuthContinuityPreferences(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

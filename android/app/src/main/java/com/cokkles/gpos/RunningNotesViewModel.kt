@@ -114,7 +114,7 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
                 check((credential.expiresAtEpochMs ?: 0) > System.currentTimeMillis()) { "Reconnect Google before syncing." }
                 val pending = _state.value.document.beginSync()
                 save(pending).await()
-                client.submitRunningNotes(credential.idToken, pending)
+                client.submitRunningNotes(credential.authToken, pending)
                 val confirmed = pending.confirmed()
                 withContext(NonCancellable + Dispatchers.IO) { storage.write(owner, "running_notes", confirmed.toJson()) }
                 if (stamp == generation) _state.update { it.copy(document = confirmed, message = if (confirmed.text.isBlank()) "Saved to Notes Journal. A fresh section is ready." else "Previous section saved. Review the remaining draft before syncing again.", error = null) }
@@ -129,3 +129,4 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
     }
     override fun onCleared() { saves.close(); super.onCleared() }
 }
+

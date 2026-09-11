@@ -19,6 +19,7 @@ data class AuthenticatedUser(
 
 data class AuthenticatedSession(
     val user: AuthenticatedUser,
+    val authToken: String,
     val expiresAtEpochMs: Long?,
 )
 

@@ -328,7 +328,7 @@ class AegisInteractionViewModel(
             }
             return null
         }
-        return credential.idToken
+        return credential.authToken
     }
 
     private companion object {
@@ -339,3 +339,4 @@ class AegisInteractionViewModel(
 
 private fun Throwable.safeInteractionMessage(): String =
     message?.takeIf(String::isNotBlank) ?: "AEGIS is temporarily unavailable."
+

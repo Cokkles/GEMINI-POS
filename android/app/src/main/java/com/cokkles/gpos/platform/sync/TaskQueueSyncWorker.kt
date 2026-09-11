@@ -89,12 +89,12 @@ class TaskQueueProcessor(
             }
             if (!claimed) continue
             val outcome = runCatching {
-                commands.completeTasks(credential.idToken, listOf(pending.taskId), pending.taskListId)
+                commands.completeTasks(credential.authToken, listOf(pending.taskId), pending.taskListId)
                 if (pending.taskListId == "@default") {
-                    val activeIds = DashboardPayloadMapper.map(reads.readDashboard(credential.idToken)).tasks.mapNotNull { it.canonicalId }
+                    val activeIds = DashboardPayloadMapper.map(reads.readDashboard(credential.authToken)).tasks.mapNotNull { it.canonicalId }
                     check(pending.taskId !in activeIds) { "Task remains active after completion." }
                 } else {
-                    val workspace = AegisInteractionClient().readTaskWorkspace(credential.idToken)
+                    val workspace = AegisInteractionClient().readTaskWorkspace(credential.authToken)
                     check(workspace.lists.any { it.id == pending.taskListId }) { "Original task list was not returned; completion cannot be verified." }
                     check(workspace.tasks.none { it.id == pending.taskId && it.listId == pending.taskListId }) { "Task remains active after completion." }
                 }
@@ -280,3 +280,4 @@ class TaskQueueSyncScheduler(
         const val PERIODIC_MINUTES = 15L
     }
 }
+

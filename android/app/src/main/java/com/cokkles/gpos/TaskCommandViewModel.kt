@@ -74,7 +74,7 @@ class TaskCommandViewModel(
                 return@launch
             }
 
-            runCatching { commandClient.completeTasks(credential.idToken, ids) }
+            runCatching { commandClient.completeTasks(credential.authToken, ids) }
                 .onSuccess {
                     val submittedAt = System.currentTimeMillis()
                     _state.update {
@@ -87,7 +87,7 @@ class TaskCommandViewModel(
                     }
 
                     val verification = runCatching {
-                        val dashboardJson = readClient.readDashboard(credential.idToken)
+                        val dashboardJson = readClient.readDashboard(credential.authToken)
                         DashboardPayloadMapper.map(dashboardJson)
                             .tasks
                             .mapNotNull { task -> task.canonicalId }
@@ -150,3 +150,4 @@ class TaskCommandViewModel(
 
 private fun Throwable.safeTaskMessage(): String =
     message?.takeIf { it.isNotBlank() } ?: "Task completion could not be confirmed."
+

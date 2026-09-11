@@ -41,7 +41,7 @@ class CalendarCommandViewModel(
                     progress = CalendarCommandProgress.RESOLVING,
                 )
             }
-            runCatching { commandClient.resolveCalendarEvent(credential.idToken, text) }
+            runCatching { commandClient.resolveCalendarEvent(credential.authToken, text) }
                 .onSuccess { result ->
                     _state.update {
                         it.copy(
@@ -76,7 +76,7 @@ class CalendarCommandViewModel(
         viewModelScope.launch {
             val credential = currentCredentialOrReport() ?: return@launch
             _state.update { it.copy(progress = CalendarCommandProgress.CREATING, error = null) }
-            runCatching { commandClient.createCalendarEvent(credential.idToken, proposal) }
+            runCatching { commandClient.createCalendarEvent(credential.authToken, proposal) }
                 .onSuccess { result ->
                     _state.value = CalendarCommandRuntimeState(
                         progress = CalendarCommandProgress.IDLE,
@@ -121,3 +121,4 @@ class CalendarCommandViewModel(
 
 private fun Throwable.safeMessage(): String =
     message?.takeIf { it.isNotBlank() } ?: "The Calendar action could not be completed."
+

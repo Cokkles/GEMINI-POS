@@ -54,7 +54,7 @@ class DeferredMutationProcessor(private val context: Context) {
         var failed = 0
         for (item in items) {
             if (credentials.read()?.workspaceOwner() != owner) break
-            val outcome = runCatching { send(credential.idToken, item) }
+            val outcome = runCatching { send(credential.authToken, item) }
             outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             if (outcome.isSuccess) {
                 confirmed++
@@ -189,3 +189,4 @@ internal object DeferredMutationPolicy {
         return old.entityId.isNotBlank() && old.entityId == next.entityId && old.type.name.startsWith("FOLLOWUP") && next.type.name.startsWith("FOLLOWUP")
     }
 }
+
