@@ -11,7 +11,7 @@
  */
 
 var AEGIS_NUTRITION_ASYNC_CONTRACT_V282 = "AEGIS_NUTRITION_CAPTURE_ASYNC_V1";
-var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.8.4";
+var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.8.4.1";
 var AEGIS_NUTRITION_QUEUE_SHEET_V282 = "_AEGIS_NUTRITION_CAPTURE_QUEUE_V1";
 var AEGIS_NUTRITION_QUEUE_HANDLER_V282 = "processAegisNutritionQueueV282";
 var AEGIS_NUTRITION_DATA_SHEET_PROPERTY_V282 = "AEGIS_NUTRITION_SHEET_NAME";
@@ -118,9 +118,7 @@ function enqueueAegisNutritionCaptureV282_(contents) {
     }
 
     var cached = findConfirmedNutritionFingerprintV282_(queueSheet, fingerprint);
-    var deterministic = cached
-      ? null
-      : tryKnownFoodNutritionV284_(input) || tryDeterministicNutritionV282_(input);
+    var deterministic = cached ? null : tryResolveAegisNutritionLocallyV284_(input);
     var reusable = cached && cached.result ? cached.result : deterministic;
 
     var row = appendAegisNutritionQueueJobV282_(

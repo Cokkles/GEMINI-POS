@@ -31,7 +31,7 @@ const functionNames = [code, nutrition281, nutrition282, sessions283, nutrition2
   .flatMap((source) => [...source.matchAll(/^function\s+([\w$]+)\s*\(/gm)].map((match) => match[1]));
 assert.equal(new Set(functionNames).size, functionNames.length, "Apps Script function names must be unique");
 
-assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.8\.4";/);
+assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.8\.4\.1";/);
 for (const action of [
   "enqueue_nutrition_capture",
   "get_nutrition_capture_status",
@@ -48,6 +48,7 @@ for (const capability of [
   "nutrition_provider_routing_v1",
   "nutrition_quota_diagnostics_v1",
   "nutrition_circuit_breaker_v1",
+  "nutrition_multi_item_integrity_v1",
   "device_session_v1",
   "interactive_auth_background_forbidden_v1",
 ]) {
@@ -147,4 +148,4 @@ assert.equal(revoked.authenticated, false);
 assert.equal(revoked.code, "AEGIS_AUTH_FAILED");
 assert.equal(revoked.diagnostic_code, "AEGIS_DEVICE_SESSION_REVOKED");
 
-console.log("PASS backend 2.8.4 router/auth static and mocked-runtime validation");
+console.log("PASS backend 2.8.4.1 router/auth static and mocked-runtime validation");

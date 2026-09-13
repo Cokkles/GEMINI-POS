@@ -1,5 +1,5 @@
 /**
- * AEGIS shared backend 2.8.4 -- tiered nutrition provider reliability.
+ * AEGIS shared backend 2.8.4.1 -- tiered nutrition provider reliability.
  *
  * Install beside Code.gs, NutritionReliability281.gs,
  * NutritionQueue282.gs, and DeviceSessions283.gs. The durable 2.8.2 queue
@@ -8,12 +8,18 @@
  */
 
 var AEGIS_NUTRITION_PROVIDER_CONTRACT_V284 = "AEGIS_NUTRITION_PROVIDER_ROUTING_V1";
+var AEGIS_NUTRITION_MULTI_ITEM_CONTRACT_V2841 = "AEGIS_NUTRITION_MULTI_ITEM_INTEGRITY_V1";
 var AEGIS_NUTRITION_SIMPLE_MODEL_DEFAULT_V284 = "gemini-3.5-flash-lite";
 var AEGIS_NUTRITION_CIRCUIT_THRESHOLD_V284 = 2;
 var AEGIS_NUTRITION_CIRCUIT_DEFAULT_MS_V284 = 15 * 60 * 1000;
 var AEGIS_NUTRITION_CIRCUIT_MAX_MS_V284 = 12 * 60 * 60 * 1000;
 
 function resolveAegisNutritionV284_(foodText) {
+  var segments = splitAegisNutritionItemsV284_(foodText);
+  if (segments.length > 1) {
+    return resolveAegisNutritionListV284_(segments);
+  }
+
   var known = tryKnownFoodNutritionV284_(foodText);
   if (known) return known;
 
@@ -21,28 +27,32 @@ function resolveAegisNutritionV284_(foodText) {
   if (deterministic) return deterministic;
 
   if (!requiresGroundedNutritionV284_(foodText)) {
-    return callGeminiNutritionV284_(foodText, {
+    return enforceAegisNutritionItemIntegrityV284_(callGeminiNutritionV284_(foodText, {
       lane: "SIMPLE",
       model: getAegisNutritionSimpleModelV284_(),
       grounded: false
-    });
+    }), [foodText]);
   }
 
   try {
-    return callGeminiNutritionV284_(foodText, {
+    return enforceAegisNutritionItemIntegrityV284_(callGeminiNutritionV284_(foodText, {
       lane: "GROUNDED",
       model: getAegisNutritionGroundedModelV284_(),
       grounded: true
-    });
+    }), [foodText]);
   } catch (groundedError) {
     if (!isGeminiCapacityErrorV284_(groundedError)) throw groundedError;
+    if (requiresVerifiedNutritionSourceV284_(foodText)) throw groundedError;
     try {
       var degraded = callGeminiNutritionV284_(foodText, {
         lane: "SIMPLE",
         model: getAegisNutritionSimpleModelV284_(),
         grounded: false
       });
-      return markAegisNutritionDegradedV284_(degraded);
+      return enforceAegisNutritionItemIntegrityV284_(
+        markAegisNutritionDegradedV284_(degraded),
+        [foodText]
+      );
     } catch (simpleError) {
       if (isGeminiCapacityErrorV284_(simpleError)) {
         simpleError.retryAfterMs = Math.max(
@@ -56,6 +66,204 @@ function resolveAegisNutritionV284_(foodText) {
       throw simpleError;
     }
   }
+}
+
+function splitAegisNutritionItemsV284_(foodText) {
+  var text = String(foodText || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/^\s*\/calories\b\s*/i, "")
+    .trim();
+  if (!text) return [];
+  var items = text.split(/[\n,;|]+/).map(function(value) {
+    return value.trim().replace(/^[\-•]+\s*/, "");
+  }).filter(function(value) { return value; });
+  if (items.length > 20) {
+    throw taggedNutritionErrorV281_(
+      "NUTRITION_ITEM_LIMIT_EXCEEDED",
+      "A nutrition capture may contain at most 20 explicitly separated items.",
+      false
+    );
+  }
+  return items;
+}
+
+function resolveAegisNutritionListV284_(segments) {
+  var resolved = new Array(segments.length);
+  var unresolved = [];
+  var unresolvedIndexes = [];
+
+  segments.forEach(function(segment, index) {
+    var local = tryKnownFoodNutritionV284_(segment) ||
+      tryDeterministicNutritionV282_(segment);
+    if (local && local.items && local.items.length === 1) {
+      resolved[index] = local.items[0];
+      return;
+    }
+    unresolved.push(segment);
+    unresolvedIndexes.push(index);
+  });
+
+  if (unresolved.length) {
+    var grounded = unresolved.some(function(segment) {
+      return requiresGroundedNutritionV284_(segment);
+    });
+    var result = callGeminiNutritionV284_(formatAegisNutritionListV284_(unresolved), {
+      lane: grounded ? "GROUNDED" : "SIMPLE",
+      model: grounded
+        ? getAegisNutritionGroundedModelV284_()
+        : getAegisNutritionSimpleModelV284_(),
+      grounded: grounded,
+      expectedItems: unresolved
+    });
+    result = enforceAegisNutritionItemIntegrityV284_(result, unresolved);
+    result.items.forEach(function(item, index) {
+      resolved[unresolvedIndexes[index]] = item;
+    });
+  }
+
+  var confidenceRank = { HIGH: 4, MEDIUM: 3, MEDIUM_LOW: 2, LOW: 1 };
+  var confidence = resolved.reduce(function(current, item) {
+    var candidate = String(item && item.confidence || "LOW");
+    return (confidenceRank[candidate] || 1) < (confidenceRank[current] || 1)
+      ? candidate
+      : current;
+  }, "HIGH");
+  var depth = resolved.reduce(function(maximum, item) {
+    return Math.max(maximum, Number(item && item.lookup_depth) || 1);
+  }, 1);
+  return { items: resolved, confidence: confidence, overall_confidence: confidence, lookup_depth: depth };
+}
+
+function tryResolveAegisNutritionLocallyV284_(foodText) {
+  var segments = splitAegisNutritionItemsV284_(foodText);
+  if (!segments.length) return null;
+  var items = [];
+  var confidenceRank = { HIGH: 4, MEDIUM: 3, MEDIUM_LOW: 2, LOW: 1 };
+  var confidence = "HIGH";
+  var depth = 1;
+  for (var i = 0; i < segments.length; i++) {
+    var local = tryKnownFoodNutritionV284_(segments[i]) ||
+      tryDeterministicNutritionV282_(segments[i]);
+    if (!local || !local.items || local.items.length !== 1) return null;
+    items.push(local.items[0]);
+    var candidate = String(local.items[0].confidence || local.confidence || "LOW");
+    if ((confidenceRank[candidate] || 1) < (confidenceRank[confidence] || 1)) {
+      confidence = candidate;
+    }
+    depth = Math.max(depth, Number(local.items[0].lookup_depth || local.lookup_depth) || 1);
+  }
+  return { items: items, confidence: confidence, overall_confidence: confidence, lookup_depth: depth };
+}
+
+function formatAegisNutritionListV284_(segments) {
+  return segments.map(function(segment, index) {
+    return "ITEM " + (index + 1) + ": " + segment;
+  }).join("\n");
+}
+
+function buildAegisNutritionListPromptV284_(segments, grounded) {
+  return [
+    "You are the KINETIC nutrition evidence and estimation engine for AEGIS.",
+    "The user supplied exactly " + segments.length + " separately logged food items.",
+    "Return exactly " + segments.length + " result objects in the same numbered order.",
+    "Never combine, summarize, rename collectively, or omit the items.",
+    "Preserve each stated count, serving quantity, weight, and volume in that item's portion.",
+    grounded
+      ? "Use Google Search grounding and prefer official manufacturer/menu data, then USDA or Open Food Facts."
+      : "Do not claim an external lookup; use COMPONENT_ESTIMATE or MODEL_ESTIMATE and leave source_url empty.",
+    "Reject the idea of a generic mixed meal: each result name must identify its corresponding input.",
+    "Prefer a modest conservative overestimate when uncertainty remains and state assumptions per item.",
+    "Never use zero for an unknown nutrient; estimate it or use null.",
+    "Return ONLY one JSON object using this structure:",
+    '{"items":[{"item":"specific corresponding product","portion":"stated total quantity","calories":200,"protein":4,"carbs":30,"fat":8,"saturated_fat":2,"fiber":2,"sugar":12,"sodium":200,"cholesterol":0,"source_type":"OFFICIAL|USDA|OPEN_FOOD_FACTS|COMPONENT_ESTIMATE|MODEL_ESTIMATE","source_url":"https://... or empty","confidence":"HIGH|MEDIUM|MEDIUM_LOW|LOW","lookup_depth":4,"assumptions":"brief explicit assumptions","conservative_adjustment":true}],"overall_confidence":"MEDIUM_LOW","lookup_depth":4}',
+    "INPUT ITEMS:",
+    formatAegisNutritionListV284_(segments)
+  ].join("\n");
+}
+
+function enforceAegisNutritionItemIntegrityV284_(result, segments) {
+  var items = result && result.items;
+  if (!Array.isArray(items) || items.length !== segments.length) {
+    throw taggedNutritionErrorV281_(
+      "NUTRITION_ITEM_COUNT_MISMATCH",
+      "Expected " + segments.length + " separate nutrition item(s), but the provider returned " +
+        (Array.isArray(items) ? items.length : 0) + ". No nutrition rows were written.",
+      true
+    );
+  }
+
+  items.forEach(function(item, index) {
+    var segment = segments[index];
+    var name = String(item && item.item || "").trim();
+    var portion = String(item && item.portion || "").trim();
+    if (!name || /\b(generic|mixed meal|meal portion|assorted foods?|combined meal|meal estimate)\b/i.test(name)) {
+      throw taggedNutritionErrorV281_(
+        "NUTRITION_GENERIC_AGGREGATE_REJECTED",
+        "Item " + (index + 1) + " was returned as a generic or combined meal. No nutrition rows were written.",
+        true
+      );
+    }
+    if (!nutritionItemMatchesSegmentV284_(name, segment)) {
+      throw taggedNutritionErrorV281_(
+        "NUTRITION_ITEM_IDENTITY_MISMATCH",
+        "Returned item " + (index + 1) + " does not identify its corresponding input. No nutrition rows were written.",
+        true
+      );
+    }
+    var quantity = String(segment).match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
+    if (quantity && !new RegExp("(^|\\D)" + quantity[1].replace(".", "\\.") + "(\\D|$)").test(portion)) {
+      throw taggedNutritionErrorV281_(
+        "NUTRITION_PORTION_MISMATCH",
+        "Returned item " + (index + 1) + " did not preserve the stated quantity " +
+          quantity[1] + ". No nutrition rows were written.",
+        true
+      );
+    }
+    if (requiresVerifiedNutritionSourceV284_(segment) && (
+      String(item.source_type || "") === "MODEL_ESTIMATE" ||
+      String(item.confidence || "") === "LOW"
+    )) {
+      throw taggedNutritionErrorV281_(
+        "NUTRITION_BRANDED_SOURCE_UNVERIFIED",
+        "Branded item " + (index + 1) + " lacked an adequately identified source. No nutrition rows were written.",
+        true
+      );
+    }
+  });
+  return result;
+}
+
+function nutritionItemMatchesSegmentV284_(itemName, segment) {
+  var output = normalizeNutritionIdentityTextV284_(itemName);
+  var input = normalizeNutritionIdentityTextV284_(segment);
+  var brands = [
+    "tyson", "kirkland", "mission", "texas pete", "rice a roni",
+    "mcdonalds", "burger king", "wendys", "taco bell", "chipotle",
+    "subway", "panera", "starbucks", "chick fil a", "popeyes",
+    "five guys", "shake shack", "olive garden", "applebees",
+    "buffalo wild wings", "noodles and company", "williams gourmet kitchen"
+  ];
+  for (var i = 0; i < brands.length; i++) {
+    if (input.indexOf(brands[i]) >= 0) return output.indexOf(brands[i]) >= 0;
+  }
+  var ignored = {
+    serving: true, servings: true, tablespoon: true, tablespoons: true,
+    tbsp: true, teaspoon: true, teaspoons: true, medium: true, large: true,
+    small: true, frozen: true, grilled: true, ounce: true, ounces: true,
+    gram: true, grams: true, with: true, and: true, the: true
+  };
+  var tokens = input.split(" ").filter(function(token) {
+    return token.length >= 3 && !ignored[token] && !/^\d/.test(token);
+  });
+  return tokens.some(function(token) { return output.indexOf(token) >= 0; });
+}
+
+function normalizeNutritionIdentityTextV284_(value) {
+  return String(value || "").toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function getAegisNutritionSimpleModelV284_() {
@@ -79,7 +287,12 @@ function getAegisNutritionGroundedModelV284_() {
 function requiresGroundedNutritionV284_(foodText) {
   var text = String(foodText || "").toLowerCase();
   return /\b(restaurant|menu|cafe|café|diner|bistro|grill|kitchen|tavern|eatery)\b/.test(text) ||
-    /\b(mcdonald'?s|burger king|wendy'?s|taco bell|chipotle|subway|panera|starbucks|chick-fil-a|popeyes|kfc|five guys|shake shack|olive garden|applebee'?s|chili'?s|buffalo wild wings|noodles?\s*(?:&|and)\s*(?:co|company)|williams gourmet kitchen)\b/.test(text);
+    /\b(tyson|kirkland|mission|texas pete|rice-a-roni|mcdonald'?s|burger king|wendy'?s|taco bell|chipotle|subway|panera|starbucks|chick-fil-a|popeyes|kfc|five guys|shake shack|olive garden|applebee'?s|chili'?s|buffalo wild wings|noodles?\s*(?:&|and)\s*(?:co|company)|williams gourmet kitchen)\b/.test(text);
+}
+
+function requiresVerifiedNutritionSourceV284_(foodText) {
+  var text = String(foodText || "").toLowerCase();
+  return /\b(tyson|kirkland|mission|texas pete|rice-a-roni)\b/.test(text);
 }
 
 function callGeminiNutritionV284_(foodText, options) {
@@ -105,9 +318,11 @@ function callGeminiNutritionV284_(foodText, options) {
     contents: [{
       role: "user",
       parts: [{
-        text: grounded
-          ? buildAegisNutritionPromptV281_(foodText)
-          : buildAegisNutritionSimplePromptV284_(foodText)
+        text: options && options.expectedItems
+          ? buildAegisNutritionListPromptV284_(options.expectedItems, grounded)
+          : grounded
+            ? buildAegisNutritionPromptV281_(foodText)
+            : buildAegisNutritionSimplePromptV284_(foodText)
       }]
     }],
     generationConfig: {
@@ -346,6 +561,7 @@ function markAegisNutritionDegradedV284_(result) {
 
 function tryKnownFoodNutritionV284_(foodText) {
   var text = String(foodText || "").trim();
+  if (splitAegisNutritionItemsV284_(text).length !== 1) return null;
   var normalized = text.toLowerCase();
   if (!/\bfig\s+newtons?\b/.test(normalized)) return null;
 
@@ -379,7 +595,7 @@ function parseNutritionWeightGramsV284_(text) {
 function getAegisNutritionProviderHealthV284_() {
   return {
     status: "success",
-    backend_version: "2.8.4",
+    backend_version: "2.8.4.1",
     contract: AEGIS_NUTRITION_PROVIDER_CONTRACT_V284,
     simple_model: getAegisNutritionSimpleModelV284_(),
     grounded_model: getAegisNutritionGroundedModelV284_(),
@@ -447,6 +663,65 @@ function testAegisNutritionSimpleProviderV284() {
     grounded: false,
     items: validated.items.length,
     calories: validated.items[0].calories
+  };
+  Logger.log(JSON.stringify(output, null, 2));
+  return output;
+}
+
+function testAegisNutritionMultiItemIntegrityV2841() {
+  var fixture = "2 Servings Tyson Frozen Grilled Chicken, 2 servings Kirkland Salsa, 1 Medium Mission Flour Tortilla, 2 tablespoons Texas Pete Hotter Hot Sauce, 2 Servings Rice-A-Roni Chicken";
+  var segments = splitAegisNutritionItemsV284_(fixture);
+  if (segments.length !== 5) {
+    throw new Error("2.8.4.1 fixture must parse into exactly five items.");
+  }
+  if (segments.some(function(segment) { return !requiresGroundedNutritionV284_(segment); })) {
+    throw new Error("2.8.4.1 branded fixture must route every unresolved item to grounded lookup.");
+  }
+  var rejected = false;
+  try {
+    enforceAegisNutritionItemIntegrityV284_({
+      items: [{
+        item: "Generic Mixed Meal Portion",
+        portion: "1 serving",
+        source_type: "MODEL_ESTIMATE",
+        confidence: "LOW"
+      }]
+    }, segments);
+  } catch (expected) {
+    rejected = expected && expected.aegisCode === "NUTRITION_ITEM_COUNT_MISMATCH";
+  }
+  if (!rejected) throw new Error("2.8.4.1 generic aggregate was not rejected.");
+  var result = {
+    status: "PASS",
+    contract: AEGIS_NUTRITION_MULTI_ITEM_CONTRACT_V2841,
+    parsed_items: segments.length,
+    generic_aggregate_rejected: true,
+    expected_items: segments
+  };
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+function testAegisNutritionFiveItemProviderV2841() {
+  var fixture = "2 Servings Tyson Frozen Grilled Chicken, 2 servings Kirkland Salsa, 1 Medium Mission Flour Tortilla, 2 tablespoons Texas Pete Hotter Hot Sauce, 2 Servings Rice-A-Roni Chicken";
+  var result = resolveAegisNutritionV284_(fixture);
+  var validated = validateAegisNutritionResultV282_(result, fixture);
+  if (validated.items.length !== 5) {
+    throw new Error("2.8.4.1 live provider did not return exactly five validated items.");
+  }
+  var output = {
+    status: "PASS",
+    contract: AEGIS_NUTRITION_MULTI_ITEM_CONTRACT_V2841,
+    model: getAegisNutritionGroundedModelV284_(),
+    grounded: true,
+    items: validated.items.map(function(item) {
+      return {
+        item: item.item,
+        portion: item.portion,
+        source_type: item.source_type,
+        confidence: item.confidence
+      };
+    })
   };
   Logger.log(JSON.stringify(output, null, 2));
   return output;
