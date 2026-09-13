@@ -1,5 +1,26 @@
 # AEGIS shared backend changelog
 
+## 2.8.3 — device-session and durable-nutrition integrated candidate
+
+- Reconciled the exact authoritative 2.8.1 `Code.gs` supplied on 2026-09-13;
+  LF-normalized SHA-256 `a349a46bdab0b8f63396d0c8aac181f9446f93ccad8ecb3c1b23a0830cc78331`.
+- Added the complete 2.8.3 router integration without merging implementation modules
+  into `Code.gs`.
+- Added optional signed, server-registered 30-day device sessions after successful
+  Google AUTH-1 verification, rolling renewal, scope enforcement, and logout revocation.
+- Legacy clients without a `device_id` retain the existing Google-token response and
+  authorization behavior.
+- Added all 2.8.2 durable nutrition queue routes and capabilities while preserving
+  2.8.1 `capture_nutrition` and legacy `/calories` behavior.
+- Added explicit `AEGIS_AUTH_FAILED` responses with separate diagnostic codes so
+  background clients pause safely without opening interactive authentication.
+- Static syntax, symbol-collision, router-contract, and mocked device-session lifecycle
+  validation pass. Apps Script runtime and cross-client validation remain pending.
+- Preserve the currently installed `NutritionReliability281.gs` during deployment.
+  Its recorded deployed hash is authoritative; the Git convenience copy must be
+  re-imported separately before byte-for-byte recovery is claimed.
+- Deployment status: candidate only. Backend 2.8.1 remains live and rollback.
+
 ## 2.8.2 — durable nutrition processing candidate
 
 - Added an asynchronous server-side nutrition queue with stable `capture_id` lookup, leases,
@@ -31,4 +52,7 @@
 
 ## Synchronization rule
 
-Before every client phase, compare this manifest with the Drive registry, `Cokkles/ai-project-workspace`, and `Cokkles/AEGIS-Windows/shared-backend/backend-manifest.json`. Synchronize an older mirror on a small branch before feature work.
+Before every client phase, compare this manifest with `Cokkles/ai-project-workspace`
+and `Cokkles/AEGIS-Windows/shared-backend/backend-manifest.json`. Synchronize an
+older mirror on a small branch before feature work. GitHub is the sole registry and
+release-artifact authority for this project.
