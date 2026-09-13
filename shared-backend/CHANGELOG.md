@@ -16,6 +16,9 @@
   background clients pause safely without opening interactive authentication.
 - Static syntax, symbol-collision, router-contract, and mocked device-session lifecycle
   validation pass. Apps Script runtime and cross-client validation remain pending.
+- Preserve the currently installed `NutritionReliability281.gs` during deployment.
+  Its recorded deployed hash is authoritative; the Git convenience copy must be
+  re-imported separately before byte-for-byte recovery is claimed.
 - Deployment status: candidate only. Backend 2.8.1 remains live and rollback.
 
 ## 2.8.2 — durable nutrition processing candidate
