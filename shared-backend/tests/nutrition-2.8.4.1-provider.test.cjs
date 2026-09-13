@@ -51,6 +51,16 @@ assert.equal(figNewton.items.length, 1);
 assert.equal(figNewton.items[0].item, "Fig Newton cookies");
 assert.ok(figNewton.items[0].calories >= 195);
 assert.equal(fetches.length, 0, "known foods must not call Gemini");
+assert.equal(
+  sandbox.tryKnownFoodNutritionV284_("2oz Fig Newton, 1 banana"),
+  null,
+  "a catalog match must never swallow another comma-separated item",
+);
+const mixedLocal = sandbox.tryResolveAegisNutritionLocallyV284_("2oz Fig Newton, 1 banana");
+assert.equal(mixedLocal.items.length, 2);
+assert.equal(mixedLocal.items[0].item, "Fig Newton cookies");
+assert.equal(mixedLocal.items[1].item, "Medium banana");
+assert.equal(fetches.length, 0, "fully local multi-item captures must not call Gemini");
 
 assert.equal(sandbox.requiresGroundedNutritionV284_("2 eggs and toast"), false);
 assert.equal(
@@ -122,6 +132,113 @@ const simple = sandbox.resolveAegisNutritionV284_("one medium baked potato");
 assert.equal(simple.items[0].calories, 190);
 assert.match(fetches.at(-1).url, /gemini-3\.5-flash-lite/);
 assert.equal(JSON.parse(fetches.at(-1).options.payload).tools, undefined);
+
+const suppliedFiveItemFixture = "2 Servings Tyson Frozen Grilled Chicken, 2 servings Kirkland Salsa, 1 Medium Mission Flour Tortilla, 2 tablespoons Texas Pete Hotter Hot Sauce, 2 Servings Rice-A-Roni Chicken";
+const fixtureSegments = sandbox.splitAegisNutritionItemsV284_(suppliedFiveItemFixture);
+assert.deepEqual(Array.from(fixtureSegments), [
+  "2 Servings Tyson Frozen Grilled Chicken",
+  "2 servings Kirkland Salsa",
+  "1 Medium Mission Flour Tortilla",
+  "2 tablespoons Texas Pete Hotter Hot Sauce",
+  "2 Servings Rice-A-Roni Chicken",
+]);
+assert.ok(fixtureSegments.every((segment) => sandbox.requiresGroundedNutritionV284_(segment)));
+
+const brandedItems = [
+  ["Tyson Frozen Grilled Chicken", "2 servings"],
+  ["Kirkland Salsa", "2 servings"],
+  ["Mission Flour Tortilla", "1 medium tortilla"],
+  ["Texas Pete Hotter Hot Sauce", "2 tablespoons"],
+  ["Rice-A-Roni Chicken", "2 servings"],
+].map(([item, portion], index) => ({
+  item,
+  portion,
+  calories: 100 + index * 25,
+  protein: 5 + index,
+  carbs: 10 + index,
+  fat: 2 + index,
+  saturated_fat: 1,
+  fiber: 1,
+  sugar: 2,
+  sodium: 100 + index * 50,
+  cholesterol: 10,
+  source_type: "OFFICIAL",
+  source_url: "https://example.invalid/product-" + index,
+  confidence: "MEDIUM",
+  lookup_depth: 2,
+  assumptions: "Fixture item " + (index + 1),
+  conservative_adjustment: false,
+}));
+nextResponse = {
+  getResponseCode: () => 200,
+  getContentText: () => JSON.stringify({
+    candidates: [{ content: { parts: [{ text: JSON.stringify({
+      items: brandedItems,
+      overall_confidence: "MEDIUM",
+      lookup_depth: 2,
+    }) }] } }],
+  }),
+  getAllHeaders: () => ({}),
+};
+const fixtureFetchCount = fetches.length;
+const fiveItemResult = sandbox.resolveAegisNutritionV284_(suppliedFiveItemFixture);
+assert.equal(fiveItemResult.items.length, 5);
+assert.equal(fetches.length, fixtureFetchCount + 1, "the five-item bundle should use one provider call");
+const fixturePayload = JSON.parse(fetches.at(-1).options.payload);
+assert.ok(fixturePayload.tools, "branded products must use grounded lookup");
+assert.match(fixturePayload.contents[0].parts[0].text, /exactly 5 separately logged food items/);
+assert.throws(
+  () => sandbox.enforceAegisNutritionItemIntegrityV284_({
+    items: [{ item: "Generic Mixed Meal Portion", portion: "1 serving" }],
+  }, fixtureSegments),
+  (error) => error.aegisCode === "NUTRITION_ITEM_COUNT_MISMATCH",
+);
+assert.throws(
+  () => sandbox.enforceAegisNutritionItemIntegrityV284_({
+    items: fixtureSegments.map(() => ({
+      item: "Generic Mixed Meal Portion",
+      portion: "2 servings",
+      source_type: "MODEL_ESTIMATE",
+      confidence: "LOW",
+    })),
+  }, fixtureSegments),
+  (error) => error.aegisCode === "NUTRITION_GENERIC_AGGREGATE_REJECTED",
+);
+
+const originalResolver = sandbox.resolveAegisNutritionV284_;
+const originalDataSheetResolver = sandbox.getAegisNutritionDataSheetV282_;
+const originalCommit = sandbox.commitAegisNutritionResultV282_;
+const originalRelease = sandbox.releaseAegisNutritionJobAfterFailureV282_;
+let atomicCommitCalls = 0;
+let atomicReleaseCalls = 0;
+sandbox.SpreadsheetApp = {
+  openById: () => ({
+    getSheets: () => [{ getSheetId: () => 7 }],
+  }),
+};
+sandbox.getAegisNutritionDataSheetV282_ = () => ({});
+sandbox.resolveAegisNutritionV284_ = () => {
+  const error = new Error("collapsed result rejected");
+  error.aegisCode = "NUTRITION_ITEM_COUNT_MISMATCH";
+  error.aegisRetryable = true;
+  throw error;
+};
+sandbox.commitAegisNutritionResultV282_ = () => { atomicCommitCalls += 1; };
+sandbox.releaseAegisNutritionJobAfterFailureV282_ = () => { atomicReleaseCalls += 1; };
+sandbox.processClaimedAegisNutritionJobV282_({
+  spreadsheetId: "sheet-1",
+  queueSheetId: 7,
+  row: 2,
+  captureId: "fixture-capture",
+  input: suppliedFiveItemFixture,
+  attempts: 1,
+});
+assert.equal(atomicCommitCalls, 0, "an invalid bundle must not write any nutrition rows");
+assert.equal(atomicReleaseCalls, 1, "an invalid bundle must return to queue handling");
+sandbox.resolveAegisNutritionV284_ = originalResolver;
+sandbox.getAegisNutritionDataSheetV282_ = originalDataSheetResolver;
+sandbox.commitAegisNutritionResultV282_ = originalCommit;
+sandbox.releaseAegisNutritionJobAfterFailureV282_ = originalRelease;
 
 fetches.length = 0;
 nextResponse = {
@@ -198,4 +315,4 @@ sandbox.releaseAegisNutritionJobAfterFailureV282_(
 assert.equal(releasedChanges.status, "RETRY_SCHEDULED");
 assert.equal(releasedChanges.attempts, 6, "an open circuit must not consume an AI attempt");
 
-console.log("PASS nutrition 2.8.4 tiered provider, quota parsing, and circuit-breaker validation");
+console.log("PASS nutrition 2.8.4.1 tiered provider, multi-item integrity, quota, and circuit validation");

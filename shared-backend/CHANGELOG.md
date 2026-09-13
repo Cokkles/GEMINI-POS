@@ -1,5 +1,23 @@
 # AEGIS shared backend changelog
 
+## 2.8.4.1 — multi-item nutrition integrity correction
+
+- Added deterministic comma/newline/semicolon/pipe item segmentation with a
+  maximum of 20 explicit items per capture.
+- Added branded-product routing for Tyson, Kirkland, Mission, Texas Pete, and
+  Rice-A-Roni so the supplied fixture uses one grounded request rather than the
+  ungrounded simple estimator.
+- Requires provider output count to exactly equal input item count, in the same
+  order, with each leading numeric quantity preserved in its portion.
+- Rejects generic/combined meal names, identity mismatches, and low-confidence or
+  model-only claims for recognized branded products.
+- Multi-item provider validation occurs before the durable queue writes anything;
+  a failed bundle remains queued with zero partial nutrition rows.
+- Added the exact five-item user fixture to local and Apps Script regression tests.
+- Preserves all 2.8.4 provider/quota behavior, 2.8.3 device sessions, 2.8.2 queue
+  routes, 2.8.1 structured capture, legacy `/calories`, and columns A:X.
+- Deployment status: candidate. Backend 2.8.4 is the rollback point.
+
 ## 2.8.4 — tiered nutrition provider and quota hardening candidate
 
 - Added a known-food/cache-first path so common captures can complete without an

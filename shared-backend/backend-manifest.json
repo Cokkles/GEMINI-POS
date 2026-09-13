@@ -1,24 +1,24 @@
 {
   "schema_version": 2,
-  "backend_version": "2.8.4",
-  "deployed_backend_version": "2.8.3",
+  "backend_version": "2.8.4.1",
+  "deployed_backend_version": "2.8.4",
   "compatibility_posture": "additive",
   "source_path": "shared-backend/Code.gs",
-  "source_status": "AUTHORITATIVE_2_8_1_RECONCILED_FULL_2_8_4_CANDIDATE_READY",
-  "source_sha256": "787ddd1d2f064a01b165a95b2171539ac71d92df79ef3854b1cde2e5c8c7d331",
+  "source_status": "AUTHORITATIVE_2_8_1_RECONCILED_FULL_2_8_4_1_CANDIDATE_READY",
+  "source_sha256": "2aaaae505c76606b6b5d4777b5c719ace156147f40a71d27cf7106c52f769d0d",
   "baseline_2_8_1_source_sha256": "a349a46bdab0b8f63396d0c8aac181f9446f93ccad8ecb3c1b23a0830cc78331",
   "source_reconciled_date": "2026-09-13",
   "nutrition_2_8_1_deployed_source_sha256": "fe3282093a9d32ef42c117527ede91e24fdf9a1d36119a12bda619c471de7556",
   "nutrition_2_8_1_repository_copy_sha256": "f2a5c7eeadbb8fcd23bfe8d31a6c5591a1785e9f7d3c095371dd13cca95e0f34",
   "nutrition_2_8_1_source_status": "PRESERVE_INSTALLED_FILE_REIMPORT_REQUIRED_FOR_BYTE_EXACT_GIT_MIRROR",
   "additive_patch_path": "shared-backend/patches/2.8.2-durable-nutrition-queue.gs",
-  "additive_patch_sha256": "e01fd9cd2511268814301d8946219dd8fbaf55d3c7829e37234fb8efbde24a19",
+  "additive_patch_sha256": "19b6fd56de793b23f0bf2241ad768053cd7844b2219e74462f6a8d79294adb17",
   "device_session_patch_path": "shared-backend/patches/2.8.3-device-sessions.gs",
   "device_session_patch_sha256": "e79e3fb400684cf3f173de993b3bc8f2ead1b825d678228e66f639f5ae9e1de9",
   "nutrition_provider_patch_path": "shared-backend/patches/2.8.4-nutrition-provider-hardening.gs",
-  "nutrition_provider_patch_sha256": "0fcb31ee9c681ca1d9b388647a103ba650712369c5c637b54be42ce3fc8e6f30",
+  "nutrition_provider_patch_sha256": "300c49328ada1e42eaf239c99ba0a62e762e7fd9f25324ec87c6173aad10dbf0",
   "deployment_id": null,
-  "deployment_verification": "2.8.3_RUNTIME_QUEUE_EVIDENCE_OBSERVED_2.8.4_LOCAL_TESTS_PASS_DEPLOYMENT_PENDING",
+  "deployment_verification": "2.8.4_RUNTIME_BACKLOG_AND_KNOWN_FOOD_PASS_2.8.4.1_LOCAL_MULTI_ITEM_TESTS_PASS_DEPLOYMENT_PENDING",
   "artifact_authority": "github_only",
   "mirror_repositories": [
     "Cokkles/GEMINI-POS",
@@ -26,7 +26,7 @@
   ],
   "preserved_android_contract_floor": "2.7.0",
   "preflight_required": true,
-  "rollback_backend_version": "2.8.3",
+  "rollback_backend_version": "2.8.4",
   "candidate_contracts": [
     "AEGIS_NUTRITION_CAPTURE_ASYNC_V1",
     "nutrition_capture_async_v1",
@@ -39,6 +39,8 @@
     ,"nutrition_provider_routing_v1"
     ,"nutrition_quota_diagnostics_v1"
     ,"nutrition_circuit_breaker_v1"
+    ,"AEGIS_NUTRITION_MULTI_ITEM_INTEGRITY_V1"
+    ,"nutrition_multi_item_integrity_v1"
   ],
-  "notes": "2.8.4 is a deployment candidate. Local static, mocked provider-routing, quota parsing, circuit-breaker, device-session, and durable-capacity tests pass. Preserve the installed authoritative NutritionReliability281.gs. Backend 2.8.3 is the rollback point. GitHub-only workflow; do not use Drive."
+  "notes": "2.8.4.1 is a deployment candidate correcting generic aggregation of explicit multi-item captures. The exact five-item Tyson/Kirkland/Mission/Texas Pete/Rice-A-Roni fixture passes segmentation, branded routing, item-count, identity, portion, generic-rejection, quota, circuit, auth, and durable-capacity tests. Preserve the installed authoritative NutritionReliability281.gs. Backend 2.8.4 is the rollback point. GitHub-only workflow; do not use Drive."
 }
