@@ -18,16 +18,20 @@ const sessions283 = fs.readFileSync(
   path.join(root, "patches", "2.8.3-device-sessions.gs"),
   "utf8",
 );
+const nutrition284 = fs.readFileSync(
+  path.join(root, "patches", "2.8.4-nutrition-provider-hardening.gs"),
+  "utf8",
+);
 
-for (const [name, source] of Object.entries({ code, nutrition281, nutrition282, sessions283 })) {
+for (const [name, source] of Object.entries({ code, nutrition281, nutrition282, sessions283, nutrition284 })) {
   assert.doesNotThrow(() => new vm.Script(source, { filename: name }));
 }
 
-const functionNames = [code, nutrition281, nutrition282, sessions283]
+const functionNames = [code, nutrition281, nutrition282, sessions283, nutrition284]
   .flatMap((source) => [...source.matchAll(/^function\s+([\w$]+)\s*\(/gm)].map((match) => match[1]));
 assert.equal(new Set(functionNames).size, functionNames.length, "Apps Script function names must be unique");
 
-assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.8\.3";/);
+assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.8\.4";/);
 for (const action of [
   "enqueue_nutrition_capture",
   "get_nutrition_capture_status",
@@ -41,6 +45,9 @@ for (const capability of [
   "nutrition_capture_async_v1",
   "nutrition_capture_status_v1",
   "nutrition_result_cache_v1",
+  "nutrition_provider_routing_v1",
+  "nutrition_quota_diagnostics_v1",
+  "nutrition_circuit_breaker_v1",
   "device_session_v1",
   "interactive_auth_background_forbidden_v1",
 ]) {
@@ -140,4 +147,4 @@ assert.equal(revoked.authenticated, false);
 assert.equal(revoked.code, "AEGIS_AUTH_FAILED");
 assert.equal(revoked.diagnostic_code, "AEGIS_DEVICE_SESSION_REVOKED");
 
-console.log("PASS backend 2.8.3 router/auth static and mocked-runtime validation");
+console.log("PASS backend 2.8.4 router/auth static and mocked-runtime validation");

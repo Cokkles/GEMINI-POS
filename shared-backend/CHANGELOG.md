@@ -1,5 +1,23 @@
 # AEGIS shared backend changelog
 
+## 2.8.4 — tiered nutrition provider and quota hardening candidate
+
+- Added a known-food/cache-first path so common captures can complete without an
+  AI request; the initial packaged-food fixture covers weighted Fig Newton input.
+- Added an ungrounded `gemini-3.5-flash-lite` lane for ordinary food estimates.
+- Restricted Google Search grounding to restaurant/menu inputs and added a
+  conservative ungrounded fallback when only the grounded lane is unavailable.
+- Preserved Gemini HTTP 429/503 provider details, classified search/daily/RPM/TPM
+  limits, honored provider retry timing, and added separate simple/grounded
+  circuit breakers.
+- Capacity failures no longer exhaust the durable queue into a terminal failure;
+  safely accepted captures remain queued with capped progressive backoff.
+- Preserved 2.8.3 device sessions, 2.8.2 queue routes, 2.8.1 structured capture,
+  legacy `/calories`, and nutrition columns A:X.
+- Local static, mocked routing, quota, circuit-breaker, and durable-capacity
+  regression tests pass. Apps Script runtime and client smoke tests remain pending.
+- Backend 2.8.3 is the rollback point. Workflow remains GitHub-only; Drive is not used.
+
 ## 2.8.3 — device-session and durable-nutrition integrated candidate
 
 - Reconciled the exact authoritative 2.8.1 `Code.gs` supplied on 2026-09-13;
