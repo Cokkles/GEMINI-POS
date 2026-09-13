@@ -4,16 +4,18 @@
   "deployed_backend_version": "2.8.1",
   "compatibility_posture": "additive",
   "source_path": "shared-backend/Code.gs",
-  "source_status": "AUTHORITATIVE_2_8_1_HASH_RECORDED_BYTES_PENDING_MIGRATION_2_8_2_AND_2_8_3_PATCHES_READY",
-  "source_sha256": "a349a46bdab0b8f63396d0c8aac181f9446f93ccad8ecb3c1b23a0830cc78331",
+  "source_status": "AUTHORITATIVE_2_8_1_RECONCILED_FULL_2_8_3_CANDIDATE_READY",
+  "source_sha256": "808fc01aae213073c68702f79fef3f283834d38378bc9605844e24b302a54f8d",
+  "baseline_2_8_1_source_sha256": "a349a46bdab0b8f63396d0c8aac181f9446f93ccad8ecb3c1b23a0830cc78331",
+  "source_reconciled_date": "2026-09-13",
   "nutrition_2_8_1_module_sha256": "fe3282093a9d32ef42c117527ede91e24fdf9a1d36119a12bda619c471de7556",
   "additive_patch_path": "shared-backend/patches/2.8.2-durable-nutrition-queue.gs",
   "additive_patch_sha256": "544f03d93668415300e40d8bcba707c486b4b73f151b9fb6c0a5cadb57076056",
   "device_session_patch_path": "shared-backend/patches/2.8.3-device-sessions.gs",
-  "device_session_patch_sha256": "3919164a7bd25c4f79072d9ebb612584952563f3d25b049eed39a2d5211c526d",
+  "device_session_patch_sha256": "e79e3fb400684cf3f173de993b3bc8f2ead1b825d678228e66f639f5ae9e1de9",
   "deployment_id": null,
   "deployment_verification": "2.8.1_RUNTIME_VERSION_AND_MODULE_TESTS_PASS_2.8.3_PENDING",
-  "registry_document_id": "1RaxZU2JNl5Dr4-puIvy01q8nmbiJlbx0RhOir2oWvCY",
+  "artifact_authority": "github_only",
   "mirror_repositories": [
     "Cokkles/GEMINI-POS",
     "Cokkles/AEGIS-Windows"
@@ -30,5 +32,5 @@
     "device_session_v1",
     "interactive_auth_background_forbidden_v1"
   ],
-  "notes": "2.8.3 is not deployed. It preserves the undeployed 2.8.2 nutrition queue and adds device sessions. Preserve live 2.8.1 as rollback. The exact full 2.8.1 Code.gs bytes are required before the router merge and complete source checkpoint."
+  "notes": "2.8.3 is not deployed. The exact authoritative 2.8.1 Code.gs was reconciled and the full additive 2.8.3 router candidate is ready for Apps Script validation. Preserve live 2.8.1 as rollback."
 }
