@@ -59,7 +59,7 @@ function testGeminiConnection() {
   return { status: "ok", model: cfg.model, reply: reply };
 }
 
-const AEGIS_BACKEND_VERSION = "2.8.3";
+const AEGIS_BACKEND_VERSION = "2.8.4";
 
 const CONFIG = {
   CALORIES_SHEET_ID:
@@ -3937,6 +3937,9 @@ function getAegisCapabilities() {
       nutrition_capture_async_v1: true,
       nutrition_capture_status_v1: true,
       nutrition_result_cache_v1: true,
+      nutrition_provider_routing_v1: true,
+      nutrition_quota_diagnostics_v1: true,
+      nutrition_circuit_breaker_v1: true,
       device_session_v1: true,
       interactive_auth_background_forbidden_v1: true
     },

@@ -11,7 +11,7 @@
  */
 
 var AEGIS_NUTRITION_ASYNC_CONTRACT_V282 = "AEGIS_NUTRITION_CAPTURE_ASYNC_V1";
-var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.8.2";
+var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.8.4";
 var AEGIS_NUTRITION_QUEUE_SHEET_V282 = "_AEGIS_NUTRITION_CAPTURE_QUEUE_V1";
 var AEGIS_NUTRITION_QUEUE_HANDLER_V282 = "processAegisNutritionQueueV282";
 var AEGIS_NUTRITION_DATA_SHEET_PROPERTY_V282 = "AEGIS_NUTRITION_SHEET_NAME";
@@ -118,7 +118,9 @@ function enqueueAegisNutritionCaptureV282_(contents) {
     }
 
     var cached = findConfirmedNutritionFingerprintV282_(queueSheet, fingerprint);
-    var deterministic = cached ? null : tryDeterministicNutritionV282_(input);
+    var deterministic = cached
+      ? null
+      : tryKnownFoodNutritionV284_(input) || tryDeterministicNutritionV282_(input);
     var reusable = cached && cached.result ? cached.result : deterministic;
 
     var row = appendAegisNutritionQueueJobV282_(
@@ -313,8 +315,7 @@ function processClaimedAegisNutritionJobV282_(claim) {
   var nutritionSheet = getAegisNutritionDataSheetV282_(spreadsheet);
 
   try {
-    var deterministic = tryDeterministicNutritionV282_(claim.input);
-    var result = deterministic || callGeminiForNutritionOnceV282_(claim.input);
+    var result = resolveAegisNutritionV284_(claim.input);
     var validated = validateAegisNutritionResultV282_(result, claim.input);
     commitAegisNutritionResultV282_(
       spreadsheet,
@@ -425,10 +426,19 @@ function releaseAegisNutritionJobAfterFailureV282_(
 ) {
   var retryable = error && error.aegisRetryable === true;
   var code = error && error.aegisCode || "NUTRITION_LOOKUP_FAILED";
-  var exhausted = attempts >= AEGIS_NUTRITION_MAX_AI_ATTEMPTS_V282;
+  var capacityFailure = isGeminiCapacityErrorV284_(error);
+  var effectiveAttempts = /_CIRCUIT_OPEN$/.test(code)
+    ? Math.max(0, attempts - 1)
+    : attempts;
+  // Provider capacity must not turn an accepted capture into a terminal loss.
+  var exhausted = !capacityFailure &&
+    effectiveAttempts >= AEGIS_NUTRITION_MAX_AI_ATTEMPTS_V282;
   var delay = retryable && !exhausted
     ? nutritionRetryDelayV282_(attempts)
     : null;
+  if (delay !== null && error && Number(error.retryAfterMs) > 0) {
+    delay = Math.max(delay, Number(error.retryAfterMs));
+  }
   var status = delay !== null
     ? "RETRY_SCHEDULED"
     : "NEEDS_REVIEW";
@@ -439,6 +449,7 @@ function releaseAegisNutritionJobAfterFailureV282_(
     nextAttemptAt: delay === null ? "" : new Date(now.getTime() + delay),
     errorCode: code,
     error: String(error && error.message || error).slice(0, 1000),
+    attempts: effectiveAttempts,
     leaseStartedAt: ""
   });
   if (delay !== null) ensureAegisNutritionWorkerTriggerV282_();
@@ -451,7 +462,8 @@ function nutritionRetryDelayV282_(attemptsCompleted) {
     15 * 60 * 1000,
     30 * 60 * 1000,
     2 * 60 * 60 * 1000,
-    6 * 60 * 60 * 1000
+    6 * 60 * 60 * 1000,
+    12 * 60 * 60 * 1000
   ];
   return delays[Math.max(0, Math.min(delays.length - 1, attemptsCompleted - 1))];
 }
@@ -614,7 +626,7 @@ function confirmedNutritionResponseV282_(validated, captureId, deduplicated, cac
     items: validated.items,
     totals: sumAegisNutritionItemsV281_(validated.items),
     totalCalories: getTodayCaloriesFromSheetV282_(),
-    source_policy: "CACHE_COMPONENT_THEN_GEMINI_GROUNDED_V1",
+    source_policy: "CACHE_KNOWN_FOOD_FLASH_LITE_THEN_GROUNDED_V1",
     lookup_depth: validated.lookup_depth,
     confidence: validated.confidence
   };
@@ -652,8 +664,8 @@ function nutritionQueueJobResponseV282_(job, deduplicated) {
     );
   }
   var waiting = job.status === "RETRY_SCHEDULED" &&
-    (job.errorCode === "GEMINI_RATE_LIMITED" || job.errorCode === "GEMINI_HIGH_VOLUME")
-    ? "Capture saved. Waiting for Gemini capacity; Android does not need to resubmit it."
+    /^GEMINI_/.test(job.errorCode)
+    ? "Capture saved. Waiting for provider capacity; Android does not need to resubmit it."
     : job.status === "NEEDS_REVIEW"
       ? "Capture is safely stored but needs review before nutrition can be confirmed."
       : "Capture saved to the AEGIS server queue and will continue in the background.";
