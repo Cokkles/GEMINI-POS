@@ -2,7 +2,7 @@
  * AEGIS Master Webhook & Ingestion Engine (Option A)
  *
  * Complete Workspace Router & HORIZON Integration:
- * 1. /calories   -> Gemini AI Macro Extraction -> Nutrition Sheet
+ * 1. /calories   -> Provisional Nutrition Sheet write -> nightly KINETIC review
  * 2. /journal    -> Dedicated Journal Document
  * 3. /receipts   -> Expense Intake -> Finance Sheet
  * 4. /groceries  -> Google Tasks
@@ -59,7 +59,7 @@ function testGeminiConnection() {
   return { status: "ok", model: cfg.model, reply: reply };
 }
 
-const AEGIS_BACKEND_VERSION = "2.8.4.1";
+const AEGIS_BACKEND_VERSION = "2.9.0";
 
 const CONFIG = {
   CALORIES_SHEET_ID:
@@ -379,7 +379,9 @@ function aegisScopeForAction_(action, message) {
     action === "capture_nutrition" ||
     action === "enqueue_nutrition_capture" ||
     action === "get_nutrition_capture_status" ||
-    action === "retry_nutrition_capture"
+    action === "retry_nutrition_capture" ||
+    action === "get_nutrition_verification_status" ||
+    action === "run_nutrition_nightly_review"
   ) return "kinetic.read";
   if (action === "get_health") return "dashboard.read";
   if (action === "get_capabilities") return "dashboard.read";
@@ -752,8 +754,19 @@ function doPost(e) {
       return jsonOutput(handleAegisNutritionCaptureRetryV282_(contents));
     }
 
+    if (action === "get_nutrition_verification_status") {
+      return jsonOutput(getAegisNutritionVerificationStatusV290_(
+        SpreadsheetApp.openById(CONFIG.CALORIES_SHEET_ID),
+        contents.capture_id || contents.submission_id
+      ));
+    }
+
+    if (action === "run_nutrition_nightly_review") {
+      return jsonOutput(runKineticNightlyNutritionReviewV290(contents.food_date));
+    }
+
     if (action === "capture_nutrition") {
-      return jsonOutput(handleAegisNutritionCaptureV281_(contents));
+      return jsonOutput(enqueueAegisNutritionCaptureV282_(contents));
     }
 
     /* --------------------------------------------------------
@@ -1069,127 +1082,10 @@ function doPost(e) {
    ============================================================ */
 
 function handleCalorieLogging(foodText) {
-
   if (!foodText) {
     return "⚠️ Please provide food details to log.";
   }
-
-  var parsedItems =
-    callGeminiForMacros(foodText);
-
-  var sheet =
-    SpreadsheetApp
-      .openById(
-        CONFIG.CALORIES_SHEET_ID
-      )
-      .getActiveSheet();
-
-  var dateStr =
-    Utilities.formatDate(
-      new Date(),
-      CONFIG.TIMEZONE,
-      "M/d/yyyy"
-    );
-
-  var timeStr =
-    Utilities.formatDate(
-      new Date(),
-      CONFIG.TIMEZONE,
-      "h:mm:ss a"
-    );
-
-  if (
-    !parsedItems ||
-    parsedItems.length === 0
-  ) {
-
-    sheet.appendRow([
-      dateStr,
-      timeStr,
-      foodText,
-      "1 serving",
-      0,
-      0,
-      0,
-      0,
-      0,
-      "Logged via AEGIS Dashboard"
-    ]);
-
-    return (
-      "⚠️ Logged '" +
-      foodText +
-      "' to Sheet " +
-      "(Macros pending - verify GEMINI_API_KEY in Script Properties)."
-    );
-  }
-
-  var summaryLines = [];
-
-  for (
-    var i = 0;
-    i < parsedItems.length;
-    i++
-  ) {
-
-    var item =
-      parsedItems[i];
-
-    var cals =
-      Number(item.calories) || 0;
-
-    var prot =
-      Number(item.protein) || 0;
-
-    var carbs =
-      Number(item.carbs) || 0;
-
-    var fat =
-      Number(item.fat) || 0;
-
-    var sod =
-      Number(item.sodium) || 0;
-
-    sheet.appendRow([
-      dateStr,
-      timeStr,
-      item.item || foodText,
-      item.portion || "1 serving",
-      cals,
-      prot,
-      carbs,
-      fat,
-      sod,
-      "Logged via AEGIS AI"
-    ]);
-
-    summaryLines.push(
-      "• " +
-      item.item +
-      " (" +
-      (item.portion || "1 serv") +
-      "): " +
-      cals +
-      " kcal | " +
-      prot +
-      "g P | " +
-      carbs +
-      "g C | " +
-      fat +
-      "g F"
-    );
-  }
-
-  var dailyTotal =
-    getTodayCaloriesFromSheet();
-
-  return (
-    "✅ LOGGED NUTRITION VIA GEMINI AI:\n" +
-    summaryLines.join("\n") +
-    "\n\n📊 Daily Total: " +
-    dailyTotal +
-    " kcal"
-  );
+  return handleAegisLegacyNutritionV290_(foodText);
 }
 
 function callGeminiForMacros(foodText) {
@@ -3941,6 +3837,10 @@ function getAegisCapabilities() {
       nutrition_quota_diagnostics_v1: true,
       nutrition_circuit_breaker_v1: true,
       nutrition_multi_item_integrity_v1: true,
+      nutrition_provisional_logging_v1: true,
+      nutrition_nightly_reconciliation_v1: true,
+      nutrition_evidence_catalog_v1: true,
+      nutrition_revision_audit_v1: true,
       device_session_v1: true,
       interactive_auth_background_forbidden_v1: true
     },
@@ -3971,6 +3871,7 @@ function getAegisHealth() {
     horizon: getHorizonGenerationStatus(),
     intelligence_last_refresh: props.getProperty("AEGIS_INTEL_LAST_SUCCESS") || null,
     notification_count: getServerNotifications(false).length,
+    nutrition_nightly: getAegisNutritionNightlyHealthV290(),
     trigger_status: getInstalledAegisTriggers(),
     time: new Date().toISOString()
   };

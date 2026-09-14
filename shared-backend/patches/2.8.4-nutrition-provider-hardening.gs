@@ -1,5 +1,5 @@
 /**
- * AEGIS shared backend 2.8.4.1 -- tiered nutrition provider reliability.
+ * AEGIS shared backend 2.9.0 -- retained tiered provider diagnostics and item integrity.
  *
  * Install beside Code.gs, NutritionReliability281.gs,
  * NutritionQueue282.gs, and DeviceSessions283.gs. The durable 2.8.2 queue
@@ -595,7 +595,7 @@ function parseNutritionWeightGramsV284_(text) {
 function getAegisNutritionProviderHealthV284_() {
   return {
     status: "success",
-    backend_version: "2.8.4.1",
+    backend_version: "2.9.0",
     contract: AEGIS_NUTRITION_PROVIDER_CONTRACT_V284,
     simple_model: getAegisNutritionSimpleModelV284_(),
     grounded_model: getAegisNutritionGroundedModelV284_(),

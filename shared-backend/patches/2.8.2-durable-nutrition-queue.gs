@@ -11,7 +11,7 @@
  */
 
 var AEGIS_NUTRITION_ASYNC_CONTRACT_V282 = "AEGIS_NUTRITION_CAPTURE_ASYNC_V1";
-var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.8.4.1";
+var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.9.0";
 var AEGIS_NUTRITION_QUEUE_SHEET_V282 = "_AEGIS_NUTRITION_CAPTURE_QUEUE_V1";
 var AEGIS_NUTRITION_QUEUE_HANDLER_V282 = "processAegisNutritionQueueV282";
 var AEGIS_NUTRITION_DATA_SHEET_PROPERTY_V282 = "AEGIS_NUTRITION_SHEET_NAME";
@@ -88,7 +88,10 @@ function enqueueAegisNutritionCaptureV282_(contents) {
 
   var alreadyWritten = findAegisNutritionCaptureV282_(nutritionSheet, captureId);
   if (alreadyWritten) {
-    return upgradeConfirmedResponseV282_(alreadyWritten, true, false);
+    return annotateAegisNutritionResponseV290_(
+      upgradeConfirmedResponseV282_(alreadyWritten, true, false),
+      captureId
+    );
   }
 
   var lock = LockService.getScriptLock();
@@ -114,12 +117,20 @@ function enqueueAegisNutritionCaptureV282_(contents) {
           false
         );
       }
-      return nutritionQueueJobResponseV282_(existing, true);
+      return annotateAegisNutritionResponseV290_(
+        nutritionQueueJobResponseV282_(existing, true),
+        captureId
+      );
     }
 
     var cached = findConfirmedNutritionFingerprintV282_(queueSheet, fingerprint);
-    var deterministic = cached ? null : tryResolveAegisNutritionLocallyV284_(input);
-    var reusable = cached && cached.result ? cached.result : deterministic;
+    var local = cached ? null : tryResolveAegisNutritionLocallyV284_(input);
+    var reusable = cached && cached.result ? cached.result : local;
+    var provisional = reusable || buildAegisNutritionProvisionalV290_(
+      input,
+      spreadsheet
+    );
+    provisional = validateAegisNutritionResultV282_(provisional, input);
 
     var row = appendAegisNutritionQueueJobV282_(
       queueSheet,
@@ -128,24 +139,27 @@ function enqueueAegisNutritionCaptureV282_(contents) {
       fingerprint,
       contents
     );
-
-    if (reusable) {
-      return commitAegisNutritionResultV282_(
-        spreadsheet,
-        nutritionSheet,
-        queueSheet,
-        row,
-        captureId,
-        reusable,
-        cached !== null
-      );
-    }
-
-    ensureAegisNutritionWorkerTriggerV282_();
-    return nutritionQueueJobResponseV282_(
-      readAegisNutritionQueueJobV282_(queueSheet, row),
-      false
+    var response = commitAegisNutritionResultV282_(
+      spreadsheet,
+      nutritionSheet,
+      queueSheet,
+      row,
+      captureId,
+      provisional,
+      cached !== null
     );
+    registerAegisNutritionReconciliationV290_(
+      spreadsheet,
+      nutritionSheet,
+      captureId,
+      input,
+      provisional
+    );
+    response.result = renderAegisNutritionSummaryV281_(provisional.items) +
+      "\n\nRecorded as a provisional estimate; nightly KINETIC verification is pending.";
+    response.nutrition_verification_status = "PENDING";
+    response.terminal = true;
+    return annotateAegisNutritionResponseV290_(response, captureId);
   } finally {
     lock.releaseLock();
   }
@@ -313,16 +327,26 @@ function processClaimedAegisNutritionJobV282_(claim) {
   var nutritionSheet = getAegisNutritionDataSheetV282_(spreadsheet);
 
   try {
-    var result = resolveAegisNutritionV284_(claim.input);
-    var validated = validateAegisNutritionResultV282_(result, claim.input);
+    var provisional = buildAegisNutritionProvisionalV290_(
+      claim.input,
+      spreadsheet
+    );
+    provisional = validateAegisNutritionResultV282_(provisional, claim.input);
     commitAegisNutritionResultV282_(
       spreadsheet,
       nutritionSheet,
       queueSheet,
       claim.row,
       claim.captureId,
-      validated,
+      provisional,
       false
+    );
+    registerAegisNutritionReconciliationV290_(
+      spreadsheet,
+      nutritionSheet,
+      claim.captureId,
+      claim.input,
+      provisional
     );
   } catch (error) {
     releaseAegisNutritionJobAfterFailureV282_(
@@ -624,7 +648,7 @@ function confirmedNutritionResponseV282_(validated, captureId, deduplicated, cac
     items: validated.items,
     totals: sumAegisNutritionItemsV281_(validated.items),
     totalCalories: getTodayCaloriesFromSheetV282_(),
-    source_policy: "CACHE_KNOWN_FOOD_FLASH_LITE_THEN_GROUNDED_V1",
+    source_policy: "PROVISIONAL_CACHE_DATABASE_ESTIMATE_THEN_NIGHTLY_KINETIC_V1",
     lookup_depth: validated.lookup_depth,
     confidence: validated.confidence
   };
@@ -642,7 +666,7 @@ function upgradeConfirmedResponseV282_(response, deduplicated, cacheHit) {
   response.backend_version = AEGIS_NUTRITION_BACKEND_VERSION_V282;
   response.deduplicated = deduplicated === true;
   response.cache_hit = cacheHit === true;
-  return response;
+  return annotateAegisNutritionResponseV290_(response, response.capture_id);
 }
 
 function nutritionQueueJobResponseV282_(job, deduplicated) {
