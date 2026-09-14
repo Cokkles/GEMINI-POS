@@ -380,6 +380,11 @@ function buildKineticNightlyPromptV290_(targetDate, batchId, jobs) {
     "Source priority: exact manufacturer/menu label; USDA FoodData Central; Open Food Facts; verified retailer label; reputable secondary database; component estimate.",
     "Do not label a retailer, aggregator, or crowdsourced page as OFFICIAL.",
     "Confirm product variant, serving basis, and prepared-versus-dry state before comparing values.",
+    "Never average different product variants, serving sizes, or preparation states.",
+    "When an exact current manufacturer or government label matches, it outranks weaker sources and normally supplies the canonical value.",
+    "When comparable sources have similar authority, use weights HIGH=5, MEDIUM=3, LOW=1.",
+    "If HIGH and MEDIUM sources form a consistent cluster, exclude a materially conflicting LOW source as an outlier but mention it in the reason.",
+    "Do not let one low-authority outlier distort several agreeing higher-authority sources.",
     "For unavailable local restaurant data, use a consistent ingredient/component estimate; perfection is not required.",
     "Small reasonable deviations should normally be CONFIRM. Explain meaningful adjustments.",
     "Return valid JSON only. Do not use markdown.",
@@ -813,6 +818,12 @@ function runKineticNightlyNutritionReviewV290(targetDate) {
       contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
     };
   }
+}
+
+
+function runKineticNightlyNutritionReviewTodayV290() {
+  var today = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+  return runKineticNightlyNutritionReviewV290(today);
 }
 
 function installAegisNutritionNightlyTriggerV290() {
