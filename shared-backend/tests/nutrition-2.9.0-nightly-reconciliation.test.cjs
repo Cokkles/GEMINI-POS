@@ -70,6 +70,11 @@ const sandbox = {
   String,
   console,
   Logger: { log() {} },
+  PropertiesService: {
+    getScriptProperties() {
+      return { getProperty() { return null; } };
+    },
+  },
 };
 vm.createContext(sandbox);
 vm.runInContext(nutrition281, sandbox, { filename: "NutritionReliability281.gs" });
