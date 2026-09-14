@@ -612,60 +612,128 @@ function applyKineticNightlyReviewV290_(spreadsheet, targetDate, batchId, valida
   var nutritionSheet = getAegisNutritionDataSheetV282_(spreadsheet);
   var reconciliationSheet = getAegisNutritionReconciliationSheetV290_(spreadsheet);
   var auditSheet = getAegisNutritionAuditSheetV290_(spreadsheet);
-  var results = [];
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error("Nutrition reconciliation is busy; no nightly adjustments were applied.");
+  }
 
-  validatedReviews.forEach(function(entry) {
-    var decision = decideAegisNutritionRevisionV290_(entry.job.provisional, entry.validated);
-    var finalResult = decision.applyReviewed ? entry.validated : entry.job.provisional;
-    var rowStatus = decision.decision === "ADJUST" ? "ADJUSTED" :
-      decision.decision === "CONFIRM" ? "VERIFIED" : "NEEDS_REVIEW";
-
-    if (decision.decision !== "NEEDS_REVIEW") {
-      updateAegisNutritionCaptureRowsV290_(
-        nutritionSheet, entry.job.captureId, finalResult, rowStatus
-      );
-      var segments = splitAegisNutritionItemsV284_(entry.job.input);
-      finalResult.items.forEach(function(item, index) {
-        upsertAegisNutritionEvidenceV290_(spreadsheet, segments[index], item);
-      });
-      var queueSheet = getAegisNutritionQueueSheetV282_(spreadsheet);
-      var queueJob = findAegisNutritionQueueJobV282_(queueSheet, entry.job.captureId);
-      if (queueJob) {
-        updateAegisNutritionQueueJobV282_(queueSheet, queueJob.row, {
-          resultJson: JSON.stringify(finalResult),
-          updatedAt: new Date()
-        });
+  try {
+    // Preflight every target before changing any row. This prevents a missing or
+    // duplicated capture from producing a partially applied nightly batch.
+    validatedReviews.forEach(function(entry) {
+      var matches = nutritionSheet
+        .getRange(2, 21, Math.max(0, nutritionSheet.getLastRow() - 1), 1)
+        .createTextFinder(String(entry.job.captureId))
+        .matchEntireCell(true)
+        .findAll();
+      if (matches.length !== entry.validated.items.length) {
+        throw new Error(
+          "Nutrition row count changed for capture " + entry.job.captureId +
+          "; no nightly adjustments were applied."
+        );
       }
-    } else {
-      setAegisNutritionRowVerificationV290_(
-        nutritionSheet, entry.job.captureId, "NEEDS_REVIEW"
-      );
-    }
-
-    var now = new Date().toISOString();
-    auditSheet.appendRow([
-      batchId, targetDate, entry.job.captureId, decision.decision,
-      JSON.stringify(entry.job.provisional), JSON.stringify(entry.validated),
-      decision.delta, String(entry.review.reason || ""), now
-    ]);
-    reconciliationSheet.getRange(
-      entry.job.row, 1, 1, AEGIS_NUTRITION_RECONCILIATION_HEADERS_V290.length
-    ).setValues([[
-      batchId, targetDate, entry.job.captureId,
-      decision.decision === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : "COMPLETED",
-      entry.job.input, JSON.stringify(entry.job.provisional),
-      JSON.stringify(entry.validated), decision.decision,
-      reconciliationSheet.getRange(entry.job.row, 9).getValue() || now,
-      now, now, entry.job.attempts + 1, "", ""
-    ]]);
-    results.push({
-      capture_id: entry.job.captureId,
-      decision: decision.decision,
-      calorie_delta: decision.delta
     });
-  });
-  SpreadsheetApp.flush();
-  return results;
+
+    var planned = validatedReviews.map(function(entry) {
+      var decision = decideAegisNutritionRevisionV290_(
+        entry.job.provisional,
+        entry.validated
+      );
+      return {
+        entry: entry,
+        decision: decision,
+        finalResult: decision.applyReviewed
+          ? entry.validated
+          : entry.job.provisional,
+        rowStatus: decision.decision === "ADJUST"
+          ? "ADJUSTED"
+          : decision.decision === "CONFIRM"
+            ? "VERIFIED"
+            : "NEEDS_REVIEW"
+      };
+    });
+
+    var results = [];
+    planned.forEach(function(plan) {
+      var entry = plan.entry;
+      if (plan.decision.decision !== "NEEDS_REVIEW") {
+        updateAegisNutritionCaptureRowsV290_(
+          nutritionSheet,
+          entry.job.captureId,
+          plan.finalResult,
+          plan.rowStatus
+        );
+        var segments = splitAegisNutritionItemsV284_(entry.job.input);
+        plan.finalResult.items.forEach(function(item, index) {
+          upsertAegisNutritionEvidenceV290_(spreadsheet, segments[index], item);
+        });
+        var queueSheet = getAegisNutritionQueueSheetV282_(spreadsheet);
+        var queueJob = findAegisNutritionQueueJobV282_(
+          queueSheet,
+          entry.job.captureId
+        );
+        if (queueJob) {
+          updateAegisNutritionQueueJobV282_(queueSheet, queueJob.row, {
+            resultJson: JSON.stringify(plan.finalResult),
+            updatedAt: new Date()
+          });
+        }
+      } else {
+        setAegisNutritionRowVerificationV290_(
+          nutritionSheet,
+          entry.job.captureId,
+          "NEEDS_REVIEW"
+        );
+      }
+
+      var now = new Date().toISOString();
+      auditSheet.appendRow([
+        batchId,
+        targetDate,
+        entry.job.captureId,
+        plan.decision.decision,
+        JSON.stringify(entry.job.provisional),
+        JSON.stringify(entry.validated),
+        plan.decision.delta,
+        String(entry.review.reason || ""),
+        now
+      ]);
+      var existingCreatedAt =
+        reconciliationSheet.getRange(entry.job.row, 9).getValue() || now;
+      reconciliationSheet.getRange(
+        entry.job.row,
+        1,
+        1,
+        AEGIS_NUTRITION_RECONCILIATION_HEADERS_V290.length
+      ).setValues([[
+        batchId,
+        targetDate,
+        entry.job.captureId,
+        plan.decision.decision === "NEEDS_REVIEW"
+          ? "NEEDS_REVIEW"
+          : "COMPLETED",
+        entry.job.input,
+        JSON.stringify(entry.job.provisional),
+        JSON.stringify(entry.validated),
+        plan.decision.decision,
+        existingCreatedAt,
+        now,
+        now,
+        entry.job.attempts + 1,
+        "",
+        ""
+      ]]);
+      results.push({
+        capture_id: entry.job.captureId,
+        decision: plan.decision.decision,
+        calorie_delta: plan.decision.delta
+      });
+    });
+    SpreadsheetApp.flush();
+    return results;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function markKineticNightlyBatchDelayedV290_(sheet, jobs, batchId, error) {
