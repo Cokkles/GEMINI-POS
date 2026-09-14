@@ -396,8 +396,12 @@ function buildKineticNightlyPromptV290_(targetDate, batchId, jobs) {
     "Return exactly one review for every capture_id and exactly one item for every provisional item.",
     "Never omit, combine, or reorder captures or food items.",
     "Previously resolved foods still require CONFIRM, ADJUST, or NEEDS_REVIEW.",
-    "Use supplied evidence first. Perform fresh research only when it is missing, conflicting, or clearly stale.",
-    "Source priority: exact manufacturer/menu label; USDA FoodData Central; Open Food Facts; verified retailer label; reputable secondary database; component estimate.",
+    isKineticNightlySearchEnabledV290_()
+      ? "Use supplied evidence first. Perform fresh research only when it is missing, conflicting, or clearly stale."
+      : "Google Search is disabled for this review. Use nutrition reasoning only; do not claim fresh research.",
+    isKineticNightlySearchEnabledV290_()
+      ? "Source priority: exact manufacturer/menu label; USDA FoodData Central; Open Food Facts; verified retailer label; reputable secondary database; component estimate."
+      : "Do not invent or cite source URLs. Use source_type MODEL_ESTIMATE, an empty source_url, and candid confidence/assumptions.",
     "Do not label a retailer, aggregator, or crowdsourced page as OFFICIAL.",
     "Confirm product variant, serving basis, and prepared-versus-dry state before comparing values.",
     "Never average different product variants, serving sizes, or preparation states.",
