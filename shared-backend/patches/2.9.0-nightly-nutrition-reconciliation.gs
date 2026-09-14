@@ -329,6 +329,15 @@ function getAegisNutritionNightlyModelV290_() {
   ).trim();
 }
 
+function isKineticNightlySearchEnabledV290_() {
+  var value = String(
+    PropertiesService.getScriptProperties().getProperty(
+      "AEGIS_NUTRITION_NIGHTLY_SEARCH_ENABLED"
+    ) || "false"
+  ).trim().toLowerCase();
+  return value === "true" || value === "1" || value === "yes";
+}
+
 function isAegisNutritionReconciliationCandidateV290_(row, targetDate) {
   var rowDate = normalizeAegisFoodDateV290_(row[1]);
   var captureId = String(row[2] || "").trim();
@@ -428,18 +437,21 @@ function callKineticNightlyGeminiV290_(prompt) {
   var model = getAegisNutritionNightlyModelV290_();
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
     encodeURIComponent(model) + ":generateContent";
+  var requestPayload = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json"
+    }
+  };
+  if (isKineticNightlySearchEnabledV290_()) {
+    requestPayload.tools = [{ google_search: {} }];
+  }
   var response = UrlFetchApp.fetch(url, {
     method: "post",
     contentType: "application/json",
     headers: { "x-goog-api-key": cfg.apiKey },
-    payload: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json"
-      },
-      tools: [{ google_search: {} }]
-    }),
+    payload: JSON.stringify(requestPayload),
     muteHttpExceptions: true
   });
   var code = response.getResponseCode();
@@ -903,6 +915,7 @@ function getAegisNutritionNightlyHealthV290() {
     status: "success",
     backend_version: "2.9.0",
     model: getAegisNutritionNightlyModelV290_(),
+    search_grounding_enabled: isKineticNightlySearchEnabledV290_(),
     counts: counts,
     contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
   };
