@@ -1,5 +1,30 @@
 # AEGIS shared backend changelog
 
+## 2.9.0 — provisional nutrition and nightly KINETIC reconciliation
+
+- Removed Gemini from the immediate durable nutrition-capture path. New captures
+  are recorded immediately with a per-item provisional estimate and remain
+  available even when the AI provider is rate-limited or unavailable.
+- Registered every capture for one food-date batch so the nightly KINETIC request
+  reviews all logged entries, including cache hits and previously known foods.
+- Added exact-capture evidence reuse, conservative component fallbacks, explicit
+  provisional/verified/adjusted/needs-review states, and additive response status.
+- Added one grounded nightly Gemini request for the selected food-log day with
+  complete capture-ID and item-count validation before any revision is applied.
+- Added source hierarchy rules, configurable official domains, HIGH=5/MEDIUM=3/
+  LOW=1 authority guidance, weak-outlier handling, and preparation/serving checks.
+- Small deviations of at most 5% or 20 calories retain the original estimate;
+  large weakly supported deviations require review instead of silently rewriting.
+- Added hidden reconciliation, evidence-catalog, and immutable revision-audit
+  sheets without reordering or removing nutrition columns A:X.
+- Legacy \`/calories\`, structured capture, Android queue/status, Windows, PWA,
+  HORIZON, authentication, and device-session contracts remain additive.
+- Added a manual current-day reconciliation function and an opt-in 2 AM
+  America/New_York trigger installer. The production trigger is not installed
+  automatically.
+- Backend 2.8.4.1 is the rollback point. Deployment and Apps Script runtime
+  validation remain pending.
+
 ## 2.8.4.1 — multi-item nutrition integrity correction
 
 - Added deterministic comma/newline/semicolon/pipe item segmentation with a
