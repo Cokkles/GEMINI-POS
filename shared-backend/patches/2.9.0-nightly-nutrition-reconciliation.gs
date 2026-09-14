@@ -331,8 +331,11 @@ function getAegisNutritionNightlyModelV290_() {
 
 function isAegisNutritionReconciliationCandidateV290_(row, targetDate) {
   var rowDate = normalizeAegisFoodDateV290_(row[1]);
+  var captureId = String(row[2] || "").trim();
   var status = String(row[3] || "").trim().toUpperCase();
-  return rowDate === targetDate &&
+  var isTestCapture = /^V\d+(?:\d+)?-TEST-/i.test(captureId);
+  return !isTestCapture &&
+    rowDate === targetDate &&
     ["PENDING", "DELAYED"].indexOf(status) >= 0;
 }
 
@@ -929,6 +932,11 @@ function testAegisNutritionNightlyContractV290() {
         pendingDateRow, "2026-09-14")) {
     throw new Error("2.9.0 Sheets Date eligibility normalization failed.");
   }
+  var testArtifactRow = ["", dateCell, "V282-TEST-ARTIFACT", "PENDING"];
+  if (isAegisNutritionReconciliationCandidateV290_(
+        testArtifactRow, "2026-09-14")) {
+    throw new Error("2.9.0 test capture exclusion failed.");
+  }
   var ramen = estimateAegisNutritionProvisionalSegmentV290_(
     "1 Pack Chicken Ramen"
   );
@@ -940,6 +948,7 @@ function testAegisNutritionNightlyContractV290() {
     close_deviation: close.decision,
     large_weak_deviation: distant.decision,
     sheets_date_eligibility: "PASS",
+    test_capture_exclusion: "PASS",
     ramen_classifier_precedence: "PASS",
     contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
   };
