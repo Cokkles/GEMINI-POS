@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, "..");
 const source281 = fs.readFileSync(path.join(root, "patches", "2.8.1-nutrition-reliability.gs"), "utf8");
 const source282 = fs.readFileSync(path.join(root, "patches", "2.8.2-durable-nutrition-queue.gs"), "utf8");
 const source284 = fs.readFileSync(path.join(root, "patches", "2.8.4-nutrition-provider-hardening.gs"), "utf8");
+const source290 = fs.readFileSync(path.join(root, "patches", "2.9.0-nightly-nutrition-reconciliation.gs"), "utf8");
 
 const properties = new Map([["GEMINI_API_KEY", "test-key"]]);
 const propertyApi = {
@@ -45,6 +46,7 @@ vm.createContext(sandbox);
 vm.runInContext(source281, sandbox, { filename: "NutritionReliability281.gs" });
 vm.runInContext(source282, sandbox, { filename: "NutritionQueue282.gs" });
 vm.runInContext(source284, sandbox, { filename: "NutritionProviderReliability284.gs" });
+vm.runInContext(source290, sandbox, { filename: "NutritionNightlyReconciliation290.gs" });
 
 const figNewton = sandbox.tryKnownFoodNutritionV284_("2oz Fig Newton");
 assert.equal(figNewton.items.length, 1);
@@ -205,7 +207,7 @@ assert.throws(
   (error) => error.aegisCode === "NUTRITION_GENERIC_AGGREGATE_REJECTED",
 );
 
-const originalResolver = sandbox.resolveAegisNutritionV284_;
+const originalResolver = sandbox.buildAegisNutritionProvisionalV290_;
 const originalDataSheetResolver = sandbox.getAegisNutritionDataSheetV282_;
 const originalCommit = sandbox.commitAegisNutritionResultV282_;
 const originalRelease = sandbox.releaseAegisNutritionJobAfterFailureV282_;
@@ -217,7 +219,7 @@ sandbox.SpreadsheetApp = {
   }),
 };
 sandbox.getAegisNutritionDataSheetV282_ = () => ({});
-sandbox.resolveAegisNutritionV284_ = () => {
+sandbox.buildAegisNutritionProvisionalV290_ = () => {
   const error = new Error("collapsed result rejected");
   error.aegisCode = "NUTRITION_ITEM_COUNT_MISMATCH";
   error.aegisRetryable = true;
@@ -235,7 +237,7 @@ sandbox.processClaimedAegisNutritionJobV282_({
 });
 assert.equal(atomicCommitCalls, 0, "an invalid bundle must not write any nutrition rows");
 assert.equal(atomicReleaseCalls, 1, "an invalid bundle must return to queue handling");
-sandbox.resolveAegisNutritionV284_ = originalResolver;
+sandbox.buildAegisNutritionProvisionalV290_ = originalResolver;
 sandbox.getAegisNutritionDataSheetV282_ = originalDataSheetResolver;
 sandbox.commitAegisNutritionResultV282_ = originalCommit;
 sandbox.releaseAegisNutritionJobAfterFailureV282_ = originalRelease;
@@ -315,4 +317,4 @@ sandbox.releaseAegisNutritionJobAfterFailureV282_(
 assert.equal(releasedChanges.status, "RETRY_SCHEDULED");
 assert.equal(releasedChanges.attempts, 6, "an open circuit must not consume an AI attempt");
 
-console.log("PASS nutrition 2.8.4.1 tiered provider, multi-item integrity, quota, and circuit validation");
+console.log("PASS retained provider integrity, quota, circuit, and 2.9.0 provisional worker validation");
