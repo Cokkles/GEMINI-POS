@@ -1,0 +1,37 @@
+name: Shared backend validation
+
+on:
+  push:
+    branches:
+      - "agent/backend-*"
+    paths:
+      - "shared-backend/**"
+      - ".github/workflows/shared-backend-validation.yml"
+  pull_request:
+    paths:
+      - "shared-backend/**"
+      - ".github/workflows/shared-backend-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  node-contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate router and authentication
+        run: node shared-backend/tests/backend-2.8.4.1-router.test.cjs
+
+      - name: Validate retained provider safeguards
+        run: node shared-backend/tests/nutrition-2.8.4.1-provider.test.cjs
+
+      - name: Validate nightly reconciliation
+        run: node shared-backend/tests/nutrition-2.9.0-nightly-reconciliation.test.cjs
