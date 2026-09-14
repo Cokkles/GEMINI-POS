@@ -461,15 +461,25 @@ function callKineticNightlyGeminiV290_(prompt) {
   var code = response.getResponseCode();
   var body = response.getContentText();
   if (code < 200 || code >= 300) {
+    var capacity = (code === 429 || code === 503) &&
+      typeof parseGeminiCapacityFailureV284_ === "function"
+        ? parseGeminiCapacityFailureV284_(code, body, response, "NIGHTLY")
+        : null;
+    var diagnosticCode = capacity
+      ? "KINETIC_NIGHTLY_" + String(capacity.code || "GEMINI_FAILED")
+      : "KINETIC_NIGHTLY_HTTP_" + code;
+    var diagnosticMessage = capacity
+      ? capacity.message
+      : "Nightly KINETIC review failed with HTTP " + code + ": " +
+        compactGeminiProviderDetailV284_(body);
     var error = taggedNutritionErrorV281_(
-      code === 429 ? "KINETIC_NIGHTLY_RATE_LIMITED" :
-        code === 503 ? "KINETIC_NIGHTLY_HIGH_VOLUME" :
-          "KINETIC_NIGHTLY_HTTP_" + code,
-      "Nightly KINETIC review failed with HTTP " + code + ": " +
-        compactGeminiProviderDetailV284_(body),
-      true
+      diagnosticCode,
+      diagnosticMessage,
+      code === 429 || code === 503
     );
-    error.retryAfterMs = extractKineticNightlyRetryAfterMsV290_(body, response) || 0;
+    error.retryAfterMs = capacity
+      ? capacity.retryAfterMs
+      : extractKineticNightlyRetryAfterMsV290_(body, response) || 0;
     throw error;
   }
   var envelope = JSON.parse(body);
@@ -960,6 +970,15 @@ function testAegisNutritionNightlyContractV290() {
       prompt.indexOf("CAP-TEST") < 0) {
     throw new Error("2.9.0 nightly prompt contract failed.");
   }
+  var quotaClassification = parseGeminiCapacityFailureV284_(
+    429,
+    '{"error":{"message":"quota exceeded","details":[{"quotaMetric":"requestsPerMinute","retryDelay":"60s"}]}}',
+    null,
+    "NIGHTLY"
+  );
+  if (quotaClassification.code !== "GEMINI_RPM_LIMITED") {
+    throw new Error("2.9.0 nightly quota classification failed.");
+  }
   var retryDelay = extractKineticNightlyRetryAfterMsV290_(
     '{"error":{"details":[{"retryDelay":"16.639s"}]}}',
     null
@@ -988,6 +1007,7 @@ function testAegisNutritionNightlyContractV290() {
     status: "PASS",
     close_deviation: close.decision,
     large_weak_deviation: distant.decision,
+    quota_classification: "PASS",
     retry_delay_parsing: "PASS",
     sheets_date_eligibility: "PASS",
     test_capture_exclusion: "PASS",
