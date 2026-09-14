@@ -406,6 +406,23 @@ function buildKineticNightlyPromptV290_(targetDate, batchId, jobs) {
   ].join("\n");
 }
 
+function extractKineticNightlyRetryAfterMsV290_(body, response) {
+  if (typeof extractGeminiRetryAfterMsV284_ === "function") {
+    return extractGeminiRetryAfterMsV284_(body, response) || 0;
+  }
+  var text = String(body || "");
+  var duration = text.match(/"retryDelay"\s*:\s*"([0-9]+(?:\.[0-9]+)?)s"/i);
+  if (duration) return Math.ceil(Number(duration[1]) * 1000);
+  try {
+    var headers = response && response.getHeaders ? response.getHeaders() : {};
+    var retryAfter = headers["Retry-After"] || headers["retry-after"];
+    if (retryAfter && /^\d+(?:\.\d+)?$/.test(String(retryAfter).trim())) {
+      return Math.ceil(Number(retryAfter) * 1000);
+    }
+  } catch (ignored) {}
+  return 0;
+}
+
 function callKineticNightlyGeminiV290_(prompt) {
   var cfg = getGeminiConfig();
   var model = getAegisNutritionNightlyModelV290_();
@@ -436,7 +453,7 @@ function callKineticNightlyGeminiV290_(prompt) {
         compactGeminiProviderDetailV284_(body),
       true
     );
-    error.retryAfterMs = parseGeminiRetryDelayV284_(body, response) || 0;
+    error.retryAfterMs = extractKineticNightlyRetryAfterMsV290_(body, response) || 0;
     throw error;
   }
   var envelope = JSON.parse(body);
@@ -926,6 +943,13 @@ function testAegisNutritionNightlyContractV290() {
       prompt.indexOf("CAP-TEST") < 0) {
     throw new Error("2.9.0 nightly prompt contract failed.");
   }
+  var retryDelay = extractKineticNightlyRetryAfterMsV290_(
+    '{"error":{"details":[{"retryDelay":"16.639s"}]}}',
+    null
+  );
+  if (retryDelay !== 16639) {
+    throw new Error("2.9.0 nightly retry-delay parsing failed.");
+  }
   var dateCell = new Date("2026-09-14T12:00:00-04:00");
   var pendingDateRow = ["", dateCell, "CAP-DATE", "PENDING"];
   if (!isAegisNutritionReconciliationCandidateV290_(
@@ -947,6 +971,7 @@ function testAegisNutritionNightlyContractV290() {
     status: "PASS",
     close_deviation: close.decision,
     large_weak_deviation: distant.decision,
+    retry_delay_parsing: "PASS",
     sheets_date_eligibility: "PASS",
     test_capture_exclusion: "PASS",
     ramen_classifier_precedence: "PASS",
