@@ -150,6 +150,9 @@ function estimateAegisNutritionProvisionalSegmentV290_(segment) {
   } else if (/\b(tortilla|wrap)\b/.test(text)) {
     base = [150, 4, 26, 4, 1, 2, 2, 400, 0];
     label = "flour-tortilla serving";
+  } else if (/\b(ramen|noodles?|instant noodles?)\b/.test(text)) {
+    base = [380, 9, 52, 14, 7, 2, 3, 1600, 0];
+    label = "instant-noodle package";
   } else if (/\b(rice|rice-a-roni)\b/.test(text)) {
     base = [240, 5, 41, 7, 4, 1, 1, 670, 20];
     label = "prepared rice serving";
@@ -326,6 +329,13 @@ function getAegisNutritionNightlyModelV290_() {
   ).trim();
 }
 
+function isAegisNutritionReconciliationCandidateV290_(row, targetDate) {
+  var rowDate = normalizeAegisFoodDateV290_(row[1]);
+  var status = String(row[3] || "").trim().toUpperCase();
+  return rowDate === targetDate &&
+    ["PENDING", "DELAYED"].indexOf(status) >= 0;
+}
+
 function collectAegisNutritionReconciliationJobsV290_(spreadsheet, targetDate) {
   var sheet = getAegisNutritionReconciliationSheetV290_(spreadsheet);
   if (sheet.getLastRow() < 2) return [];
@@ -333,9 +343,7 @@ function collectAegisNutritionReconciliationJobsV290_(spreadsheet, targetDate) {
     2, 1, sheet.getLastRow() - 1, AEGIS_NUTRITION_RECONCILIATION_HEADERS_V290.length
   ).getValues();
   return values.map(function(row, index) {
-    var status = String(row[3] || "");
-    if (String(row[1] || "") !== targetDate ||
-        ["PENDING", "DELAYED"].indexOf(status) < 0) return null;
+    if (!isAegisNutritionReconciliationCandidateV290_(row, targetDate)) return null;
     try {
       var provisional = JSON.parse(String(row[5] || ""));
       return {
@@ -915,10 +923,24 @@ function testAegisNutritionNightlyContractV290() {
       prompt.indexOf("CAP-TEST") < 0) {
     throw new Error("2.9.0 nightly prompt contract failed.");
   }
+  var dateCell = new Date("2026-09-14T12:00:00-04:00");
+  var pendingDateRow = ["", dateCell, "CAP-DATE", "PENDING"];
+  if (!isAegisNutritionReconciliationCandidateV290_(
+        pendingDateRow, "2026-09-14")) {
+    throw new Error("2.9.0 Sheets Date eligibility normalization failed.");
+  }
+  var ramen = estimateAegisNutritionProvisionalSegmentV290_(
+    "1 Pack Chicken Ramen"
+  );
+  if (ramen.assumptions.indexOf("instant-noodle package") < 0) {
+    throw new Error("2.9.0 ramen precedence over poultry failed.");
+  }
   var result = {
     status: "PASS",
     close_deviation: close.decision,
     large_weak_deviation: distant.decision,
+    sheets_date_eligibility: "PASS",
+    ramen_classifier_precedence: "PASS",
     contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
   };
   Logger.log(JSON.stringify(result, null, 2));
