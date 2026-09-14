@@ -139,6 +139,8 @@ const prompt = sandbox.buildKineticNightlyPromptV290_(
 );
 assert.match(prompt, /Review EVERY supplied food capture/);
 assert.match(prompt, /Do not label a retailer, aggregator, or crowdsourced page as OFFICIAL/);
+assert.match(prompt, /HIGH=5, MEDIUM=3, LOW=1/);
+assert.match(prompt, /exclude a materially conflicting LOW source as an outlier/);
 assert.match(prompt, /CAP-FIVE/);
 assert.match(prompt, /Tyson Frozen Grilled Chicken/);
 
