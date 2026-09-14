@@ -682,7 +682,10 @@ function applyKineticNightlyReviewV290_(spreadsheet, targetDate, batchId, valida
           plan.rowStatus
         );
         var segments = splitAegisNutritionItemsV284_(entry.job.input);
-        plan.finalResult.items.forEach(function(item, index) {
+        // Cache the nightly reviewed evidence even when a small deviation keeps
+        // the original displayed value. Future captures can then reuse the
+        // strongest known product ruling without repeating research.
+        entry.validated.items.forEach(function(item, index) {
           upsertAegisNutritionEvidenceV290_(spreadsheet, segments[index], item);
         });
         var queueSheet = getAegisNutritionQueueSheetV282_(spreadsheet);
