@@ -620,9 +620,12 @@ function applyKineticNightlyReviewV290_(spreadsheet, targetDate, batchId, valida
   try {
     // Preflight every target before changing any row. This prevents a missing or
     // duplicated capture from producing a partially applied nightly batch.
+    if (nutritionSheet.getLastRow() < 2) {
+      throw new Error("Nutrition tracker contains no data rows; no nightly adjustments were applied.");
+    }
     validatedReviews.forEach(function(entry) {
       var matches = nutritionSheet
-        .getRange(2, 21, Math.max(0, nutritionSheet.getLastRow() - 1), 1)
+        .getRange(2, 21, nutritionSheet.getLastRow() - 1, 1)
         .createTextFinder(String(entry.job.captureId))
         .matchEntireCell(true)
         .findAll();
