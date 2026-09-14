@@ -447,12 +447,22 @@ function classifyAegisNutritionSourceV290_(item) {
   if (/\.gov$/.test(host) || /(^|\.)fdc\.nal\.usda\.gov$/.test(host)) return "HIGH";
   var official = [
     "tyson.com", "texaspete.com", "missionfoods.com", "pepsico.info",
-    "mcdonalds.com", "wendys.com", "tacobell.com", "chipotle.com",
-    "subway.com", "panerabread.com", "starbucks.com", "chick-fil-a.com",
-    "popeyes.com", "kfc.com", "fiveguys.com", "shakeshack.com",
-    "olivegarden.com", "applebees.com", "chilis.com", "buffalowildwings.com",
-    "noodles.com"
+    "costco.com", "mcdonalds.com", "wendys.com", "tacobell.com",
+    "chipotle.com", "subway.com", "panerabread.com", "starbucks.com",
+    "chick-fil-a.com", "popeyes.com", "kfc.com", "fiveguys.com",
+    "shakeshack.com", "olivegarden.com", "applebees.com", "chilis.com",
+    "buffalowildwings.com", "noodles.com"
   ];
+  if (typeof PropertiesService !== "undefined") {
+    var configured = String(
+      PropertiesService.getScriptProperties().getProperty(
+        "AEGIS_NUTRITION_OFFICIAL_DOMAINS"
+      ) || ""
+    ).split(",").map(function(value) {
+      return value.trim().toLowerCase().replace(/^www\./, "");
+    }).filter(Boolean);
+    official = official.concat(configured);
+  }
   if (official.some(function(domain) {
     return host === domain || host.slice(-(domain.length + 1)) === "." + domain;
   })) return "HIGH";
