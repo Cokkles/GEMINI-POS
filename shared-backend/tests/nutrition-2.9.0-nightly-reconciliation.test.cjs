@@ -10,14 +10,17 @@ const nutrition281 = read("patches/2.8.1-nutrition-reliability.gs");
 const queue282 = read("patches/2.8.2-durable-nutrition-queue.gs");
 const provider284 = read("patches/2.8.4-nutrition-provider-hardening.gs");
 const nightly290 = read("patches/2.9.0-nightly-nutrition-reconciliation.gs");
+const hardening2100 = read("patches/2.10.0-nutrition-identity-serving.gs");
 
 for (const [name, source] of Object.entries({
-  code, nutrition281, queue282, provider284, nightly290,
+  code, nutrition281, queue282, provider284, nightly290, hardening2100,
 })) {
   assert.doesNotThrow(() => new vm.Script(source, { filename: name }));
 }
 
-const functionNames = [code, nutrition281, queue282, provider284, nightly290]
+const functionNames = [
+  code, nutrition281, queue282, provider284, nightly290, hardening2100,
+]
   .flatMap((source) =>
     [...source.matchAll(/^function\s+([\w$]+)\s*\(/gm)].map((match) => match[1]),
   );
@@ -27,7 +30,7 @@ assert.equal(
   "Apps Script function names must remain unique",
 );
 
-assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.9\.0";/);
+assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.10\.0";/);
 for (const capability of [
   "nutrition_provisional_logging_v1",
   "nutrition_nightly_reconciliation_v1",
@@ -81,6 +84,7 @@ vm.runInContext(nutrition281, sandbox, { filename: "NutritionReliability281.gs" 
 vm.runInContext(queue282, sandbox, { filename: "NutritionQueue282.gs" });
 vm.runInContext(provider284, sandbox, { filename: "NutritionProviderReliability284.gs" });
 vm.runInContext(nightly290, sandbox, { filename: "NutritionNightlyReconciliation290.gs" });
+vm.runInContext(hardening2100, sandbox, { filename: "NutritionIdentityServing2100.gs" });
 
 const fixture =
   "2 Servings Tyson Frozen Grilled Chicken, 2 servings Kirkland Salsa, " +
@@ -150,5 +154,5 @@ assert.match(prompt, /CAP-FIVE/);
 assert.match(prompt, /Tyson Frozen Grilled Chicken/);
 
 console.log(
-  "PASS backend 2.9.0 provisional capture, daily batch, deviation, and source-authority validation",
+  "PASS backend 2.10.0 provisional capture, daily batch, deviation, and source-authority validation",
 );
