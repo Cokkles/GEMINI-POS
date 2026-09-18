@@ -200,8 +200,17 @@ function findAegisNutritionEvidenceV290_(spreadsheet, segment) {
 function buildAegisNutritionProvisionalV290_(input, spreadsheet) {
   var segments = splitAegisNutritionItemsV284_(input);
   var items = segments.map(function(segment) {
+    var trusted = typeof resolveAegisTrustedNutritionV2100_ === "function"
+      ? resolveAegisTrustedNutritionV2100_(spreadsheet, segment)
+      : null;
+    if (trusted && trusted.items && trusted.items.length === 1) {
+      return trusted.items[0];
+    }
     var evidence = findAegisNutritionEvidenceV290_(spreadsheet, segment);
-    if (evidence) {
+    if (evidence && (
+      typeof isAegisNutritionIdentitySafeV2100_ !== "function" ||
+      isAegisNutritionIdentitySafeV2100_(segment, evidence)
+    )) {
       evidence.assumptions = [
         String(evidence.assumptions || "").trim(),
         "Reused from the KINETIC evidence catalog; nightly confirmation pending."
@@ -241,7 +250,7 @@ function setAegisNutritionRowVerificationV290_(nutritionSheet, captureId, status
     .findAll();
   matches.forEach(function(match) {
     nutritionSheet.getRange(match.getRow(), 22).setValue(status);
-    nutritionSheet.getRange(match.getRow(), 23).setValue("2.9.0");
+    nutritionSheet.getRange(match.getRow(), 23).setValue("2.10.0");
   });
 }
 
@@ -312,7 +321,7 @@ function handleAegisLegacyNutritionV290_(foodText) {
     message: foodText,
     capture_id: captureId,
     client_id: "legacy-pwa",
-    client_version: "2.9.0"
+    client_version: "2.10.0"
   });
   if (response && response.status === "success") {
     return String(response.result || "Nutrition recorded.") +
@@ -404,6 +413,11 @@ function buildKineticNightlyPromptV290_(targetDate, batchId, jobs) {
       : "Do not invent or cite source URLs. Use source_type MODEL_ESTIMATE, an empty source_url, and candid confidence/assumptions.",
     "Do not label a retailer, aggregator, or crowdsourced page as OFFICIAL.",
     "Confirm product variant, serving basis, and prepared-versus-dry state before comparing values.",
+    "Treat submitted brand and product words as immutable identity evidence. Never replace a branded or category-specific product with a generic keyword match.",
+    "A flavor word is not the product category: for example, coffee yogurt is yogurt, not black coffee.",
+    "Report a canonical serving definition separately from the user's submitted total.",
+    "Provide canonical_serving_amount and canonical_serving_unit. When the label supports them, also provide canonical_serving_grams, canonical_serving_milliliters, canonical_count_unit, and canonical_count_per_serving.",
+    "Provide submitted_serving_factor for the supplied total. Do not invent mass, volume, density, count equivalence, or package size.",
     "Never average different product variants, serving sizes, or preparation states.",
     "When an exact current manufacturer or government label matches, it outranks weaker sources and normally supplies the canonical value.",
     "When comparable sources have similar authority, use weights HIGH=5, MEDIUM=3, LOW=1.",
@@ -413,7 +427,7 @@ function buildKineticNightlyPromptV290_(targetDate, batchId, jobs) {
     "Small reasonable deviations should normally be CONFIRM. Explain meaningful adjustments.",
     "Return valid JSON only. Do not use markdown.",
     "Required structure:",
-    '{"batch_id":"' + batchId + '","food_date":"' + targetDate + '","reviews":[{"capture_id":"...","decision":"CONFIRM|ADJUST|NEEDS_REVIEW","reason":"brief reason","items":[{"item":"specific item","portion":"total portion","calories":400,"protein":20,"carbs":35,"fat":20,"saturated_fat":8,"fiber":2,"sugar":6,"sodium":700,"cholesterol":70,"source_type":"OFFICIAL|USDA|OPEN_FOOD_FACTS|COMPONENT_ESTIMATE|MODEL_ESTIMATE","source_url":"https://... or empty","confidence":"HIGH|MEDIUM|MEDIUM_LOW|LOW","lookup_depth":4,"assumptions":"explicit assumptions","conservative_adjustment":true}]}]}',
+    '{"batch_id":"' + batchId + '","food_date":"' + targetDate + '","reviews":[{"capture_id":"...","decision":"CONFIRM|ADJUST|NEEDS_REVIEW","reason":"brief reason","items":[{"item":"specific item","portion":"submitted total portion","calories":400,"protein":20,"carbs":35,"fat":20,"saturated_fat":8,"fiber":2,"sugar":6,"sodium":700,"cholesterol":70,"source_type":"OFFICIAL|USDA|OPEN_FOOD_FACTS|COMPONENT_ESTIMATE|MODEL_ESTIMATE","source_url":"https://... or empty","confidence":"HIGH|MEDIUM|MEDIUM_LOW|LOW","lookup_depth":4,"assumptions":"explicit assumptions","conservative_adjustment":true,"canonical_serving_amount":1,"canonical_serving_unit":"serving|g|oz|ml|fl oz|cup|tbsp|tsp|package|count","canonical_serving_grams":null,"canonical_serving_milliliters":null,"canonical_count_unit":"cookie or empty","canonical_count_per_serving":null,"submitted_serving_factor":1}]}]}',
     "BATCH RECORDS:",
     JSON.stringify(records)
   ].join("\n");
@@ -501,6 +515,7 @@ function classifyAegisNutritionSourceV290_(item) {
   if (/\.gov$/.test(host) || /(^|\.)fdc\.nal\.usda\.gov$/.test(host)) return "HIGH";
   var official = [
     "tyson.com", "texaspete.com", "missionfoods.com", "pepsico.info",
+    "chobani.com", "bearnaked.com", "snackworks.com",
     "costco.com", "mcdonalds.com", "wendys.com", "tacobell.com",
     "chipotle.com", "subway.com", "panerabread.com", "starbucks.com",
     "chick-fil-a.com", "popeyes.com", "kfc.com", "fiveguys.com",
@@ -549,10 +564,11 @@ function validateKineticNightlyResponseV290_(response, targetDate, batchId, jobs
     var result = enforceAegisNutritionItemIntegrityV284_({
       items: review.items,
       overall_confidence: review.items && review.items[0] && review.items[0].confidence || "LOW",
-      lookup_depth: 4
+      lookup_depth: 4,
+      allow_identity_portion_review: true
     }, segments);
     var validated = validateAegisNutritionResultV282_(result, job.input);
-    validated.items.forEach(function(item) {
+    validated.items.forEach(function(item, itemIndex) {
       var authority = classifyAegisNutritionSourceV290_(item);
       item.source_authority = authority;
       if ((item.source_type === "OFFICIAL" || item.source_type === "USDA") && authority !== "HIGH") {
@@ -562,6 +578,13 @@ function validateKineticNightlyResponseV290_(response, targetDate, batchId, jobs
           String(item.assumptions || "").trim(),
           "Source authority was downgraded by AEGIS because the URL was not an approved official/government domain."
         ].filter(Boolean).join(" ");
+      }
+      if (typeof hardenAegisNightlyNutritionItemV2100_ === "function") {
+        hardenAegisNightlyNutritionItemV2100_(
+          segments[itemIndex],
+          item,
+          review.items[itemIndex]
+        );
       }
     });
     return {
@@ -590,6 +613,19 @@ function decideAegisNutritionRevisionV290_(provisional, reviewed) {
   var hasStrongEvidence = reviewed.items.every(function(item) {
     return item.source_authority === "HIGH" || item.source_authority === "MEDIUM";
   });
+
+  if (
+    typeof hasAegisNutritionReviewMismatchV2100_ === "function" &&
+    hasAegisNutritionReviewMismatchV2100_(reviewed)
+  ) {
+    return {
+      decision: "NEEDS_REVIEW",
+      delta: delta,
+      percent: percent,
+      applyReviewed: false,
+      reason: "Product identity or portion equivalence did not pass deterministic validation."
+    };
+  }
 
   if (Math.abs(delta) <= threshold) {
     return { decision: "CONFIRM", delta: delta, percent: percent, applyReviewed: false };
@@ -638,7 +674,7 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     row[6] = item.carbs;
     row[7] = item.fat;
     row[8] = item.sodium;
-    row[9] = "Nightly KINETIC " + status + " via AEGIS 2.9.0";
+    row[9] = "Nightly KINETIC " + status + " via AEGIS 2.10.0";
     row[10] = item.saturated_fat;
     row[11] = item.fiber;
     row[12] = item.sugar;
@@ -650,7 +686,7 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     row[18] = item.assumptions;
     row[19] = item.conservative_adjustment;
     row[21] = status;
-    row[22] = "2.9.0";
+    row[22] = "2.10.0";
     nutritionSheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
   });
 }
@@ -741,6 +777,13 @@ function applyKineticNightlyReviewV290_(spreadsheet, targetDate, batchId, valida
         // strongest known product ruling without repeating research.
         entry.validated.items.forEach(function(item, index) {
           upsertAegisNutritionEvidenceV290_(spreadsheet, segments[index], item);
+          if (typeof upsertAegisTrustedFoodV2100_ === "function") {
+            upsertAegisTrustedFoodV2100_(
+              spreadsheet,
+              segments[index],
+              item
+            );
+          }
         });
         var queueSheet = getAegisNutritionQueueSheetV282_(spreadsheet);
         var queueJob = findAegisNutritionQueueJobV282_(
@@ -927,7 +970,7 @@ function getAegisNutritionNightlyHealthV290() {
   }
   return {
     status: "success",
-    backend_version: "2.9.0",
+    backend_version: "2.10.0",
     model: getAegisNutritionNightlyModelV290_(),
     search_grounding_enabled: isKineticNightlySearchEnabledV290_(),
     counts: counts,

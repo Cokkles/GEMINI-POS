@@ -35,3 +35,6 @@ jobs:
 
       - name: Validate nightly reconciliation
         run: node shared-backend/tests/nutrition-2.9.0-nightly-reconciliation.test.cjs
+
+      - name: Validate identity, trusted foods and serving conversion
+        run: node shared-backend/tests/nutrition-2.10.0-identity-serving.test.cjs

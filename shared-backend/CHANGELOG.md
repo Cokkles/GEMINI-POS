@@ -1,5 +1,31 @@
 # AEGIS shared backend changelog
 
+## 2.10.0 — nutrition identity, trusted-food, and serving hardening
+
+- Prevented generic keyword rules from replacing a more specific branded or
+  category-specific product; the Chobani coffee-yogurt regression can no
+  longer resolve as black coffee.
+- Added deterministic brand, category, and product-token validation. Nightly
+  identity or portion mismatches are isolated as `NEEDS_REVIEW` and cannot
+  overwrite provisional rows.
+- Added a V2 trusted-food catalog keyed independently from the submitted
+  amount, with strict brand/category matching, aliases, source authority,
+  separate identity/nutrition confidence, use counts, and safe history import.
+- Trusted foods are checked before the legacy exact evidence cache. Unsafe old
+  evidence is ignored, and weak/unverified historical rows are not promoted
+  automatically.
+- Added local product-specific conversion for serving, package, count, mass,
+  and volume units. Cross-dimension conversion requires a stored grams,
+  milliliters, count, or package relationship for that exact product.
+- Added canonical serving metadata to the nightly review contract while
+  forbidding invented grams, density, count equivalence, and package size.
+- Added regressions for Chobani identity, prior-food selection, Fig Newton
+  counts/grams, product-specific tablespoon/gram conversion, and safe failure
+  when a conversion relationship is absent.
+- Preserved the 2.9.0 nightly batching architecture, nutrition A:X, existing
+  Android/Windows routes, HORIZON, AUTH-1, and device sessions. No APK or
+  Windows package is included in this backend checkpoint.
+
 ## 2.9.0 — provisional nutrition and nightly KINETIC reconciliation
 
 - Removed Gemini from the immediate durable nutrition-capture path. New captures
