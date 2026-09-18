@@ -1,5 +1,5 @@
 /**
- * AEGIS shared backend 2.9.0 -- retained tiered provider diagnostics and item integrity.
+ * AEGIS shared backend 2.10.0 -- retained tiered provider diagnostics and item integrity.
  *
  * Install beside Code.gs, NutritionReliability281.gs,
  * NutritionQueue282.gs, and DeviceSessions283.gs. The durable 2.8.2 queue
@@ -183,6 +183,8 @@ function buildAegisNutritionListPromptV284_(segments, grounded) {
 
 function enforceAegisNutritionItemIntegrityV284_(result, segments) {
   var items = result && result.items;
+  var allowDeterministicReview =
+    result && result.allow_identity_portion_review === true;
   if (!Array.isArray(items) || items.length !== segments.length) {
     throw taggedNutritionErrorV281_(
       "NUTRITION_ITEM_COUNT_MISMATCH",
@@ -203,7 +205,10 @@ function enforceAegisNutritionItemIntegrityV284_(result, segments) {
         true
       );
     }
-    if (!nutritionItemMatchesSegmentV284_(name, segment)) {
+    if (
+      !allowDeterministicReview &&
+      !nutritionItemMatchesSegmentV284_(name, segment)
+    ) {
       throw taggedNutritionErrorV281_(
         "NUTRITION_ITEM_IDENTITY_MISMATCH",
         "Returned item " + (index + 1) + " does not identify its corresponding input. No nutrition rows were written.",
@@ -211,7 +216,16 @@ function enforceAegisNutritionItemIntegrityV284_(result, segments) {
       );
     }
     var quantity = String(segment).match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
-    if (quantity && !new RegExp("(^|\\D)" + quantity[1].replace(".", "\\.") + "(\\D|$)").test(portion)) {
+    var equivalentPortion =
+      typeof isAegisNutritionPortionEquivalentV2100_ === "function" &&
+      isAegisNutritionPortionEquivalentV2100_(segment, item);
+    if (
+      !allowDeterministicReview &&
+      quantity &&
+      !new RegExp("(^|\\D)" + quantity[1].replace(".", "\\.") + "(\\D|$)")
+        .test(portion) &&
+      !equivalentPortion
+    ) {
       throw taggedNutritionErrorV281_(
         "NUTRITION_PORTION_MISMATCH",
         "Returned item " + (index + 1) + " did not preserve the stated quantity " +
@@ -219,7 +233,8 @@ function enforceAegisNutritionItemIntegrityV284_(result, segments) {
         true
       );
     }
-    if (requiresVerifiedNutritionSourceV284_(segment) && (
+    if (!allowDeterministicReview &&
+        requiresVerifiedNutritionSourceV284_(segment) && (
       String(item.source_type || "") === "MODEL_ESTIMATE" ||
       String(item.confidence || "") === "LOW"
     )) {
@@ -238,6 +253,7 @@ function nutritionItemMatchesSegmentV284_(itemName, segment) {
   var input = normalizeNutritionIdentityTextV284_(segment);
   var brands = [
     "tyson", "kirkland", "mission", "texas pete", "rice a roni",
+    "chobani", "bear naked", "nabisco", "fig newton",
     "mcdonalds", "burger king", "wendys", "taco bell", "chipotle",
     "subway", "panera", "starbucks", "chick fil a", "popeyes",
     "five guys", "shake shack", "olive garden", "applebees",
@@ -287,12 +303,12 @@ function getAegisNutritionGroundedModelV284_() {
 function requiresGroundedNutritionV284_(foodText) {
   var text = String(foodText || "").toLowerCase();
   return /\b(restaurant|menu|cafe|café|diner|bistro|grill|kitchen|tavern|eatery)\b/.test(text) ||
-    /\b(tyson|kirkland|mission|texas pete|rice-a-roni|mcdonald'?s|burger king|wendy'?s|taco bell|chipotle|subway|panera|starbucks|chick-fil-a|popeyes|kfc|five guys|shake shack|olive garden|applebee'?s|chili'?s|buffalo wild wings|noodles?\s*(?:&|and)\s*(?:co|company)|williams gourmet kitchen)\b/.test(text);
+    /\b(tyson|kirkland|mission|texas pete|rice-a-roni|chobani|bear naked|nabisco|fig newtons?|mcdonald'?s|burger king|wendy'?s|taco bell|chipotle|subway|panera|starbucks|chick-fil-a|popeyes|kfc|five guys|shake shack|olive garden|applebee'?s|chili'?s|buffalo wild wings|noodles?\s*(?:&|and)\s*(?:co|company)|williams gourmet kitchen)\b/.test(text);
 }
 
 function requiresVerifiedNutritionSourceV284_(foodText) {
   var text = String(foodText || "").toLowerCase();
-  return /\b(tyson|kirkland|mission|texas pete|rice-a-roni)\b/.test(text);
+  return /\b(tyson|kirkland|mission|texas pete|rice-a-roni|chobani|bear naked|nabisco|fig newtons?)\b/.test(text);
 }
 
 function callGeminiNutritionV284_(foodText, options) {
@@ -595,7 +611,7 @@ function parseNutritionWeightGramsV284_(text) {
 function getAegisNutritionProviderHealthV284_() {
   return {
     status: "success",
-    backend_version: "2.9.0",
+    backend_version: "2.10.0",
     contract: AEGIS_NUTRITION_PROVIDER_CONTRACT_V284,
     simple_model: getAegisNutritionSimpleModelV284_(),
     grounded_model: getAegisNutritionGroundedModelV284_(),

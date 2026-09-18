@@ -11,7 +11,7 @@
  */
 
 var AEGIS_NUTRITION_ASYNC_CONTRACT_V282 = "AEGIS_NUTRITION_CAPTURE_ASYNC_V1";
-var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.9.0";
+var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.10.0";
 var AEGIS_NUTRITION_QUEUE_SHEET_V282 = "_AEGIS_NUTRITION_CAPTURE_QUEUE_V1";
 var AEGIS_NUTRITION_QUEUE_HANDLER_V282 = "processAegisNutritionQueueV282";
 var AEGIS_NUTRITION_DATA_SHEET_PROPERTY_V282 = "AEGIS_NUTRITION_SHEET_NAME";
@@ -1086,7 +1086,11 @@ function deterministicNutritionItemV282_(text) {
       [100, 4, 18, 1.5, 0.3, 1.5, 2, 170, 0],
       explicitCount ? "" : "Assumed two standard slices without toppings."
     );
-  } else if (/\b(black )?coffee\b/.test(normalized) && !/latte|cream|milk|sugar|sweet/.test(normalized)) {
+  } else if (
+    /\b(black )?coffee\b/.test(normalized) &&
+    !/latte|cream|milk|sugar|sweet|yogurt|yoghurt|granola|candy|ice cream/.test(normalized) &&
+    !/\b(chobani|bear naked|nabisco)\b/.test(normalized)
+  ) {
     item = deterministicScaleV282_(
       "Black coffee",
       "12 fl oz",
@@ -1358,3 +1362,4 @@ function deleteRowsByCaptureIdV282_(sheet, captureIdColumn, captureId) {
     .sort(function(a, b) { return b - a; });
   matches.forEach(function(row) { sheet.deleteRow(row); });
 }
+
