@@ -570,7 +570,10 @@ internal fun NotesScreen(
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenAlerts, Modifier.weight(1f)) { Text("All receipts") }
+                OutlinedButton(
+                    onClick = onOpenAlerts,
+                    modifier = Modifier.weight(1f).testTag("capture_receipts_button"),
+                ) { Text("All receipts") }
                 OutlinedButton(onClick = onCaptureClearResolved, Modifier.weight(1f), enabled = resolvedReceipts.isNotEmpty()) { Text("Clear resolved") }
             }
         }
