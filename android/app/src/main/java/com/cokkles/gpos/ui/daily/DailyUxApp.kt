@@ -101,6 +101,7 @@ import com.cokkles.gpos.data.command.CaptureKind
 import com.cokkles.gpos.data.command.NotificationCommandRuntimeState
 import com.cokkles.gpos.data.interaction.AegisFollowup
 import com.cokkles.gpos.data.interaction.AiChatMessage
+import com.cokkles.gpos.data.interaction.StructuredCalendarDraft
 import com.cokkles.gpos.data.local.LocalAlert
 import com.cokkles.gpos.data.local.LocalReceipt
 import com.cokkles.gpos.data.local.LocalReceiptState
@@ -219,6 +220,7 @@ fun DailyUxApp(
     onAskAegis: (String) -> Unit,
     onClearAiChat: () -> Unit,
     onCalendarAsk: (String) -> Unit,
+    onCalendarPrepare: (StructuredCalendarDraft) -> Unit,
     onCalendarConfirm: () -> Unit,
     onCalendarCancel: () -> Unit,
 ) {
@@ -318,6 +320,7 @@ fun DailyUxApp(
                     onSelectDate = onSelectDate,
                     onRefresh = onRefreshCalendar,
                     onAsk = onCalendarAsk,
+                    onPrepare = onCalendarPrepare,
                     onConfirm = onCalendarConfirm,
                     onCancel = onCalendarCancel,
                 )
@@ -563,19 +566,50 @@ private fun CalendarScreen(
     onSelectDate: (LocalDate) -> Unit,
     onRefresh: () -> Unit,
     onAsk: (String) -> Unit,
+    onPrepare: (StructuredCalendarDraft) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val snapshot = parityState.calendar.snapshot
-    val byDate = remember(snapshot) { snapshot?.events.orEmpty().groupBy { it.localDate } }
+    var viewName by rememberSaveable { mutableStateOf(CalendarViewMode.MONTH.name) }
+    var selectedCalendarId by rememberSaveable { mutableStateOf<String?>(null) }
+    val viewMode = runCatching { CalendarViewMode.valueOf(viewName) }.getOrDefault(CalendarViewMode.MONTH)
+    val sources = snapshot?.calendars.orEmpty()
+    val visibleEvents = remember(snapshot, selectedCalendarId) {
+        snapshot?.events.orEmpty().filter { selectedCalendarId == null || it.calendarId == selectedCalendarId }
+    }
+    val byDate = remember(visibleEvents) { visibleEvents.groupBy { it.localDate } }
     val month = parityState.selectedMonth
     val gridStart = remember(month) { month.minusDays((month.dayOfWeek.value - 1).toLong()) }
     val selectedEvents = byDate[parityState.selectedDate.toString()].orEmpty()
+    val weekStart = calendarWeekStart(parityState.selectedDate)
     var text by remember { mutableStateOf("") }
     val calendarState = interactionState.calendar
     val canUseV2 = interactionState.capabilities?.calendarAiV2 == true
 
     ScreenList {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CalendarViewMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = viewMode == mode,
+                        onClick = { viewName = mode.name },
+                        label = { Text(mode.label) },
+                        modifier = Modifier.weight(1f).testTag("calendar_view_${mode.name.lowercase()}"),
+                    )
+                }
+            }
+        }
+        if (sources.isNotEmpty()) {
+            item {
+                CalendarSourcePicker(sources, selectedCalendarId) { selectedCalendarId = it }
+                Text(
+                    if (snapshot?.includesShared == true) "${sources.size} calendars loaded · colors identify their source"
+                    else "Default calendar only · deploy backend 2.11.0 for shared calendars",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 IconButton(onClick = { onShiftMonth(-1) }) { Icon(Icons.Outlined.KeyboardArrowLeft, "Previous month") }
@@ -586,38 +620,76 @@ private fun CalendarScreen(
                 IconButton(onClick = { onShiftMonth(1) }) { Icon(Icons.Outlined.KeyboardArrowRight, "Next month") }
             }
         }
-        item {
-            Row(Modifier.fillMaxWidth()) {
-                listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
-                    Box(Modifier.weight(1f).padding(2.dp)) { Text(day, style = MaterialTheme.typography.labelSmall) }
+        if (viewMode == CalendarViewMode.MONTH) {
+            item {
+                Row(Modifier.fillMaxWidth()) {
+                    listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
+                        Box(Modifier.weight(1f).padding(2.dp)) { Text(day, style = MaterialTheme.typography.labelSmall) }
+                    }
                 }
             }
-        }
-        items((0 until 6).toList()) { week ->
-            Row(Modifier.fillMaxWidth()) {
-                for (dayIndex in 0 until 7) {
-                    val date = gridStart.plusDays((week * 7 + dayIndex).toLong())
-                    val events = byDate[date.toString()].orEmpty()
-                    val outside = date.month != month.month
-                    val selected = date == parityState.selectedDate
-                    AegisCard(onClick = { onSelectDate(date) }, modifier = Modifier.weight(1f).padding(2.dp)) {
-                        Column(Modifier.height(92.dp).padding(5.dp)) {
-                            Text(
-                                date.dayOfMonth.toString() + if (selected) " •" else "",
-                                style = if (outside) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                            )
-                            events.take(2).forEach { event ->
-                                Text(event.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+            items((0 until 6).toList()) { week ->
+                Row(Modifier.fillMaxWidth()) {
+                    for (dayIndex in 0 until 7) {
+                        val date = gridStart.plusDays((week * 7 + dayIndex).toLong())
+                        val events = byDate[date.toString()].orEmpty()
+                        val outside = date.month != month.month
+                        val selected = date == parityState.selectedDate
+                        AegisCard(onClick = { onSelectDate(date) }, modifier = Modifier.weight(1f).padding(2.dp)) {
+                            Column(Modifier.height(92.dp).padding(5.dp)) {
+                                Text(
+                                    date.dayOfMonth.toString() + if (selected) " •" else "",
+                                    style = if (outside) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                                )
+                                events.take(2).forEach { event ->
+                                    Text(event.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (events.size > 2) Text("+${events.size - 2} more", style = MaterialTheme.typography.labelSmall)
                             }
-                            if (events.size > 2) Text("+${events.size - 2} more", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
             }
         }
-        item { SectionTitle(parityState.selectedDate.format(dayFormatter)) }
-        if (selectedEvents.isEmpty()) item { SummaryCard("No events", "Nothing is scheduled on this day.") }
-        else items(selectedEvents) { CalendarRangeEventCard(it) }
+        if (viewMode == CalendarViewMode.MONTH || viewMode == CalendarViewMode.DAY) {
+            item { SectionTitle(parityState.selectedDate.format(dayFormatter)) }
+            if (selectedEvents.isEmpty()) item { SummaryCard("No events", "Nothing is scheduled on this day.") }
+            else items(selectedEvents) { CalendarRangeEventCard(it) }
+        }
+        if (viewMode == CalendarViewMode.WEEK) {
+            (0L..6L).forEach { offset ->
+                val date = weekStart.plusDays(offset)
+                val events = byDate[date.toString()].orEmpty()
+                item {
+                    WorkspaceHeading(
+                        date.format(dayFormatter) + if (date == LocalDate.now()) " · Today" else "",
+                        Icons.Outlined.Event,
+                        CalendarAccent,
+                        { onSelectDate(date) },
+                    )
+                }
+                if (events.isEmpty()) item { Text("No events", style = MaterialTheme.typography.bodySmall) }
+                else items(events) { CalendarRangeEventCard(it) }
+            }
+        }
+        if (viewMode == CalendarViewMode.AGENDA) {
+            if (visibleEvents.isEmpty()) item { SummaryCard("Agenda clear", "No events were returned for this month.") }
+            visibleEvents.groupBy { it.localDate ?: "Unscheduled" }.toSortedMap().forEach { (date, events) ->
+                item { SectionTitle(runCatching { LocalDate.parse(date).format(dayFormatter) }.getOrDefault(date)) }
+                items(events.sortedBy { it.start }) { CalendarRangeEventCard(it) }
+            }
+        }
+        item {
+            CalendarQuickCreate(
+                selectedDate = parityState.selectedDate,
+                sources = sources,
+                events = visibleEvents,
+                canMutate = canMutate,
+                supported = interactionState.capabilities?.calendarPrepareV1 == true,
+                submitting = calendarState.submitting,
+                onPrepare = onPrepare,
+            )
+        }
         item {
             AegisCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
@@ -1397,7 +1469,8 @@ private fun EventCard(event: DashboardEvent) {
 
 @Composable
 private fun CalendarRangeEventCard(event: CalendarRangeEvent) {
-    AegisCard(Modifier.fillMaxWidth(), accent = CalendarAccent) {
+    val sourceColor = event.calendarColor?.let(::calendarColorOrNull) ?: CalendarAccent
+    AegisCard(Modifier.fillMaxWidth(), accent = sourceColor) {
         ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = { Text(event.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
@@ -1405,6 +1478,7 @@ private fun CalendarRangeEventCard(event: CalendarRangeEvent) {
                 Text(
                     listOfNotNull(
                         if (event.allDay) "All day" else event.localTime,
+                        event.calendarName,
                         event.location,
                         event.description,
                     ).joinToString(" • ").ifBlank { "Calendar event" },
@@ -1412,9 +1486,19 @@ private fun CalendarRangeEventCard(event: CalendarRangeEvent) {
                     overflow = TextOverflow.Ellipsis,
                 )
             },
+            leadingContent = { Icon(Icons.Outlined.Event, null, tint = sourceColor) },
         )
     }
 }
+
+private fun calendarColorOrNull(value: String): Color? = runCatching {
+    val normalized = when {
+        value.startsWith("#") -> value
+        value.matches(Regex("[0-9A-Fa-f]{6}")) -> "#$value"
+        else -> return null
+    }
+    Color(android.graphics.Color.parseColor(normalized))
+}.getOrNull()
 
 @Composable
 private fun ServerAlertCard(notification: ServerNotification, enabled: Boolean, onAck: (String) -> Unit) {

@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
-  "backend_version": "2.10.0",
+  "backend_version": "2.11.0",
   "deployed_backend_version": "2.8.4.1",
   "compatibility_posture": "additive",
   "source_path": "shared-backend/Code.gs",
-  "source_status": "AUTHORITATIVE_2_8_1_RECONCILED_FULL_2_10_0_KINETIC_HARDENING_CANDIDATE_READY",
-  "source_sha256": "6f30907ce926b41decb1cbca02ad9a8e00e939d50fa028355e754a683ad48e50",
+  "source_status": "AUTHORITATIVE_2_10_0_CONSOLIDATED_2_11_0_CALENDAR_TASK_USABILITY_CANDIDATE",
+  "source_sha256": "dd3a2d4c88d1f74d7edc5866dcee4c0277d403b507e7591d21131b0ecb321525",
   "baseline_2_8_1_source_sha256": "a349a46bdab0b8f63396d0c8aac181f9446f93ccad8ecb3c1b23a0830cc78331",
-  "source_reconciled_date": "2026-09-18",
+  "source_reconciled_date": "2026-09-20",
   "nutrition_2_8_1_deployed_source_sha256": "fe3282093a9d32ef42c117527ede91e24fdf9a1d36119a12bda619c471de7556",
   "nutrition_2_8_1_repository_copy_sha256": "f2a5c7eeadbb8fcd23bfe8d31a6c5591a1785e9f7d3c095371dd13cca95e0f34",
   "nutrition_2_8_1_source_status": "PRESERVE_INSTALLED_FILE_REIMPORT_REQUIRED_FOR_BYTE_EXACT_GIT_MIRROR",
@@ -18,7 +18,7 @@
   "nutrition_provider_patch_path": "shared-backend/patches/2.8.4-nutrition-provider-hardening.gs",
   "nutrition_provider_patch_sha256": "f63c58166ced3119ca6bb477b3eb171f3c2cd9566e81873f8fa8753ab4fb3262",
   "deployment_id": null,
-  "deployment_verification": "2.8.4.1_RUNTIME_PROVIDER_LIMITS_CONFIRMED_2.10.0_LOCAL_VALIDATION_PASSED_CI_AND_APPS_SCRIPT_PENDING",
+  "deployment_verification": "2.10.0_USER_VALIDATED_2.11.0_LOCAL_VALIDATION_PENDING_CI_AND_APPS_SCRIPT",
   "artifact_authority": "github_only",
   "mirror_repositories": [
     "Cokkles/GEMINI-POS",
@@ -53,8 +53,10 @@
     "nutrition_trusted_food_catalog_v2",
     "AEGIS_NUTRITION_PORTION_CONVERSION_V1",
     "nutrition_portion_conversion_v1"
+    ,"calendar_sources_v1"
+    ,"task_due_time_v1"
   ],
-  "notes": "2.10.0 is a deployment candidate layered on 2.9.0. It blocks product/category substitution, adds a trusted-food V2 catalog with safe history import, and performs serving/count/package/mass/volume arithmetic locally from product-specific relationships. Capture-time Gemini remains disabled. The nightly trigger remains opt-in after controlled testing. Backend 2.8.4.1 is the production rollback point. GitHub-only workflow; do not use Drive.",
+  "notes": "2.11.0 layers additive Calendar-source and Task reminder-time contracts on the user-validated 2.10.0 nutrition baseline. Shared calendars remain read-only unless owned by the authenticated account; every Calendar mutation still requires an explicit one-shot confirmation. Task reminder times are stored in a reversible AEGIS marker because Google Tasks preserves only the due day. Backend 2.8.4.1 remains the production rollback point.",
   "nightly_reconciliation_patch_path": "shared-backend/patches/2.9.0-nightly-nutrition-reconciliation.gs",
   "nightly_reconciliation_patch_sha256": "2804e8434d6be5b98a0ba4bc8eaf5ebd3817d359883f240dfd32f821be41e591",
   "nutrition_identity_serving_patch_path": "shared-backend/patches/2.10.0-nutrition-identity-serving.gs",

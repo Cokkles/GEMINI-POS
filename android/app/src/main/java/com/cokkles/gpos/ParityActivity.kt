@@ -178,6 +178,7 @@ class ParityActivity : ComponentActivity() {
                     onAskAegis = interactionViewModel::askAegis,
                     onClearAiChat = interactionViewModel::clearAiChat,
                     onCalendarAsk = interactionViewModel::prepareCalendar,
+                    onCalendarPrepare = interactionViewModel::prepareCalendarEvent,
                     onCalendarConfirm = {
                         interactionViewModel.confirmCalendar {
                             runtimeViewModel.refreshDashboard()

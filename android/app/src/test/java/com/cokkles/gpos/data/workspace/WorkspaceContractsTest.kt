@@ -14,15 +14,21 @@ class WorkspaceContractsTest {
         assertEquals("", workspace.tasks[0].due)
     }
     @Test fun everyTaskMutationKeepsListIdentityAndDueClearingIsExplicit() {
-        val update = WorkspacePayloads.save("other-list", "task", "Title", "notes", "", "local")
+        val update = WorkspacePayloads.save("other-list", "task", "Title", "notes", "", "", "local")
         assertEquals("other-list", update.getString("task_list_id"))
         assertTrue(update.getBoolean("clear_due"))
-        assertEquals("2026-09-10T00:00:00.000Z", WorkspacePayloads.save("other-list", null, "Title", "", "2026-09-10", "local").getString("due"))
+        val scheduled = WorkspacePayloads.save("other-list", null, "Title", "", "2026-09-10", "14:30", "local")
+        assertEquals("2026-09-10T00:00:00.000Z", scheduled.getString("due"))
+        assertEquals("14:30", scheduled.getString("due_time"))
+        assertTrue(update.getBoolean("clear_due_time"))
         listOf("delete_task", "restore_task").forEach { assertEquals("other-list", WorkspacePayloads.task(it, "other-list", "task").getString("task_list_id")) }
         assertEquals("other-list", AegisCommandPayloads.completeTasks(listOf("task"), "other-list").getString("task_list_id"))
         assertEquals("other-list", WorkspacePayloads.list("Renamed", "other-list").getString("task_list_id"))
     }
     @Test(expected = IllegalArgumentException::class) fun missingListCannotFallBackToDefault() { WorkspacePayloads.task("delete_task", "", "task") }
+    @Test(expected = IllegalArgumentException::class) fun reminderTimeRequiresDueDay() {
+        WorkspacePayloads.save("other-list", null, "Title", "", "", "14:30", "local")
+    }
     @Test fun runningNotesRoundTripPendingRetryAndEditedDraft() {
         val pending = RunningNotesDocument(text = "Morning plan").beginSync()
         val reopened = RunningNotesDocument.parse(pending.toJson())

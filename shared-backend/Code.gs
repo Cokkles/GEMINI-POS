@@ -59,7 +59,7 @@ function testGeminiConnection() {
   return { status: "ok", model: cfg.model, reply: reply };
 }
 
-const AEGIS_BACKEND_VERSION = "2.10.0";
+const AEGIS_BACKEND_VERSION = "2.11.0";
 
 const CONFIG = {
   CALORIES_SHEET_ID:
@@ -647,7 +647,11 @@ function doPost(e) {
     }
 
     if (action === "get_calendar_range") {
-      return jsonOutput(getAegisCalendarRangeV265_(contents.start_date, contents.end_date));
+      return jsonOutput(getAegisCalendarRangeV265_(
+        contents.start_date,
+        contents.end_date,
+        contents.include_shared === true
+      ));
     }
 
     if (action === "get_followups") {
@@ -1667,7 +1671,10 @@ function createAegisTaskV265_(contents) {
 
   var resource = {
     title: title,
-    notes: String(contents && contents.notes || "").trim()
+    notes: applyAegisTaskDueTimeV211_(
+      String(contents && contents.notes || "").trim(),
+      contents && contents.due_time
+    )
   };
 
   if (contents && contents.due) {
@@ -1709,12 +1716,14 @@ function listAegisTaskListsV1_() {
 }
 
 function serializeAegisTaskV1_(task, list) {
+  var noteParts = splitAegisTaskDueTimeV211_(task.notes || "");
   return {
     id: task.id,
     task_list_id: list.id,
     task_list_title: list.title,
     title: task.title || "Untitled Task",
-    notes: task.notes || "",
+    notes: noteParts.notes,
+    due_time: noteParts.due_time,
     due: task.due || null,
     updated: task.updated || null,
     completed: task.completed || null,
@@ -1782,7 +1791,13 @@ function updateAegisTaskV1_(contents) {
   var title = String(contents && contents.title || "").trim();
   if (!taskId || !taskListId || !title) throw new Error("Task list, task ID, and title are required.");
   if (title.length > 1024) throw new Error("Task title is too long.");
-  var resource = { title: title, notes: String(contents.notes || "").trim() };
+  var resource = {
+    title: title,
+    notes: applyAegisTaskDueTimeV211_(
+      String(contents.notes || "").trim(),
+      contents.clear_due_time === true ? "" : contents.due_time
+    )
+  };
   if (contents.clear_due === true) resource.due = null;
   else if (contents.due) {
     var due = new Date(contents.due);
@@ -1791,6 +1806,26 @@ function updateAegisTaskV1_(contents) {
   }
   var task = Tasks.Tasks.patch(resource, taskListId, taskId);
   return { status: "success", contract: "AEGIS_TASK_ACTION_V1", operation: "UPDATE", task: serializeAegisTaskV1_(task, { id: taskListId, title: "" }) };
+}
+
+function splitAegisTaskDueTimeV211_(notes) {
+  var value = String(notes || "");
+  var marker = /(?:\r?\n){0,2}\[AEGIS due time: ((?:[01]\d|2[0-3]):[0-5]\d)\]\s*$/;
+  var match = value.match(marker);
+  return {
+    notes: match ? value.replace(marker, "").trim() : value,
+    due_time: match ? match[1] : null
+  };
+}
+
+function applyAegisTaskDueTimeV211_(notes, dueTime) {
+  var clean = splitAegisTaskDueTimeV211_(notes).notes;
+  var time = String(dueTime || "").trim();
+  if (!time) return clean;
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new Error("Task due time must use HH:mm.");
+  }
+  return clean + (clean ? "\n\n" : "") + "[AEGIS due time: " + time + "]";
 }
 
 function deleteAegisTaskV1_(contents) {
@@ -1854,7 +1889,7 @@ function aegisLocalDateFromIsoV265_(iso) {
   return Utilities.formatDate(new Date(iso), CONFIG.TIMEZONE, "yyyy-MM-dd");
 }
 
-function getAegisCalendarRangeV265_(startDate, endDate) {
+function getAegisCalendarRangeV265_(startDate, endDate, includeShared) {
   var startText = String(startDate || "").trim();
   var endText = String(endDate || "").trim();
 
@@ -1882,21 +1917,50 @@ function getAegisCalendarRangeV265_(startDate, endDate) {
 
   var from = localMidnight_(startText);
   var until = localMidnight_(endText);
-  var events = CalendarApp.getDefaultCalendar().getEvents(from, until).map(function(ev) {
-    var startTime = ev.getStartTime();
+  var defaultCalendar = CalendarApp.getDefaultCalendar();
+  var calendars = includeShared
+    ? CalendarApp.getAllCalendars().slice(0, 25)
+    : [defaultCalendar];
+  if (!calendars.some(function(cal) { return cal.getId() === defaultCalendar.getId(); })) {
+    calendars.unshift(defaultCalendar);
+  }
+  var sources = calendars.map(function(cal) {
     return {
-      id: ev.getId(),
-      title: ev.getTitle(),
-      start: startTime.toISOString(),
-      end: ev.getEndTime().toISOString(),
-      all_day: ev.isAllDayEvent(),
-      local_date: Utilities.formatDate(startTime, CONFIG.TIMEZONE, "yyyy-MM-dd"),
-      local_time: ev.isAllDayEvent()
-        ? "All day"
-        : Utilities.formatDate(startTime, CONFIG.TIMEZONE, "h:mm a"),
-      location: ev.getLocation() || "",
-      description: ev.getDescription() || ""
+      id: cal.getId(),
+      name: cal.getName(),
+      color: String(cal.getColor() || ""),
+      owned: cal.isOwnedByMe(),
+      selected: cal.isSelected(),
+      primary: cal.getId() === defaultCalendar.getId()
     };
+  });
+  var events = [];
+  calendars.forEach(function(cal) {
+    cal.getEvents(from, until).slice(0, 100).forEach(function(ev) {
+      if (events.length >= 250) return;
+      var startTime = ev.getStartTime();
+      events.push({
+        id: ev.getId(),
+        title: ev.getTitle(),
+        start: startTime.toISOString(),
+        end: ev.getEndTime().toISOString(),
+        all_day: ev.isAllDayEvent(),
+        local_date: Utilities.formatDate(startTime, CONFIG.TIMEZONE, "yyyy-MM-dd"),
+        local_time: ev.isAllDayEvent()
+          ? "All day"
+          : Utilities.formatDate(startTime, CONFIG.TIMEZONE, "h:mm a"),
+        location: ev.getLocation() || "",
+        description: ev.getDescription() || "",
+        calendar_id: cal.getId(),
+        calendar_name: cal.getName(),
+        calendar_color: String(ev.getColor() || cal.getColor() || ""),
+        calendar_owned: cal.isOwnedByMe()
+      });
+    });
+  });
+  events.sort(function(a, b) {
+    return String(a.start).localeCompare(String(b.start)) ||
+      String(a.calendar_name).localeCompare(String(b.calendar_name));
   });
 
   return {
@@ -1906,6 +1970,8 @@ function getAegisCalendarRangeV265_(startDate, endDate) {
     start_date: startText,
     end_date: endText,
     event_count: events.length,
+    includes_shared: includeShared === true,
+    calendars: sources,
     events: events
   };
 }
@@ -2712,8 +2778,12 @@ function handleAegisCalendarPrepareV1_(contents, authContext) {
 
   var proposal = {
     operation: "CREATE",
-    event: validateAegisCalendarCreateV2_(exact)
+    event: validateAegisCalendarCreateV2_(exact),
+    calendar_id: String(contents && contents.calendar_id || "").trim() || null
   };
+  if (proposal.calendar_id && !CalendarApp.getCalendarById(proposal.calendar_id)) {
+    return { status:"error", code:"CALENDAR_SOURCE_UNAVAILABLE", error:"The selected Calendar is no longer available." };
+  }
   var email = authContext && authContext.user ? authContext.user.email : "";
   var pending = issueAegisCalendarConfirmationV2_(email, proposal);
 
@@ -2755,10 +2825,16 @@ function confirmAegisCalendarMutationV2_(contents, authContext) {
   var resultEvent;
   if (p.operation === "CREATE") {
     var ev = p.event;
+    var createCalendar = p.calendar_id
+      ? CalendarApp.getCalendarById(p.calendar_id)
+      : CalendarApp.getDefaultCalendar();
+    if (!createCalendar) {
+      return { status:"error", code:"CALENDAR_SOURCE_UNAVAILABLE", error:"The selected Calendar is no longer available. No event was created." };
+    }
     if (ev.all_day) {
-      resultEvent = CalendarApp.getDefaultCalendar().createAllDayEvent(ev.title, new Date(ev.start), { location:ev.location || "", description:ev.description || "" });
+      resultEvent = createCalendar.createAllDayEvent(ev.title, new Date(ev.start), { location:ev.location || "", description:ev.description || "" });
     } else {
-      resultEvent = CalendarApp.getDefaultCalendar().createEvent(ev.title, new Date(ev.start), new Date(ev.end), { location:ev.location || "", description:ev.description || "" });
+      resultEvent = createCalendar.createEvent(ev.title, new Date(ev.start), new Date(ev.end), { location:ev.location || "", description:ev.description || "" });
     }
   } else {
     resultEvent = getAegisCalendarEventByIdV2_(p.target && p.target.id);
@@ -3824,10 +3900,12 @@ function getAegisCapabilities() {
       task_workspace_v1: true,
       tasks_history_v1: true,
       task_lists_v1: true,
+      task_due_time_v1: true,
       rss_health_threshold_v1: true,
       rss_registry_v1: true,
       rss_headliners_v1: true,
       calendar_prepare_v1: true,
+      calendar_sources_v1: true,
       nutrition_capture_v2: true,
       capture_reliability_v1: true,
       nutrition_capture_async_v1: true,

@@ -1,5 +1,20 @@
 # AEGIS shared backend changelog
 
+## 2.11.0 — Calendar sources and Task reminder-time usability
+
+- Added an opt-in shared-calendar range view with bounded calendar/event counts,
+  source identity, ownership, and color metadata. Legacy readers still receive
+  the default calendar unless they request shared sources.
+- Extended exact Calendar preparation with an optional owned target calendar.
+  The existing preview and one-shot confirmation gate still runs before every
+  write.
+- Added reversible Task reminder-time metadata while preserving Google Tasks'
+  canonical due-day behavior. Older tasks and clients remain readable.
+- Advertised `calendar_sources_v1` and `task_due_time_v1` capabilities so
+  Android can fail closed against older deployed scripts.
+- Preserved backend 2.10.0 nutrition behavior, device sessions, HORIZON, legacy
+  Calendar routes, default Task behavior, and the 2.8.4.1 rollback bundle.
+
 ## 2.10.0 — nutrition identity, trusted-food, and serving hardening
 
 - Prevented generic keyword rules from replacing a more specific branded or
