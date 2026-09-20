@@ -943,7 +943,10 @@ private fun CaptureScreen(
         state.lastMessage?.let { item { SummaryCard("Capture queued", it) } }
         state.error?.let { item { SummaryCard("Could not save", it) } }
         item {
-            OutlinedButton(onClick = onOpenAlerts, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = onOpenAlerts,
+                modifier = Modifier.fillMaxWidth().testTag("capture_receipts_button"),
+            ) {
                 Text("View confirmations & receipts • ${state.ledger.receipts.size}")
             }
         }
