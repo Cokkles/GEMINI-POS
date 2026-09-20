@@ -210,6 +210,8 @@ fun DailyUxApp(
     onTaskCreate: (String, String) -> Unit,
     onCaptureSubmit: (CaptureKind, String) -> Unit,
     onCaptureRetry: (String) -> Unit,
+    onCaptureCancel: (String) -> Unit,
+    onCaptureClearResolved: () -> Unit,
     onLocalAlertAck: (String) -> Unit,
     onServerNotificationAck: (String) -> Unit,
     onInteractionRefresh: () -> Unit,
@@ -330,9 +332,11 @@ fun DailyUxApp(
                     stage = { task -> queueVm.stageInList(task.id, task.title, task.listId, workspaceState.owner) },
                     undo = onTaskUndo, sync = onTaskSyncNow)
             }
-            composable(runningNotes.route) { NotesScreen(notesState, notesVm, authenticated, captureState, onCaptureSubmit) { navigate(alerts.route) } }
+            composable(runningNotes.route) {
+                NotesScreen(notesState, notesVm, authenticated, captureState, onCaptureSubmit, onCaptureRetry, onCaptureCancel, onCaptureClearResolved) { navigate(alerts.route) }
+            }
             composable(capture.route) {
-                NotesScreen(notesState, notesVm, authenticated, captureState, onCaptureSubmit) { navigate(alerts.route) }
+                NotesScreen(notesState, notesVm, authenticated, captureState, onCaptureSubmit, onCaptureRetry, onCaptureCancel, onCaptureClearResolved) { navigate(alerts.route) }
             }
             composable(more.route) { MoreScreen(::navigate) }
             composable(askAegis.route) {

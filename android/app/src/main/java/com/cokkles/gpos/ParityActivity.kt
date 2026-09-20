@@ -157,6 +157,8 @@ class ParityActivity : ComponentActivity() {
                     },
                     onCaptureSubmit = captureViewModel::submit,
                     onCaptureRetry = captureViewModel::retry,
+                    onCaptureCancel = captureViewModel::cancelReceipt,
+                    onCaptureClearResolved = captureViewModel::clearResolvedReceipts,
                     onLocalAlertAck = captureViewModel::acknowledgeLocalAlert,
                     onServerNotificationAck = { id ->
                         notificationCommandViewModel.acknowledge(
@@ -190,6 +192,11 @@ class ParityActivity : ComponentActivity() {
             }
         }
 
+    }
+
+    override fun onStop() {
+        notesViewModel.flushAutosave()
+        super.onStop()
     }
 
     override fun onResume() {

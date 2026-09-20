@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cokkles.gpos.data.command.CaptureInputNormalizer
 import com.cokkles.gpos.data.command.CaptureKind
+import com.cokkles.gpos.data.command.CaptureQueuePolicy
 import com.cokkles.gpos.data.local.LocalLedger
 import com.cokkles.gpos.data.local.LocalReceipt
 import com.cokkles.gpos.data.local.LocalReceiptState
@@ -101,6 +102,25 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             if (it.id == id) it.copy(acknowledged = true) else it
         }) }
         _state.update { it.copy(ledger = updated) }
+    }
+
+    fun cancelReceipt(id: String) {
+        val target = ledgerStore.read().receipts.firstOrNull { it.id == id } ?: return
+        if (!CaptureQueuePolicy.canUserClear(target)) return
+        scheduler.cancel(id)
+        val now = System.currentTimeMillis()
+        val updated = ledgerStore.update { current -> current.copy(receipts = current.receipts.map {
+            if (it.id == id) CaptureQueuePolicy.userCleared(it, now) else it
+        }) }
+        _state.update { it.copy(ledger = updated, lastMessage = "Cleared ${target.kind} ${id.take(8)} from the active queue.", error = null) }
+    }
+
+    fun clearResolvedReceipts() {
+        val updated = ledgerStore.update { current -> current.copy(
+            receipts = current.receipts.filterNot(CaptureQueuePolicy::isResolved),
+            alerts = current.alerts.filterNot { it.acknowledged },
+        ) }
+        _state.update { it.copy(ledger = updated, lastMessage = "Cleared resolved capture receipts.", error = null) }
     }
 
     fun clearProtectedLedger() {

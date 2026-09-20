@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.cokkles.gpos.*
 import com.cokkles.gpos.data.command.CaptureKind
+import com.cokkles.gpos.data.command.CaptureQueuePolicy
 import com.cokkles.gpos.data.interaction.StructuredCalendarDraft
 import com.cokkles.gpos.data.remote.CalendarRangeEvent
 import com.cokkles.gpos.data.remote.CalendarSource
@@ -435,17 +436,23 @@ internal fun NotesScreen(
     canSync: Boolean,
     captureState: CaptureUiState,
     onCapture: (CaptureKind, String) -> Unit,
+    onCaptureRetry: (String) -> Unit,
+    onCaptureCancel: (String) -> Unit,
+    onCaptureClearResolved: () -> Unit,
     onOpenAlerts: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     var confirm by remember { mutableStateOf(false) }
     var reconcile by remember { mutableStateOf(false) }
+    var clearPending by remember { mutableStateOf(false) }
     var restore by remember { mutableStateOf<NoteRevision?>(null) }
     var history by rememberSaveable { mutableStateOf(false) }
     var captureKind by remember { mutableStateOf(CaptureKind.NOTE) }
     var captureText by rememberSaveable { mutableStateOf("") }
     val captureKinds = listOf(CaptureKind.NOTE, CaptureKind.JOURNAL, CaptureKind.CALORIES, CaptureKind.RECEIPT)
     val doc = state.document
+    val activeReceipts = captureState.ledger.receipts.filter(CaptureQueuePolicy::isActive)
+    val resolvedReceipts = captureState.ledger.receipts.filter(CaptureQueuePolicy::isResolved)
     LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             WorkspaceHeading("Running Notes", Icons.Outlined.EditNote, NotesAccent)
@@ -464,7 +471,10 @@ internal fun NotesScreen(
         }
         item {
             Button(onClick = { confirm = true }, enabled = canSync && state.ready && !state.syncing && (doc.text.isNotBlank() || doc.pendingId != null), modifier = Modifier.fillMaxWidth()) { Text(if (doc.pendingId != null) "Review pending sync" else "Sync to Notes Journal") }
-            if (doc.pendingId != null) TextButton(onClick = { reconcile = true }, enabled = !state.syncing) { Text("I verified this entry is already in my journal") }
+            if (doc.pendingId != null) {
+                TextButton(onClick = { reconcile = true }, enabled = !state.syncing) { Text("I verified this entry is already in my journal") }
+                TextButton(onClick = { clearPending = true }, enabled = !state.syncing) { Text("Clear pending marker · keep draft") }
+            }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -518,7 +528,51 @@ internal fun NotesScreen(
             }
             captureState.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 5.dp)) }
             captureState.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = onOpenAlerts, Modifier.fillMaxWidth()) { Text("Open confirmations · ${captureState.ledger.receipts.size}") }
+        }
+        item {
+            CollapsibleSectionHeader("Capture queue", activeReceipts.size, activeReceipts.isNotEmpty(), {}, NotesAccent)
+            Text(
+                if (activeReceipts.isEmpty()) "Nothing is waiting. New one-time captures will show their queued and review state here."
+                else "${activeReceipts.size} active · ${resolvedReceipts.size} resolved",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        items(activeReceipts.take(8), key = { "capture/${it.id}" }) { receipt ->
+            AegisCard(Modifier.fillMaxWidth(), accent = NotesAccent) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(receipt.summary, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        receipt.state.name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase) +
+                            " · ID " + receipt.id.take(8),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    receipt.result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    receipt.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (receipt.manualRetryAllowed || receipt.serverManaged) {
+                            OutlinedButton(
+                                onClick = { onCaptureRetry(receipt.id) },
+                                modifier = Modifier.weight(1f),
+                                enabled = !captureState.submitting,
+                            ) { Text(if (receipt.serverManaged) "Check / retry" else "Retry") }
+                        }
+                        if (CaptureQueuePolicy.canUserClear(receipt)) {
+                            TextButton(
+                                onClick = { onCaptureCancel(receipt.id) },
+                                modifier = Modifier.weight(1f),
+                                enabled = !captureState.submitting,
+                            ) { Text("Clear") }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onOpenAlerts, Modifier.weight(1f)) { Text("All receipts") }
+                OutlinedButton(onClick = onCaptureClearResolved, Modifier.weight(1f), enabled = resolvedReceipts.isNotEmpty()) { Text("Clear resolved") }
+            }
         }
     }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text(if (doc.pendingId == null) "Sync this section?" else "Retry previous submission?") }, text = {
@@ -526,6 +580,7 @@ internal fun NotesScreen(
         else "The previous request may already be in your journal. Check it before retrying, since the backend cannot prevent duplicates. Retry sends the original pending section (${doc.pendingText?.length ?: 0} characters); newer edits remain in the editor.")
     }, confirmButton = { TextButton(onClick = { confirm = false; vm.sync() }) { Text(if (doc.pendingId == null) "Sync section" else "Retry original section") } }, dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } })
     if (reconcile) AlertDialog(onDismissRequest = { reconcile = false }, title = { Text("Confirm entry exists in journal?") }, text = { Text("Only confirm after you have checked the previous entry. This records it as synced locally without sending it again.") }, confirmButton = { TextButton(onClick = { reconcile = false; vm.markPendingAsSynced() }) { Text("Entry verified") } }, dismissButton = { TextButton(onClick = { reconcile = false }) { Text("Cancel") } })
+    if (clearPending) AlertDialog(onDismissRequest = { clearPending = false }, title = { Text("Clear the stuck sync marker?") }, text = { Text("The pending section is restored into the local editor and no request is sent. Use this when you want to revise it or start a fresh manual sync.") }, confirmButton = { TextButton(onClick = { clearPending = false; vm.clearPendingKeepDraft() }) { Text("Keep draft and clear") } }, dismissButton = { TextButton(onClick = { clearPending = false }) { Text("Cancel") } })
     restore?.let { revision -> AlertDialog(onDismissRequest = { restore = null }, title = { Text("Restore a recovery copy?") }, text = { Text("Your current draft is checkpointed first. Restoring does not submit anything to the journal.") }, confirmButton = { TextButton(onClick = { vm.restore(revision.id); restore = null }) { Text("Restore copy") } }, dismissButton = { TextButton(onClick = { restore = null }) { Text("Cancel") } }) }
 }
 private fun noteTime(time: Long): String = DateTimeFormatter.ofPattern("MMM d · h:mm a").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(time))
