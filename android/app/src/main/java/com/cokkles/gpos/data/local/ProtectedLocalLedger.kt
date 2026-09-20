@@ -55,6 +55,7 @@ data class DeferredMutation(
     val title: String = "",
     val notes: String = "",
     val due: String = "",
+    val dueTime: String = "",
     val createdAtEpochMs: Long,
     val syncAfterEpochMs: Long,
     val attempts: Int = 0,
@@ -170,6 +171,7 @@ class ProtectedLocalLedger(
                         .put("title", item.title)
                         .put("notes", item.notes)
                         .put("due", item.due)
+                        .put("due_time", item.dueTime)
                         .put("created_at", item.createdAtEpochMs)
                         .put("sync_after", item.syncAfterEpochMs)
                         .put("attempts", item.attempts))
@@ -297,6 +299,7 @@ private fun parseLedger(json: JSONObject): LocalLedger = LocalLedger(
             title = item.optString("title"),
             notes = item.optString("notes"),
             due = item.optString("due"),
+            dueTime = item.optString("due_time"),
             createdAtEpochMs = item.optLong("created_at"),
             syncAfterEpochMs = item.optLong("sync_after"),
             attempts = item.optInt("attempts", 0),

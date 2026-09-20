@@ -58,8 +58,14 @@ class ParityModelsTest {
                         "end":"2026-09-02T15:00:00-04:00",
                         "local_date":"2026-09-02",
                         "local_time":"2:00 PM",
-                        "all_day":false
-                    }]
+                        "all_day":false,
+                        "calendar_id":"shared-1",
+                        "calendar_name":"Family",
+                        "calendar_color":"#7E57C2",
+                        "calendar_owned":false
+                    }],
+                    "includes_shared":true,
+                    "calendars":[{"id":"primary","name":"Me","owned":true,"primary":true},{"id":"shared-1","name":"Family","color":"#7E57C2","owned":false}]
                 }""",
             ),
             "2026-08-31",
@@ -68,5 +74,9 @@ class ParityModelsTest {
         assertEquals(1, snapshot.events.size)
         assertEquals("2026-09-02", snapshot.events.single().localDate)
         assertEquals("Dentist", snapshot.events.single().title)
+        assertEquals("Family", snapshot.events.single().calendarName)
+        assertFalse(snapshot.events.single().calendarOwned)
+        assertTrue(snapshot.includesShared)
+        assertEquals(2, snapshot.calendars.size)
     }
 }

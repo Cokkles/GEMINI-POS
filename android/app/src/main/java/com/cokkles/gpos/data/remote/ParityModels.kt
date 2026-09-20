@@ -37,12 +37,27 @@ data class CalendarRangeEvent(
     val allDay: Boolean,
     val location: String?,
     val description: String?,
+    val calendarId: String?,
+    val calendarName: String?,
+    val calendarColor: String?,
+    val calendarOwned: Boolean,
+)
+
+data class CalendarSource(
+    val id: String,
+    val name: String,
+    val color: String?,
+    val owned: Boolean,
+    val selected: Boolean,
+    val primary: Boolean,
 )
 
 data class CalendarRangeSnapshot(
     val startDate: String,
     val endDate: String,
     val events: List<CalendarRangeEvent>,
+    val calendars: List<CalendarSource> = emptyList(),
+    val includesShared: Boolean = false,
 )
 
 object CalendarRangePayloadMapper {
@@ -72,11 +87,40 @@ object CalendarRangePayloadMapper {
                         allDay = item.optBoolean("all_day", item.optBoolean("allDay", false)),
                         location = item.optString("location").trim().takeIf(String::isNotBlank),
                         description = item.optString("description").trim().takeIf(String::isNotBlank),
+                        calendarId = item.optString("calendar_id").trim().takeIf(String::isNotBlank),
+                        calendarName = item.optString("calendar_name").trim().takeIf(String::isNotBlank),
+                        calendarColor = item.optString("calendar_color").trim().takeIf(String::isNotBlank),
+                        calendarOwned = item.optBoolean("calendar_owned", true),
                     ),
                 )
             }
         }
-        return CalendarRangeSnapshot(startDate, endDate, events)
+        val calendars = root.optJSONArray("calendars")?.let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val id = item.optString("id").trim()
+                    if (id.isBlank()) continue
+                    add(
+                        CalendarSource(
+                            id = id,
+                            name = item.optString("name").trim().ifBlank { "Calendar" },
+                            color = item.optString("color").trim().takeIf(String::isNotBlank),
+                            owned = item.optBoolean("owned", false),
+                            selected = item.optBoolean("selected", true),
+                            primary = item.optBoolean("primary", false),
+                        ),
+                    )
+                }
+            }
+        }.orEmpty()
+        return CalendarRangeSnapshot(
+            startDate = startDate,
+            endDate = endDate,
+            events = events,
+            calendars = calendars,
+            includesShared = root.optBoolean("includes_shared", false),
+        )
     }
 }
 

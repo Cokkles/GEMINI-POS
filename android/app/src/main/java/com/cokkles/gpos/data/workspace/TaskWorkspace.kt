@@ -6,7 +6,7 @@ import java.time.LocalDate
 
 /** Composite identity is required even when different lists return the same task ID. */
 data class WorkspaceTask(val id: String, val listId: String, val listTitle: String, val title: String,
-    val notes: String = "", val due: String = "", val completed: String = "") {
+    val notes: String = "", val due: String = "", val completed: String = "", val dueTime: String = "") {
     val key: String get() = "$listId/$id"
 }
 data class WorkspaceList(val id: String, val title: String)
@@ -17,7 +17,7 @@ internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyLis
 internal fun JSONObject.string(key: String): String = if (isNull(key)) "" else optString(key)
 internal fun parseWorkspaceTasks(array: JSONArray?): List<WorkspaceTask> = array.objects().map { t ->
     WorkspaceTask(t.string("id"), t.string("task_list_id"), t.string("task_list_title"),
-        t.string("title"), t.string("notes"), t.string("due"), t.string("completed"))
+        t.string("title"), t.string("notes"), t.string("due"), t.string("completed"), t.string("due_time"))
 }.filter { it.id.isNotBlank() && it.listId.isNotBlank() }.distinctBy { it.key }
 internal fun parseTaskWorkspace(json: JSONObject): TaskWorkspace {
     require(json.optString("contract") == "AEGIS_TASK_WORKSPACE_V1") { "Task workspace contract is unavailable." }
@@ -35,13 +35,16 @@ internal object WorkspacePayloads {
             if (taskId.isNotBlank()) put("task_id", taskId)
         }
     }
-    fun save(listId: String, taskId: String?, title: String, notes: String, due: String, localId: String): JSONObject {
+    fun save(listId: String, taskId: String?, title: String, notes: String, due: String, dueTime: String, localId: String): JSONObject {
         require(title.trim().isNotEmpty() && title.trim().length <= 1024) { "Enter a title of 1–1,024 characters." }
         require(notes.length <= 8000) { "Task notes must be at most 8,000 characters." }
         val date = due.trim().takeIf { it.isNotBlank() }?.let { LocalDate.parse(it).toString() + "T00:00:00.000Z" }
+        val time = dueTime.trim().takeIf { it.matches(Regex("(?:[01]\\d|2[0-3]):[0-5]\\d")) }
+        require(time == null || date != null) { "Choose a due day before a reminder time." }
         return task(if (taskId == null) "create_task" else "update_task", listId, taskId.orEmpty())
             .put("title", title.trim()).put("notes", notes).put("local_id", localId).apply {
                 if (date != null) put("due", date) else if (taskId != null) put("clear_due", true)
+                if (time != null) put("due_time", time) else if (taskId != null) put("clear_due_time", true)
             }
     }
     fun list(title: String, id: String?): JSONObject {

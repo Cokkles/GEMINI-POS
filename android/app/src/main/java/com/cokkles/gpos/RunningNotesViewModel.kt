@@ -127,6 +127,15 @@ class RunningNotesViewModel(app: Application) : AndroidViewModel(app) {
     fun markPendingAsSynced() {
         if (_state.value.document.pendingId != null && !_state.value.syncing) save(_state.value.document.confirmed())
     }
+    fun clearPendingKeepDraft() {
+        if (_state.value.document.pendingId != null && !_state.value.syncing) {
+            save(_state.value.document.clearPendingKeepDraft())
+        }
+    }
+    fun flushAutosave() {
+        val current = _state.value
+        if (current.ready && !current.syncing) save(current.document)
+    }
     override fun onCleared() { saves.close(); super.onCleared() }
 }
 

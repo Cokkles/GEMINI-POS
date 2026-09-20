@@ -89,7 +89,8 @@ class AegisBackendClient(
         idToken = idToken,
         additionalPayload = JSONObject()
             .put("start_date", startDate)
-            .put("end_date", endDate),
+            .put("end_date", endDate)
+            .put("include_shared", true),
     )
 
     suspend fun readIntelligence(

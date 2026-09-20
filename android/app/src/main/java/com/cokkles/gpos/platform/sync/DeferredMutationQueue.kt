@@ -75,8 +75,8 @@ class DeferredMutationProcessor(private val context: Context) {
 
     private suspend fun send(token: String, item: DeferredMutation) {
         when (item.type) {
-            DeferredMutationType.TASK_CREATE -> client.saveWorkspaceTask(token, item.listId, null, item.title, item.notes, item.due, item.id)
-            DeferredMutationType.TASK_UPDATE -> client.saveWorkspaceTask(token, item.listId, item.entityId, item.title, item.notes, item.due, item.id)
+            DeferredMutationType.TASK_CREATE -> client.saveWorkspaceTask(token, item.listId, null, item.title, item.notes, item.due, item.dueTime, item.id)
+            DeferredMutationType.TASK_UPDATE -> client.saveWorkspaceTask(token, item.listId, item.entityId, item.title, item.notes, item.due, item.dueTime, item.id)
             DeferredMutationType.TASK_DELETE -> client.deleteWorkspaceTask(token, WorkspaceTask(item.entityId, item.listId, "", item.title))
             DeferredMutationType.TASK_RESTORE -> client.restoreWorkspaceTask(token, WorkspaceTask(item.entityId, item.listId, "", item.title))
             DeferredMutationType.LIST_CREATE -> client.saveWorkspaceList(token, item.title, null)

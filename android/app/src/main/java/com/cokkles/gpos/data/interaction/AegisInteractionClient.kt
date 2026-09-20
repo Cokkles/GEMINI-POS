@@ -25,10 +25,13 @@ data class InteractionCapabilities(
     val taskActionV1: Boolean = false,
     val aiQueryV1: Boolean = false,
     val calendarAiV2: Boolean = false,
+    val calendarPrepareV1: Boolean = false,
+    val calendarSourcesV1: Boolean = false,
     val taskWorkspaceV1: Boolean = false,
     val taskCrudV1: Boolean = false,
     val taskListsV1: Boolean = false,
     val taskHistoryV1: Boolean = false,
+    val taskDueTimeV1: Boolean = false,
     val captureReliabilityV1: Boolean = false,
     val nutritionCaptureV2: Boolean = false,
     val nutritionCaptureAsyncV1: Boolean = false,
@@ -97,6 +100,16 @@ data class CalendarConfirmationResult(
     val mutationPerformed: Boolean,
 )
 
+data class StructuredCalendarDraft(
+    val title: String,
+    val start: String,
+    val end: String?,
+    val allDay: Boolean,
+    val location: String = "",
+    val description: String = "",
+    val calendarId: String? = null,
+)
+
 /**
  * Typed client for the additive AEGIS 2.6.5 interaction contracts used by Android 0.6.
  *
@@ -132,10 +145,13 @@ class AegisInteractionClient(
             taskActionV1 = ux.optBoolean("task_action_v1", false),
             aiQueryV1 = features.optBoolean("ai_query_v1", false),
             calendarAiV2 = features.optBoolean("calendar_ai_v2", false),
+            calendarPrepareV1 = ux.optBoolean("calendar_prepare_v1", false),
+            calendarSourcesV1 = ux.optBoolean("calendar_sources_v1", false),
             taskWorkspaceV1 = ux.optBoolean("task_workspace_v1"),
             taskCrudV1 = ux.optBoolean("task_crud_v1"),
             taskListsV1 = ux.optBoolean("task_lists_v1"),
             taskHistoryV1 = ux.optBoolean("tasks_history_v1"),
+            taskDueTimeV1 = ux.optBoolean("task_due_time_v1"),
             captureReliabilityV1 = ux.optBoolean("capture_reliability_v1"),
             nutritionCaptureV2 = ux.optBoolean("nutrition_capture_v2"),
             nutritionCaptureAsyncV1 = ux.optBoolean("nutrition_capture_async_v1"),
@@ -155,8 +171,8 @@ class AegisInteractionClient(
         return parseWorkspaceTasks(result.optJSONArray("items"))
     }
 
-    suspend fun saveWorkspaceTask(token: String, listId: String, taskId: String?, title: String, notes: String, due: String, localId: String) {
-        val result = postAuthenticated(token, WorkspacePayloads.save(listId, taskId, title, notes, due, localId))
+    suspend fun saveWorkspaceTask(token: String, listId: String, taskId: String?, title: String, notes: String, due: String, dueTime: String, localId: String) {
+        val result = postAuthenticated(token, WorkspacePayloads.save(listId, taskId, title, notes, due, dueTime, localId))
         require(result.optJSONObject("task")?.optString("id")?.isNotBlank() == true) { "Task save was not confirmed. Refresh before retrying." }
     }
 
@@ -277,6 +293,14 @@ class AegisInteractionClient(
 
     suspend fun prepareCalendar(idToken: String, question: String): CalendarInteractionResult {
         val json = postAuthenticated(idToken, InteractionPayloads.calendarAi(question))
+        return parseCalendarInteraction(json)
+    }
+
+    suspend fun prepareCalendarEvent(
+        idToken: String,
+        draft: StructuredCalendarDraft,
+    ): CalendarInteractionResult {
+        val json = postAuthenticated(idToken, InteractionPayloads.calendarPrepare(draft))
         return parseCalendarInteraction(json)
     }
 
@@ -461,6 +485,26 @@ internal object InteractionPayloads {
         return JSONObject()
             .put("action", "calendar_ai")
             .put("question", value.take(4000))
+    }
+
+    fun calendarPrepare(draft: StructuredCalendarDraft): JSONObject {
+        val title = draft.title.trim()
+        require(title.isNotBlank()) { "Calendar title is required." }
+        require(draft.start.isNotBlank()) { "Calendar start is required." }
+        if (!draft.allDay) require(!draft.end.isNullOrBlank()) { "Calendar end is required." }
+        return JSONObject()
+            .put("action", "calendar_prepare")
+            .put(
+                "event",
+                JSONObject()
+                    .put("title", title.take(300))
+                    .put("start", draft.start)
+                    .put("end", draft.end)
+                    .put("all_day", draft.allDay)
+                    .put("location", draft.location.trim().take(500))
+                    .put("description", draft.description.trim().take(2000)),
+            )
+            .apply { draft.calendarId?.takeIf(String::isNotBlank)?.let { put("calendar_id", it) } }
     }
 
     fun calendarConfirm(token: String): JSONObject {

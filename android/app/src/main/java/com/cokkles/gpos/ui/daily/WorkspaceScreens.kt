@@ -1,6 +1,7 @@
 package com.cokkles.gpos.ui.daily
 
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -27,17 +28,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.cokkles.gpos.*
 import com.cokkles.gpos.data.command.CaptureKind
+import com.cokkles.gpos.data.command.CaptureQueuePolicy
+import com.cokkles.gpos.data.interaction.StructuredCalendarDraft
+import com.cokkles.gpos.data.remote.CalendarRangeEvent
+import com.cokkles.gpos.data.remote.CalendarSource
 import com.cokkles.gpos.data.workspace.*
 import com.cokkles.gpos.data.local.LocalReceiptState
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 internal val CalendarAccent = Color(0xFF78B7FF)
 internal val TaskAccent = Color(0xFF58CCB5)
 internal val NotesAccent = Color(0xFFE8B764)
 internal val NewsAccent = Color(0xFFC2A3F5)
+
+internal enum class CalendarViewMode(val label: String) {
+    MONTH("Month"),
+    WEEK("Week"),
+    DAY("Day"),
+    AGENDA("Agenda"),
+}
+
+internal fun calendarWeekStart(date: LocalDate): LocalDate =
+    date.minusDays((date.dayOfWeek.value - 1).toLong())
 
 @Composable
 internal fun CollapsibleSectionHeader(
@@ -138,7 +155,13 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
                     Checkbox(checked = queued != null, onCheckedChange = { if (queued == null) stage(task) }, enabled = available && state.capabilities.taskActionV1 && queued == null && !queue.syncing)
                     Column(Modifier.weight(1f).padding(top = 10.dp, end = 8.dp)) {
                         Text(task.title, style = MaterialTheme.typography.titleMedium)
-                        Text(task.listTitle + task.due.takeIf { it.isNotBlank() }?.let { " · Due ${it.take(10)}" }.orEmpty(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            task.listTitle +
+                                task.due.takeIf { it.isNotBlank() }?.let { " · Due ${it.take(10)}" }.orEmpty() +
+                                task.dueTime.takeIf { it.isNotBlank() }?.let { " at ${formatTaskTime(it)}" }.orEmpty(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                         if (task.notes.isNotBlank()) Text(task.notes, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         if (queued != null) Text(if (sending) "Syncing completion…" else "Completion queued · two-minute Undo", style = MaterialTheme.typography.bodySmall)
                         Row {
@@ -177,7 +200,9 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
             }
         } else if (historyExpanded) item { Text("Completed history is available when advertised by your backend.", style = MaterialTheme.typography.bodySmall) }
     }
-    if (editor) TaskEditor(editing, state, { editor = false }) { listId, title, notes, due -> vm.saveTask(listId, editing, title, notes, due) { editor = false } }
+    if (editor) TaskEditor(editing, state, { editor = false }) { listId, title, notes, due, dueTime ->
+        vm.saveTask(listId, editing, title, notes, due, dueTime) { editor = false }
+    }
     deleting?.let { task -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete task?") }, text = { Text("${task.title}\nFrom ${task.listTitle}. This cannot be undone.") }, confirmButton = { TextButton(onClick = { deleting = null; vm.deleteTask(task) }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } }) }
     if (listEditor) AlertDialog(onDismissRequest = { if (!state.mutating) listEditor = false }, title = { Text(if (renaming == null) "New task list" else "Rename list") }, text = {
         Column { OutlinedTextField(listName, { listName = it.take(100) }, enabled = !state.mutating, label = { Text("List name") }); state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
@@ -185,10 +210,11 @@ internal fun WorkspaceTasksScreen(state: TaskWorkspaceUiState, queue: TaskQueueU
 }
 
 @Composable
-private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismiss: () -> Unit, save: (String, String, String, String) -> Unit) {
+private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismiss: () -> Unit, save: (String, String, String, String, String) -> Unit) {
     var title by rememberSaveable { mutableStateOf(task?.title.orEmpty()) }
     var notes by rememberSaveable { mutableStateOf(task?.notes.orEmpty()) }
     var due by rememberSaveable { mutableStateOf(task?.due?.take(10).orEmpty()) }
+    var dueTime by rememberSaveable { mutableStateOf(task?.dueTime.orEmpty()) }
     var listId by rememberSaveable { mutableStateOf(task?.listId ?: state.selectedList ?: state.workspace.lists.firstOrNull()?.id) }
     val validDate = due.isBlank() || runCatching { LocalDate.parse(due) }.isSuccess
     val context = LocalContext.current
@@ -196,6 +222,14 @@ private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismis
         val initial = runCatching { LocalDate.parse(due) }.getOrDefault(LocalDate.now())
         DatePickerDialog(context, { _, year, month, day -> due = LocalDate.of(year, month + 1, day).toString() },
             initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
+    }
+    fun openTimePicker() {
+        val parts = dueTime.split(":").mapNotNull(String::toIntOrNull)
+        val hour = parts.getOrNull(0) ?: 9
+        val minute = parts.getOrNull(1) ?: 0
+        TimePickerDialog(context, { _, selectedHour, selectedMinute ->
+            dueTime = "%02d:%02d".format(selectedHour, selectedMinute)
+        }, hour, minute, false).show()
     }
     AlertDialog(onDismissRequest = { if (!state.mutating) dismiss() }, title = { Text(if (task == null) "Add task" else "Edit task") }, text = {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -208,13 +242,191 @@ private fun TaskEditor(task: WorkspaceTask?, state: TaskWorkspaceUiState, dismis
                         Icon(Icons.Outlined.CalendarMonth, null)
                         Text(if (due.isBlank()) "Choose due day" else LocalDate.parse(due).format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")), Modifier.padding(start = 8.dp))
                     }
-                    if (due.isNotBlank()) TextButton(onClick = { due = "" }, enabled = !state.mutating) { Text("Remove due day") }
-                    Text("Google Tasks stores a due day, not a reminder time.", style = MaterialTheme.typography.bodySmall)
+                    if (state.capabilities.taskDueTimeV1) {
+                        OutlinedButton(
+                            onClick = ::openTimePicker,
+                            enabled = !state.mutating && due.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().testTag("task_due_time_picker"),
+                        ) {
+                            Icon(Icons.Outlined.Schedule, null)
+                            Text(if (dueTime.isBlank()) "Choose reminder time" else formatTaskTime(dueTime), Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    if (due.isNotBlank()) TextButton(onClick = { due = ""; dueTime = "" }, enabled = !state.mutating) { Text("Remove due day") }
+                    if (dueTime.isNotBlank()) TextButton(onClick = { dueTime = "" }, enabled = !state.mutating) { Text("Remove reminder time") }
+                    Text(
+                        if (state.capabilities.taskDueTimeV1) "The day is stored by Google Tasks; AEGIS preserves the reminder time with the task."
+                        else "Google Tasks stores a due day. Reminder time support requires backend 2.11.0.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         }
-    }, confirmButton = { TextButton(onClick = { listId?.let { save(it, title, notes, due) } }, enabled = state.canWrite && !state.mutating && title.isNotBlank() && listId != null && validDate) { Text(if (state.mutating) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = dismiss, enabled = !state.mutating) { Text("Cancel") } })
+    }, confirmButton = { TextButton(onClick = { listId?.let { save(it, title, notes, due, dueTime) } }, enabled = state.canWrite && !state.mutating && title.isNotBlank() && listId != null && validDate && (dueTime.isBlank() || due.isNotBlank())) { Text(if (state.mutating) "Saving…" else "Save") } }, dismissButton = { TextButton(onClick = dismiss, enabled = !state.mutating) { Text("Cancel") } })
+}
+
+private fun formatTaskTime(value: String): String = runCatching {
+    java.time.LocalTime.parse(value).format(DateTimeFormatter.ofPattern("h:mm a"))
+}.getOrDefault(value)
+
+@Composable
+internal fun CalendarSourcePicker(
+    sources: List<CalendarSource>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val selectedSource = sources.firstOrNull { it.id == selected }
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("calendar_source_picker")) {
+            Icon(Icons.Outlined.CalendarMonth, null)
+            Text(selectedSource?.name ?: "All calendars", Modifier.weight(1f).padding(horizontal = 8.dp))
+            Icon(Icons.Outlined.ArrowDropDown, "Choose calendar")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("All calendars") }, onClick = { onSelect(null); open = false })
+            sources.forEach { source ->
+                DropdownMenuItem(
+                    text = { Text(source.name + if (!source.owned) " · shared" else "") },
+                    onClick = { onSelect(source.id); open = false },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun CalendarQuickCreate(
+    selectedDate: LocalDate,
+    sources: List<CalendarSource>,
+    events: List<CalendarRangeEvent>,
+    canMutate: Boolean,
+    supported: Boolean,
+    submitting: Boolean,
+    onPrepare: (StructuredCalendarDraft) -> Unit,
+) {
+    val context = LocalContext.current
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var title by rememberSaveable { mutableStateOf("") }
+    var date by rememberSaveable { mutableStateOf(selectedDate.toString()) }
+    var startTime by rememberSaveable { mutableStateOf("09:00") }
+    var endTime by rememberSaveable { mutableStateOf("10:00") }
+    var allDay by rememberSaveable { mutableStateOf(false) }
+    var location by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var calendarId by rememberSaveable {
+        mutableStateOf(sources.firstOrNull { it.primary && it.owned }?.id ?: sources.firstOrNull { it.owned }?.id)
+    }
+    val writableSources = sources.filter { it.owned }
+    val locations = remember(events) {
+        events.mapNotNull { it.location?.trim()?.takeIf(String::isNotBlank) }.distinct().take(8)
+    }
+    val parsedDate = runCatching { LocalDate.parse(date) }.getOrNull()
+    val parsedStart = runCatching { LocalTime.parse(startTime) }.getOrNull()
+    val parsedEnd = runCatching { LocalTime.parse(endTime) }.getOrNull()
+    val valid = title.isNotBlank() && parsedDate != null && (allDay || (parsedStart != null && parsedEnd != null))
+
+    LaunchedEffect(selectedDate) {
+        if (!expanded) date = selectedDate.toString()
+    }
+    LaunchedEffect(sources) {
+        if (calendarId != null && writableSources.none { it.id == calendarId }) {
+            calendarId = writableSources.firstOrNull { it.primary }?.id ?: writableSources.firstOrNull()?.id
+        }
+    }
+
+    AegisCard(Modifier.fillMaxWidth(), accent = CalendarAccent) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Create event", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, if (expanded) "Collapse event editor" else "Open event editor")
+                }
+            }
+            if (!expanded) {
+                Text("Exact title, date, time, location, and calendar with a confirmation preview.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                OutlinedTextField(title, { title = it.take(300) }, Modifier.fillMaxWidth().testTag("calendar_title"), label = { Text("Title") }, enabled = canMutate && !submitting)
+                OutlinedButton(
+                    onClick = {
+                        val initial = parsedDate ?: selectedDate
+                        DatePickerDialog(context, { _, year, month, day -> date = LocalDate.of(year, month + 1, day).toString() },
+                            initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("calendar_date_picker"),
+                    enabled = canMutate && !submitting,
+                ) { Icon(Icons.Outlined.CalendarMonth, null); Text(parsedDate?.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")) ?: "Choose date", Modifier.padding(start = 8.dp)) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("All day", Modifier.weight(1f))
+                    Switch(allDay, { allDay = it }, enabled = canMutate && !submitting)
+                }
+                if (!allDay) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val initial = parsedStart ?: LocalTime.of(9, 0)
+                                TimePickerDialog(context, { _, hour, minute -> startTime = "%02d:%02d".format(hour, minute) }, initial.hour, initial.minute, false).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = canMutate && !submitting,
+                        ) { Text("Start ${formatTaskTime(startTime)}") }
+                        OutlinedButton(
+                            onClick = {
+                                val initial = parsedEnd ?: LocalTime.of(10, 0)
+                                TimePickerDialog(context, { _, hour, minute -> endTime = "%02d:%02d".format(hour, minute) }, initial.hour, initial.minute, false).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = canMutate && !submitting,
+                        ) { Text("End ${formatTaskTime(endTime)}") }
+                    }
+                }
+                OutlinedTextField(location, { location = it.take(500) }, Modifier.fillMaxWidth().testTag("calendar_location"), label = { Text("Location (optional)") }, enabled = canMutate && !submitting)
+                if (locations.isNotEmpty()) {
+                    Text("Recent locations", style = MaterialTheme.typography.labelMedium)
+                    locations.filter { location.isBlank() || it.contains(location, ignoreCase = true) }.take(4).forEach { suggestion ->
+                        SuggestionChip(onClick = { location = suggestion }, label = { Text(suggestion, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                    }
+                }
+                OutlinedTextField(description, { description = it.take(2000) }, Modifier.fillMaxWidth(), label = { Text("Description (optional)") }, minLines = 2, enabled = canMutate && !submitting)
+                if (writableSources.isNotEmpty()) {
+                    TaskListPicker(
+                        lists = writableSources.map { WorkspaceList(it.id, it.name) },
+                        selected = calendarId,
+                        includeAll = false,
+                        onSelect = { calendarId = it },
+                        enabled = canMutate && !submitting,
+                    )
+                    if (sources.any { !it.owned }) Text("Shared read-only calendars appear in views but are not offered as creation targets.", style = MaterialTheme.typography.bodySmall)
+                }
+                Button(
+                    onClick = {
+                        val day = parsedDate ?: return@Button
+                        val draft = if (allDay) {
+                            StructuredCalendarDraft(title.trim(), day.toString(), null, true, location, description, calendarId)
+                        } else {
+                            val start = ZonedDateTime.of(day, parsedStart ?: return@Button, ZoneId.systemDefault())
+                            var end = ZonedDateTime.of(day, parsedEnd ?: return@Button, ZoneId.systemDefault())
+                            if (!end.isAfter(start)) end = end.plusDays(1)
+                            StructuredCalendarDraft(
+                                title.trim(),
+                                start.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                                end.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                                false,
+                                location,
+                                description,
+                                calendarId,
+                            )
+                        }
+                        onPrepare(draft)
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("calendar_review_event"),
+                    enabled = canMutate && supported && valid && !submitting,
+                ) { Text(if (submitting) "Preparing…" else "Review exact event") }
+                if (!supported) Text("Exact event creation requires backend 2.11.0. Conversational Calendar remains available below.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
 }
 
 @Composable
@@ -224,17 +436,23 @@ internal fun NotesScreen(
     canSync: Boolean,
     captureState: CaptureUiState,
     onCapture: (CaptureKind, String) -> Unit,
+    onCaptureRetry: (String) -> Unit,
+    onCaptureCancel: (String) -> Unit,
+    onCaptureClearResolved: () -> Unit,
     onOpenAlerts: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     var confirm by remember { mutableStateOf(false) }
     var reconcile by remember { mutableStateOf(false) }
+    var clearPending by remember { mutableStateOf(false) }
     var restore by remember { mutableStateOf<NoteRevision?>(null) }
     var history by rememberSaveable { mutableStateOf(false) }
     var captureKind by remember { mutableStateOf(CaptureKind.NOTE) }
     var captureText by rememberSaveable { mutableStateOf("") }
     val captureKinds = listOf(CaptureKind.NOTE, CaptureKind.JOURNAL, CaptureKind.CALORIES, CaptureKind.RECEIPT)
     val doc = state.document
+    val activeReceipts = captureState.ledger.receipts.filter(CaptureQueuePolicy::isActive)
+    val resolvedReceipts = captureState.ledger.receipts.filter(CaptureQueuePolicy::isResolved)
     LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             WorkspaceHeading("Running Notes", Icons.Outlined.EditNote, NotesAccent)
@@ -253,7 +471,10 @@ internal fun NotesScreen(
         }
         item {
             Button(onClick = { confirm = true }, enabled = canSync && state.ready && !state.syncing && (doc.text.isNotBlank() || doc.pendingId != null), modifier = Modifier.fillMaxWidth()) { Text(if (doc.pendingId != null) "Review pending sync" else "Sync to Notes Journal") }
-            if (doc.pendingId != null) TextButton(onClick = { reconcile = true }, enabled = !state.syncing) { Text("I verified this entry is already in my journal") }
+            if (doc.pendingId != null) {
+                TextButton(onClick = { reconcile = true }, enabled = !state.syncing) { Text("I verified this entry is already in my journal") }
+                TextButton(onClick = { clearPending = true }, enabled = !state.syncing) { Text("Clear pending marker · keep draft") }
+            }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -307,7 +528,54 @@ internal fun NotesScreen(
             }
             captureState.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 5.dp)) }
             captureState.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = onOpenAlerts, Modifier.fillMaxWidth()) { Text("Open confirmations · ${captureState.ledger.receipts.size}") }
+        }
+        item {
+            CollapsibleSectionHeader("Capture queue", activeReceipts.size, activeReceipts.isNotEmpty(), {}, NotesAccent)
+            Text(
+                if (activeReceipts.isEmpty()) "Nothing is waiting. New one-time captures will show their queued and review state here."
+                else "${activeReceipts.size} active · ${resolvedReceipts.size} resolved",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        items(activeReceipts.take(8), key = { "capture/${it.id}" }) { receipt ->
+            AegisCard(Modifier.fillMaxWidth(), accent = NotesAccent) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(receipt.summary, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        receipt.state.name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase) +
+                            " · ID " + receipt.id.take(8),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    receipt.result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    receipt.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (receipt.manualRetryAllowed || receipt.serverManaged) {
+                            OutlinedButton(
+                                onClick = { onCaptureRetry(receipt.id) },
+                                modifier = Modifier.weight(1f),
+                                enabled = !captureState.submitting,
+                            ) { Text(if (receipt.serverManaged) "Check / retry" else "Retry") }
+                        }
+                        if (CaptureQueuePolicy.canUserClear(receipt)) {
+                            TextButton(
+                                onClick = { onCaptureCancel(receipt.id) },
+                                modifier = Modifier.weight(1f),
+                                enabled = !captureState.submitting,
+                            ) { Text("Clear") }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onOpenAlerts,
+                    modifier = Modifier.weight(1f).testTag("capture_receipts_button"),
+                ) { Text("All receipts") }
+                OutlinedButton(onClick = onCaptureClearResolved, Modifier.weight(1f), enabled = resolvedReceipts.isNotEmpty()) { Text("Clear resolved") }
+            }
         }
     }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text(if (doc.pendingId == null) "Sync this section?" else "Retry previous submission?") }, text = {
@@ -315,6 +583,7 @@ internal fun NotesScreen(
         else "The previous request may already be in your journal. Check it before retrying, since the backend cannot prevent duplicates. Retry sends the original pending section (${doc.pendingText?.length ?: 0} characters); newer edits remain in the editor.")
     }, confirmButton = { TextButton(onClick = { confirm = false; vm.sync() }) { Text(if (doc.pendingId == null) "Sync section" else "Retry original section") } }, dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } })
     if (reconcile) AlertDialog(onDismissRequest = { reconcile = false }, title = { Text("Confirm entry exists in journal?") }, text = { Text("Only confirm after you have checked the previous entry. This records it as synced locally without sending it again.") }, confirmButton = { TextButton(onClick = { reconcile = false; vm.markPendingAsSynced() }) { Text("Entry verified") } }, dismissButton = { TextButton(onClick = { reconcile = false }) { Text("Cancel") } })
+    if (clearPending) AlertDialog(onDismissRequest = { clearPending = false }, title = { Text("Clear the stuck sync marker?") }, text = { Text("The pending section is restored into the local editor and no request is sent. Use this when you want to revise it or start a fresh manual sync.") }, confirmButton = { TextButton(onClick = { clearPending = false; vm.clearPendingKeepDraft() }) { Text("Keep draft and clear") } }, dismissButton = { TextButton(onClick = { clearPending = false }) { Text("Cancel") } })
     restore?.let { revision -> AlertDialog(onDismissRequest = { restore = null }, title = { Text("Restore a recovery copy?") }, text = { Text("Your current draft is checkpointed first. Restoring does not submit anything to the journal.") }, confirmButton = { TextButton(onClick = { vm.restore(revision.id); restore = null }) { Text("Restore copy") } }, dismissButton = { TextButton(onClick = { restore = null }) { Text("Cancel") } }) }
 }
 private fun noteTime(time: Long): String = DateTimeFormatter.ofPattern("MMM d · h:mm a").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(time))

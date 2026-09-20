@@ -102,12 +102,12 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
             } finally { if (stamp == generation && sequence == readSequence) _state.update { it.copy(loading = false) } }
         }
     }
-    fun saveTask(listId: String, task: WorkspaceTask?, title: String, notes: String, due: String, onSuccess: () -> Unit) {
+    fun saveTask(listId: String, task: WorkspaceTask?, title: String, notes: String, due: String, dueTime: String, onSuccess: () -> Unit) {
         if (!_state.value.capabilities.taskCrudV1 || !_state.value.canWrite || title.trim().isBlank()) return
         val now = System.currentTimeMillis()
         val localEntityId = task?.id ?: "local:${UUID.randomUUID()}"
         val listTitle = _state.value.workspace.lists.firstOrNull { it.id == listId }?.title.orEmpty()
-        val optimistic = WorkspaceTask(localEntityId, listId, listTitle, title.trim(), notes, due)
+        val optimistic = WorkspaceTask(localEntityId, listId, listTitle, title.trim(), notes, due, dueTime = dueTime)
         _state.update { current ->
             val tasks = current.workspace.tasks.filterNot { it.key == optimistic.key } + optimistic
             current.copy(workspace = current.workspace.copy(tasks = tasks), message = "Saved locally • sync pending", error = null)
@@ -117,6 +117,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
             id = UUID.randomUUID().toString(), owner = _state.value.owner,
             type = if (task == null || task.id.startsWith("local:")) DeferredMutationType.TASK_CREATE else DeferredMutationType.TASK_UPDATE,
             entityId = localEntityId, listId = listId, title = title.trim(), notes = notes, due = due,
+            dueTime = dueTime,
             createdAtEpochMs = now, syncAfterEpochMs = now,
         ))
         onSuccess()
@@ -163,7 +164,7 @@ class TaskWorkspaceViewModel(app: Application) : AndroidViewModel(app) {
                 .put("lists", org.json.JSONArray(workspace.lists.map { JSONObject().put("id", it.id).put("title", it.title) }))
                 .put("tasks", org.json.JSONArray(workspace.tasks.map { JSONObject()
                     .put("id", it.id).put("task_list_id", it.listId).put("task_list_title", it.listTitle)
-                    .put("title", it.title).put("notes", it.notes).put("due", it.due).put("completed", it.completed) }))
+                    .put("title", it.title).put("notes", it.notes).put("due", it.due).put("due_time", it.dueTime).put("completed", it.completed) }))
             storage.write(owner, "tasks", json.toString())
         }
     }

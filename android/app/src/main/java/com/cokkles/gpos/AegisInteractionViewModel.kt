@@ -8,6 +8,7 @@ import com.cokkles.gpos.data.interaction.AegisInteractionClient
 import com.cokkles.gpos.data.interaction.AiChatMessage
 import com.cokkles.gpos.data.interaction.CalendarInteractionResult
 import com.cokkles.gpos.data.interaction.InteractionCapabilities
+import com.cokkles.gpos.data.interaction.StructuredCalendarDraft
 import com.cokkles.gpos.data.local.DeferredMutation
 import com.cokkles.gpos.data.local.DeferredMutationType
 import com.cokkles.gpos.data.local.ProtectedLocalLedger
@@ -205,6 +206,37 @@ class AegisInteractionViewModel(
             }
             _state.update { it.copy(calendar = CalendarInteractionUiState(submitting = true)) }
             runCatching { client.prepareCalendar(token, clean) }
+                .onSuccess { result ->
+                    _state.update {
+                        it.copy(
+                            calendar = CalendarInteractionUiState(
+                                submitting = false,
+                                answer = result.answer,
+                                result = result,
+                            ),
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(calendar = CalendarInteractionUiState(error = error.safeInteractionMessage()))
+                    }
+                }
+        }
+    }
+
+    fun prepareCalendarEvent(draft: StructuredCalendarDraft) {
+        if (_state.value.calendar.submitting) return
+        viewModelScope.launch {
+            val token = currentToken() ?: return@launch
+            if (_state.value.capabilities?.calendarPrepareV1 != true) {
+                _state.update {
+                    it.copy(calendar = CalendarInteractionUiState(error = "Structured Calendar creation requires backend 2.11.0."))
+                }
+                return@launch
+            }
+            _state.update { it.copy(calendar = CalendarInteractionUiState(submitting = true)) }
+            runCatching { client.prepareCalendarEvent(token, draft) }
                 .onSuccess { result ->
                     _state.update {
                         it.copy(

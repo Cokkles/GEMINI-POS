@@ -72,6 +72,7 @@ class AegisInteractionBoundaryTest {
                 "promoteFollowupToTask",
                 "askAegis",
                 "prepareCalendar",
+                "prepareCalendarEvent",
                 "confirmCalendar",
             ),
             publicDeclaredMethods,

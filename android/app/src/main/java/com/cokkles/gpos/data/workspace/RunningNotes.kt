@@ -27,6 +27,25 @@ data class RunningNotesDocument(val text: String = "", val updatedAt: Long = 0,
         val revision = revisions.firstOrNull { it.id == id } ?: return this
         return checkpoint("Before restore").copy(text = revision.text, updatedAt = System.currentTimeMillis())
     }
+    fun clearPendingKeepDraft(): RunningNotesDocument {
+        val pending = pendingText ?: return this
+        val preserved = when {
+            text.isBlank() -> pending
+            text.contains(pending) -> text
+            else -> "$pending\n\n$text"
+        }
+        return copy(
+            text = preserved,
+            updatedAt = System.currentTimeMillis(),
+            pendingId = null,
+            pendingText = null,
+            pendingAt = 0,
+            revisions = (
+                listOf(NoteRevision(text = pending, kind = "Pending cleared", submissionId = pendingId)) +
+                    revisions
+                ).take(30),
+        )
+    }
     fun toJson(): String = JSONObject().put("text", text).put("updated_at", updatedAt)
         .put("pending_id", pendingId).put("pending_text", pendingText).put("pending_at", pendingAt)
         .put("last_synced_at", lastSyncedAt).put("revisions", JSONArray().apply {
