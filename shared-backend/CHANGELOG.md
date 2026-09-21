@@ -1,5 +1,16 @@
 # AEGIS shared backend changelog
 
+## 2.12.0.1 — nutrition normalization operator safety
+
+- Corrected the Apps Script editor workflow: preview results are now logged and
+  written to a visible `_AEGIS_NUTRITION_NORMALIZATION_REVIEW_V1` sheet.
+- Added approval checkboxes and a parameterless
+  `applyApprovedAegisNutritionSheetNormalizationV21201()` entry point.
+- Unchanged rows are now reported in `skipped_unchanged_rows`; they are not
+  written, audited, or restamped as though a visible normalization occurred.
+- Preserved the deterministic 2.12.0 renderer, the 2.11.1 nightly reliability
+  controller, nutrition A:X, client compatibility, and backend 2.8.4.1 rollback.
+
 ## 2.12.0 — canonical nutrition sheet normalization
 
 - Added one deterministic renderer for every new, queued, and nightly-reconciled

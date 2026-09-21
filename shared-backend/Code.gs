@@ -59,7 +59,7 @@ function testGeminiConnection() {
   return { status: "ok", model: cfg.model, reply: reply };
 }
 
-const AEGIS_BACKEND_VERSION = "2.12.0";
+const AEGIS_BACKEND_VERSION = "2.12.0.1";
 
 const CONFIG = {
   CALORIES_SHEET_ID:

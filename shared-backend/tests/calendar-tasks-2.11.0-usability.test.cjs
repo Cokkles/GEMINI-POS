@@ -5,7 +5,7 @@ const vm = require("node:vm");
 
 const code = fs.readFileSync(path.resolve(__dirname, "..", "Code.gs"), "utf8");
 assert.doesNotThrow(() => new vm.Script(code, { filename: "Code.gs" }));
-assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.12\.0";/);
+assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.12\.0\.1";/);
 assert.match(code, /calendar_sources_v1:\s*true/);
 assert.match(code, /task_due_time_v1:\s*true/);
 assert.match(code, /contents\.include_shared === true/);
@@ -30,4 +30,4 @@ assert.deepEqual(
 assert.equal(sandbox.applyAegisTaskDueTimeV211_(marked, ""), "Call dentist");
 assert.throws(() => sandbox.applyAegisTaskDueTimeV211_("x", "25:99"));
 
-console.log("PASS backend 2.12.0 retained Calendar sources and Task reminder-time validation");
+console.log("PASS backend 2.12.0.1 retained Calendar sources and Task reminder-time validation");

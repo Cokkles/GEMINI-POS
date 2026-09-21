@@ -250,7 +250,7 @@ function setAegisNutritionRowVerificationV290_(nutritionSheet, captureId, status
     .findAll();
   matches.forEach(function(match) {
     nutritionSheet.getRange(match.getRow(), 22).setValue(status);
-    nutritionSheet.getRange(match.getRow(), 23).setValue("2.12.0");
+    nutritionSheet.getRange(match.getRow(), 23).setValue("2.12.0.1");
   });
 }
 
@@ -321,7 +321,7 @@ function handleAegisLegacyNutritionV290_(foodText) {
     message: foodText,
     capture_id: captureId,
     client_id: "legacy-pwa",
-    client_version: "2.12.0"
+    client_version: "2.12.0.1"
   });
   if (response && response.status === "success") {
     return String(response.result || "Nutrition recorded.") +
@@ -686,7 +686,7 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     row[6] = item.carbs;
     row[7] = item.fat;
     row[8] = item.sodium;
-    row[9] = "Nightly KINETIC " + status + " via AEGIS 2.12.0";
+    row[9] = "Nightly KINETIC " + status + " via AEGIS 2.12.0.1";
     row[10] = item.saturated_fat;
     row[11] = item.fiber;
     row[12] = item.sugar;
@@ -698,7 +698,7 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     row[18] = item.assumptions;
     row[19] = item.conservative_adjustment;
     row[21] = status;
-    row[22] = "2.12.0";
+    row[22] = "2.12.0.1";
     nutritionSheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
   });
   if (typeof formatAegisNutritionSheetV2120_ === "function") {
@@ -1046,7 +1046,7 @@ function getAegisNutritionNightlyHealthV290() {
     status: "success",
     backend_version: typeof AEGIS_BACKEND_VERSION !== "undefined"
       ? AEGIS_BACKEND_VERSION
-      : "2.12.0",
+      : "2.12.0.1",
     model: getAegisNutritionNightlyModelV290_(),
     search_grounding_enabled: isKineticNightlySearchEnabledV290_(),
     counts: counts,

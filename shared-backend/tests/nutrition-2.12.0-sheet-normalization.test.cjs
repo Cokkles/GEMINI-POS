@@ -98,5 +98,23 @@ assert.throws(
 assert.match(source, /historical_rows_changed:\s*0/);
 assert.match(source, /Explicit nutrition row numbers are required/);
 assert.match(source, /selected\.length > 100/);
+assert.match(source, /skipped_unchanged_rows/);
+assert.match(source, /NO_APPROVED_PROPOSED_ROWS/);
+assert.match(source, /_AEGIS_NUTRITION_NORMALIZATION_REVIEW_V1/);
+assert.match(source, /insertCheckboxes/);
 
-console.log("PASS backend 2.12.0 canonical nutrition sheet normalization validation");
+const unchangedPlan = sandbox.buildAegisNutritionNormalizationPlanV2120_(
+  42,
+  ["", "", "Chicken Ramen", "1 package"],
+);
+assert.equal(unchangedPlan.changed, false);
+
+const changedPlan = sandbox.buildAegisNutritionNormalizationPlanV2120_(
+  57,
+  ["", "", "1 Pack Chicken Ramen", "1 Pack Chicken Ramen"],
+);
+assert.equal(changedPlan.changed, true);
+assert.equal(changedPlan.normalized.item, "Chicken Ramen");
+assert.equal(changedPlan.normalized.portion, "1 package");
+
+console.log("PASS backend 2.12.0.1 visible review and safe normalization validation");
