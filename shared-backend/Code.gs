@@ -59,7 +59,7 @@ function testGeminiConnection() {
   return { status: "ok", model: cfg.model, reply: reply };
 }
 
-const AEGIS_BACKEND_VERSION = "2.11.1";
+const AEGIS_BACKEND_VERSION = "2.12.0";
 
 const CONFIG = {
   CALORIES_SHEET_ID:
@@ -3928,6 +3928,8 @@ function getAegisCapabilities() {
       nutrition_retry_trigger_v1: true,
       nutrition_provider_failover_v1: true,
       nutrition_backlog_drain_v1: true,
+      nutrition_sheet_normalization_v1: true,
+      nutrition_cleanup_preview_v1: true,
       device_session_v1: true,
       interactive_auth_background_forbidden_v1: true
     },
@@ -3961,6 +3963,7 @@ function getAegisHealth() {
     nutrition_nightly: getAegisNutritionNightlyHealthV290(),
     nutrition_hardening: getAegisNutritionHardeningHealthV2100_(),
     nutrition_nightly_reliability: getAegisNutritionNightlyReliabilityHealthV2111_(),
+    nutrition_sheet_normalization: getAegisNutritionSheetNormalizationHealthV2120_(),
     trigger_status: getInstalledAegisTriggers(),
     time: new Date().toISOString()
   };

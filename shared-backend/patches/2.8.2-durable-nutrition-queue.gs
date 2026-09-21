@@ -11,7 +11,7 @@
  */
 
 var AEGIS_NUTRITION_ASYNC_CONTRACT_V282 = "AEGIS_NUTRITION_CAPTURE_ASYNC_V1";
-var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.11.1";
+var AEGIS_NUTRITION_BACKEND_VERSION_V282 = "2.12.0";
 var AEGIS_NUTRITION_QUEUE_SHEET_V282 = "_AEGIS_NUTRITION_CAPTURE_QUEUE_V1";
 var AEGIS_NUTRITION_QUEUE_HANDLER_V282 = "processAegisNutritionQueueV282";
 var AEGIS_NUTRITION_DATA_SHEET_PROPERTY_V282 = "AEGIS_NUTRITION_SHEET_NAME";
@@ -610,7 +610,10 @@ function appendAegisNutritionRowsV282_(sheet, items, captureId) {
   var now = new Date();
   var date = Utilities.formatDate(now, CONFIG.TIMEZONE, "M/d/yyyy");
   var time = Utilities.formatDate(now, CONFIG.TIMEZONE, "h:mm:ss a");
-  var rows = items.map(function(item) {
+  var renderedItems = typeof normalizeAegisNutritionItemsForSheetV2120_ === "function"
+    ? normalizeAegisNutritionItemsForSheetV2120_(items)
+    : items;
+  var rows = renderedItems.map(function(item) {
     return [
       date, time, item.item, item.portion, item.calories,
       item.protein, item.carbs, item.fat, item.sodium,
@@ -628,6 +631,9 @@ function appendAegisNutritionRowsV282_(sheet, items, captureId) {
     rows.length,
     AEGIS_NUTRITION_HEADERS_V281.length
   ).setValues(rows);
+  if (typeof formatAegisNutritionSheetV2120_ === "function") {
+    formatAegisNutritionSheetV2120_(sheet);
+  }
 }
 
 function confirmedNutritionResponseV282_(validated, captureId, deduplicated, cacheHit) {
@@ -1362,4 +1368,3 @@ function deleteRowsByCaptureIdV282_(sheet, captureIdColumn, captureId) {
     .sort(function(a, b) { return b - a; });
   matches.forEach(function(row) { sheet.deleteRow(row); });
 }
-

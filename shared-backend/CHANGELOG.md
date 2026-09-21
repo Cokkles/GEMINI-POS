@@ -1,5 +1,26 @@
 # AEGIS shared backend changelog
 
+## 2.12.0 — canonical nutrition sheet normalization
+
+- Added one deterministic renderer for every new, queued, and nightly-reconciled
+  nutrition row. `Food Item` now contains identity only; `Portion` contains the
+  quantity, canonical unit, and optional mass/volume detail.
+- Normalized common capture inconsistencies such as attached quantities,
+  `tbl spoon`/tablespoon variants, singular/plural package terms, unit spacing,
+  and known-brand casing without changing calories or macro values.
+- Added validation that rejects quantity-prefixed item names and item/portion
+  duplication before a row can be written.
+- Applied consistent numeric formats and wrapping while preserving the complete
+  nutrition A:X column order and all existing client routes.
+- Historical cleanup is intentionally preview-first. Installation changes zero
+  historical rows; operators must review proposed changes and supply explicit
+  row numbers, with a maximum of 100 rows per apply operation. Every applied
+  change is recorded in a hidden audit sheet.
+- Added fixture coverage for Chicken Ramen, Bear Naked, Chobani creamer and
+  yogurt, Sheetz Fries, and Fig Newtons, plus idempotence and rejection tests.
+- Preserved the 2.11.1 retry/model-failover controller, 2.11.0 Calendar/Task
+  contracts, Android and Windows compatibility, and backend 2.8.4.1 rollback.
+
 ## 2.11.1 — KINETIC nightly reliability correction
 
 - Corrected the false `retry scheduled` diagnostic: a transient nightly

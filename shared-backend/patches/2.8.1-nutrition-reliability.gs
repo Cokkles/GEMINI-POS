@@ -403,7 +403,10 @@ function appendAegisNutritionRowsV281_(sheet, items, captureId) {
   var now = new Date();
   var date = Utilities.formatDate(now, CONFIG.TIMEZONE, "M/d/yyyy");
   var time = Utilities.formatDate(now, CONFIG.TIMEZONE, "h:mm:ss a");
-  var rows = items.map(function(item) {
+  var renderedItems = typeof normalizeAegisNutritionItemsForSheetV2120_ === "function"
+    ? normalizeAegisNutritionItemsForSheetV2120_(items)
+    : items;
+  var rows = renderedItems.map(function(item) {
     return [
       date, time, item.item, item.portion, item.calories,
       item.protein, item.carbs, item.fat, item.sodium,
@@ -415,6 +418,9 @@ function appendAegisNutritionRowsV281_(sheet, items, captureId) {
     ];
   });
   sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, AEGIS_NUTRITION_HEADERS_V281.length).setValues(rows);
+  if (typeof formatAegisNutritionSheetV2120_ === "function") {
+    formatAegisNutritionSheetV2120_(sheet);
+  }
 }
 
 function findAegisNutritionCaptureV281_(sheet, captureId) {
