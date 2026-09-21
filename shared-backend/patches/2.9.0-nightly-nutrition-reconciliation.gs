@@ -11,7 +11,7 @@ var AEGIS_NUTRITION_PROVISIONAL_CONTRACT_V290 = "AEGIS_NUTRITION_PROVISIONAL_LOG
 var AEGIS_NUTRITION_RECONCILIATION_SHEET_V290 = "_AEGIS_NUTRITION_RECONCILIATION_V1";
 var AEGIS_NUTRITION_EVIDENCE_SHEET_V290 = "_AEGIS_NUTRITION_EVIDENCE_V1";
 var AEGIS_NUTRITION_AUDIT_SHEET_V290 = "_AEGIS_NUTRITION_REVISION_AUDIT_V1";
-var AEGIS_NUTRITION_NIGHTLY_HANDLER_V290 = "runKineticNightlyNutritionReviewV290";
+var AEGIS_NUTRITION_NIGHTLY_HANDLER_V290 = "runAegisNutritionNightlyControllerV2111";
 var AEGIS_NUTRITION_NIGHTLY_DEFAULT_MODEL_V290 = "gemini-3.5-flash";
 var AEGIS_NUTRITION_NIGHTLY_MAX_CAPTURES_V290 = 30;
 
@@ -250,7 +250,7 @@ function setAegisNutritionRowVerificationV290_(nutritionSheet, captureId, status
     .findAll();
   matches.forEach(function(match) {
     nutritionSheet.getRange(match.getRow(), 22).setValue(status);
-    nutritionSheet.getRange(match.getRow(), 23).setValue("2.10.0");
+    nutritionSheet.getRange(match.getRow(), 23).setValue("2.12.0.1");
   });
 }
 
@@ -321,7 +321,7 @@ function handleAegisLegacyNutritionV290_(foodText) {
     message: foodText,
     capture_id: captureId,
     client_id: "legacy-pwa",
-    client_version: "2.10.0"
+    client_version: "2.12.0.1"
   });
   if (response && response.status === "success") {
     return String(response.result || "Nutrition recorded.") +
@@ -451,8 +451,17 @@ function extractKineticNightlyRetryAfterMsV290_(body, response) {
 }
 
 function callKineticNightlyGeminiV290_(prompt) {
+  if (typeof callKineticNightlyProviderV2111_ === "function") {
+    return callKineticNightlyProviderV2111_(prompt);
+  }
+  return callKineticNightlyGeminiModelV290_(
+    prompt,
+    getAegisNutritionNightlyModelV290_()
+  );
+}
+
+function callKineticNightlyGeminiModelV290_(prompt, model) {
   var cfg = getGeminiConfig();
-  var model = getAegisNutritionNightlyModelV290_();
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
     encodeURIComponent(model) + ":generateContent";
   var requestPayload = {
@@ -667,6 +676,9 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     var row = nutritionSheet.getRange(rowNumber, 1, 1, AEGIS_NUTRITION_HEADERS_V281.length)
       .getValues()[0];
     var item = validated.items[index];
+    if (typeof normalizeAegisNutritionItemForSheetV2120_ === "function") {
+      item = normalizeAegisNutritionItemForSheetV2120_(item, row[2]);
+    }
     row[2] = item.item;
     row[3] = item.portion;
     row[4] = item.calories;
@@ -674,7 +686,7 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     row[6] = item.carbs;
     row[7] = item.fat;
     row[8] = item.sodium;
-    row[9] = "Nightly KINETIC " + status + " via AEGIS 2.10.0";
+    row[9] = "Nightly KINETIC " + status + " via AEGIS 2.12.0.1";
     row[10] = item.saturated_fat;
     row[11] = item.fiber;
     row[12] = item.sugar;
@@ -686,9 +698,12 @@ function updateAegisNutritionCaptureRowsV290_(nutritionSheet, captureId, validat
     row[18] = item.assumptions;
     row[19] = item.conservative_adjustment;
     row[21] = status;
-    row[22] = "2.10.0";
+    row[22] = "2.12.0.1";
     nutritionSheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
   });
+  if (typeof formatAegisNutritionSheetV2120_ === "function") {
+    formatAegisNutritionSheetV2120_(nutritionSheet);
+  }
 }
 
 function upsertAegisNutritionEvidenceV290_(spreadsheet, segment, item) {
@@ -895,7 +910,35 @@ function runKineticNightlyNutritionReviewV290(targetDate) {
   var batchId = "KINETIC-" + normalizedTarget + "-" +
     Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyyMMdd-HHmmss");
   var reconciliationSheet = getAegisNutritionReconciliationSheetV290_(spreadsheet);
+  var localResults = [];
   try {
+    if (typeof partitionAegisNutritionNightlyJobsV2111_ === "function") {
+      var partitioned = partitionAegisNutritionNightlyJobsV2111_(jobs);
+      if (partitioned.local.length) {
+        localResults = applyKineticNightlyReviewV290_(
+          spreadsheet,
+          normalizedTarget,
+          batchId,
+          buildAegisLocalNightlyReviewsV2111_(partitioned.local)
+        );
+      }
+      jobs = partitioned.provider;
+      if (!jobs.length) {
+        if (typeof recordAegisNutritionNightlySuccessV2111_ === "function") {
+          recordAegisNutritionNightlySuccessV2111_(normalizedTarget, localResults.length);
+        }
+        return {
+          status: "PASS",
+          batch_id: batchId,
+          food_date: normalizedTarget,
+          reviewed_captures: localResults.length,
+          locally_verified_captures: localResults.length,
+          provider_reviewed_captures: 0,
+          results: localResults,
+          contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
+        };
+      }
+    }
     var prompt = buildKineticNightlyPromptV290_(normalizedTarget, batchId, jobs);
     var response = callKineticNightlyGeminiV290_(prompt);
     var validated = validateKineticNightlyResponseV290_(
@@ -904,19 +947,37 @@ function runKineticNightlyNutritionReviewV290(targetDate) {
     var results = applyKineticNightlyReviewV290_(
       spreadsheet, normalizedTarget, batchId, validated
     );
+    var combinedResults = localResults.concat(results);
+    if (typeof recordAegisNutritionNightlySuccessV2111_ === "function") {
+      recordAegisNutritionNightlySuccessV2111_(normalizedTarget, combinedResults.length);
+    }
     return {
       status: "PASS",
       batch_id: batchId,
       food_date: normalizedTarget,
-      reviewed_captures: results.length,
-      results: results,
+      reviewed_captures: combinedResults.length,
+      locally_verified_captures: localResults.length,
+      provider_reviewed_captures: results.length,
+      results: combinedResults,
       contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
     };
   } catch (error) {
     markKineticNightlyBatchDelayedV290_(
       reconciliationSheet, jobs, batchId, error
     );
-    Logger.log("KINETIC_NIGHTLY_DELAYED " + String(error && error.message || error));
+    var retry = typeof scheduleAegisNutritionNightlyRetryV2111_ === "function"
+      ? scheduleAegisNutritionNightlyRetryV2111_(error)
+      : { scheduled: false, next_attempt_at: null };
+    if (typeof recordAegisNutritionNightlyFailureV2111_ === "function") {
+      recordAegisNutritionNightlyFailureV2111_(normalizedTarget, error, retry);
+    }
+    var retryMessage = retry.scheduled
+      ? "; retry trigger scheduled for " + retry.next_attempt_at
+      : "; no retry trigger was scheduled";
+    Logger.log(
+      "KINETIC_NIGHTLY_DELAYED " +
+      String(error && error.message || error) + retryMessage
+    );
     return {
       status: "DELAYED",
       batch_id: batchId,
@@ -925,6 +986,8 @@ function runKineticNightlyNutritionReviewV290(targetDate) {
       provisional_entries_preserved: true,
       diagnostic_code: String(error && error.aegisCode || "KINETIC_NIGHTLY_FAILED"),
       error: String(error && error.message || error),
+      retry_scheduled: retry.scheduled === true,
+      next_attempt_at: retry.next_attempt_at || null,
       contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
     };
   }
@@ -937,23 +1000,34 @@ function runKineticNightlyNutritionReviewTodayV290() {
 }
 
 function installAegisNutritionNightlyTriggerV290() {
-  var matches = ScriptApp.getProjectTriggers().filter(function(trigger) {
-    return trigger.getHandlerFunction() === AEGIS_NUTRITION_NIGHTLY_HANDLER_V290;
+  var managed = [
+    "runKineticNightlyNutritionReviewV290",
+    AEGIS_NUTRITION_NIGHTLY_HANDLER_V290,
+    "runAegisNutritionNightlyWatchdogV2111"
+  ];
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (managed.indexOf(trigger.getHandlerFunction()) >= 0) {
+      ScriptApp.deleteTrigger(trigger);
+    }
   });
-  if (!matches.length) {
-    ScriptApp.newTrigger(AEGIS_NUTRITION_NIGHTLY_HANDLER_V290)
-      .timeBased()
-      .atHour(2)
-      .everyDays(1)
-      .inTimezone(CONFIG.TIMEZONE)
-      .create();
-  }
-  for (var i = 1; i < matches.length; i++) ScriptApp.deleteTrigger(matches[i]);
+  ScriptApp.newTrigger(AEGIS_NUTRITION_NIGHTLY_HANDLER_V290)
+    .timeBased()
+    .atHour(2)
+    .everyDays(1)
+    .inTimezone(CONFIG.TIMEZONE)
+    .create();
+  ScriptApp.newTrigger("runAegisNutritionNightlyWatchdogV2111")
+    .timeBased()
+    .atHour(4)
+    .everyDays(1)
+    .inTimezone(CONFIG.TIMEZONE)
+    .create();
   return {
     status: "PASS",
     handler: AEGIS_NUTRITION_NIGHTLY_HANDLER_V290,
     timezone: CONFIG.TIMEZONE,
-    schedule: "daily during the 2 AM hour"
+    schedule: "daily during the 2 AM hour",
+    watchdog: "daily during the 4 AM hour"
   };
 }
 
@@ -970,11 +1044,16 @@ function getAegisNutritionNightlyHealthV290() {
   }
   return {
     status: "success",
-    backend_version: "2.10.0",
+    backend_version: typeof AEGIS_BACKEND_VERSION !== "undefined"
+      ? AEGIS_BACKEND_VERSION
+      : "2.12.0.1",
     model: getAegisNutritionNightlyModelV290_(),
     search_grounding_enabled: isKineticNightlySearchEnabledV290_(),
     counts: counts,
-    contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290
+    contract: AEGIS_NUTRITION_NIGHTLY_CONTRACT_V290,
+    reliability: typeof getAegisNutritionNightlyReliabilityHealthV2111_ === "function"
+      ? getAegisNutritionNightlyReliabilityHealthV2111_()
+      : null
   };
 }
 

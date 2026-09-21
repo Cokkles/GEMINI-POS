@@ -59,7 +59,7 @@ function testGeminiConnection() {
   return { status: "ok", model: cfg.model, reply: reply };
 }
 
-const AEGIS_BACKEND_VERSION = "2.11.0";
+const AEGIS_BACKEND_VERSION = "2.12.0.1";
 
 const CONFIG = {
   CALORIES_SHEET_ID:
@@ -766,7 +766,9 @@ function doPost(e) {
     }
 
     if (action === "run_nutrition_nightly_review") {
-      return jsonOutput(runKineticNightlyNutritionReviewV290(contents.food_date));
+      return jsonOutput(runAegisNutritionNightlyControllerV2111(
+        contents.food_date
+      ));
     }
 
     if (action === "capture_nutrition") {
@@ -3922,6 +3924,12 @@ function getAegisCapabilities() {
       nutrition_identity_guard_v1: true,
       nutrition_trusted_food_catalog_v2: true,
       nutrition_portion_conversion_v1: true,
+      nutrition_nightly_reliability_v1: true,
+      nutrition_retry_trigger_v1: true,
+      nutrition_provider_failover_v1: true,
+      nutrition_backlog_drain_v1: true,
+      nutrition_sheet_normalization_v1: true,
+      nutrition_cleanup_preview_v1: true,
       device_session_v1: true,
       interactive_auth_background_forbidden_v1: true
     },
@@ -3954,6 +3962,8 @@ function getAegisHealth() {
     notification_count: getServerNotifications(false).length,
     nutrition_nightly: getAegisNutritionNightlyHealthV290(),
     nutrition_hardening: getAegisNutritionHardeningHealthV2100_(),
+    nutrition_nightly_reliability: getAegisNutritionNightlyReliabilityHealthV2111_(),
+    nutrition_sheet_normalization: getAegisNutritionSheetNormalizationHealthV2120_(),
     trigger_status: getInstalledAegisTriggers(),
     time: new Date().toISOString()
   };

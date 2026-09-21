@@ -1,5 +1,57 @@
 # AEGIS shared backend changelog
 
+## 2.12.0.1 — nutrition normalization operator safety
+
+- Corrected the Apps Script editor workflow: preview results are now logged and
+  written to a visible `_AEGIS_NUTRITION_NORMALIZATION_REVIEW_V1` sheet.
+- Added approval checkboxes and a parameterless
+  `applyApprovedAegisNutritionSheetNormalizationV21201()` entry point.
+- Unchanged rows are now reported in `skipped_unchanged_rows`; they are not
+  written, audited, or restamped as though a visible normalization occurred.
+- Preserved the deterministic 2.12.0 renderer, the 2.11.1 nightly reliability
+  controller, nutrition A:X, client compatibility, and backend 2.8.4.1 rollback.
+
+## 2.12.0 — canonical nutrition sheet normalization
+
+- Added one deterministic renderer for every new, queued, and nightly-reconciled
+  nutrition row. `Food Item` now contains identity only; `Portion` contains the
+  quantity, canonical unit, and optional mass/volume detail.
+- Normalized common capture inconsistencies such as attached quantities,
+  `tbl spoon`/tablespoon variants, singular/plural package terms, unit spacing,
+  and known-brand casing without changing calories or macro values.
+- Added validation that rejects quantity-prefixed item names and item/portion
+  duplication before a row can be written.
+- Applied consistent numeric formats and wrapping while preserving the complete
+  nutrition A:X column order and all existing client routes.
+- Historical cleanup is intentionally preview-first. Installation changes zero
+  historical rows; operators must review proposed changes and supply explicit
+  row numbers, with a maximum of 100 rows per apply operation. Every applied
+  change is recorded in a hidden audit sheet.
+- Added fixture coverage for Chicken Ramen, Bear Naked, Chobani creamer and
+  yogurt, Sheetz Fries, and Fig Newtons, plus idempotence and rejection tests.
+- Preserved the 2.11.1 retry/model-failover controller, 2.11.0 Calendar/Task
+  contracts, Android and Windows compatibility, and backend 2.8.4.1 rollback.
+
+## 2.11.1 — KINETIC nightly reliability correction
+
+- Corrected the false `retry scheduled` diagnostic: a transient nightly
+  `429`/`503` now creates one deduplicated time-based retry trigger and records
+  its exact next-attempt timestamp.
+- Added a bounded configurable Gemini model pool. Transient capacity failure on
+  the primary nightly model can fall through to a secondary model without
+  changing the reconciliation contract.
+- Added a backlog controller that processes multiple overdue food dates per
+  invocation and prevents a malformed older date from silently starving newer
+  dates. Provider-wide capacity failures stop the current run and use the real
+  retry trigger instead of consuming the Apps Script execution window.
+- Exact trusted-catalog matches with medium/high confidence and source evidence
+  are confirmed locally; every capture is still reconciled, but Gemini is no
+  longer a mandatory gate for already trusted foods.
+- Added a 4 AM watchdog, persistent last-attempt/success/error telemetry, model
+  attempt history, and an AEGIS notification after three consecutive failures.
+- Preserved nutrition A:X, the reconciliation/evidence/audit sheets, Android and
+  Windows routes, Calendar/Task 2.11.0 contracts, and backend 2.8.4.1 rollback.
+
 ## 2.11.0 — Calendar sources and Task reminder-time usability
 
 - Added an opt-in shared-calendar range view with bounded calendar/event counts,

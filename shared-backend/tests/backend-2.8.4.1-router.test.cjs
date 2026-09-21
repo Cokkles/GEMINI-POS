@@ -30,22 +30,30 @@ const nutrition2100 = fs.readFileSync(
   path.join(root, "patches", "2.10.0-nutrition-identity-serving.gs"),
   "utf8",
 );
+const nutrition2111 = fs.readFileSync(
+  path.join(root, "patches", "2.11.1-nutrition-nightly-reliability.gs"),
+  "utf8",
+);
+const nutrition2120 = fs.readFileSync(
+  path.join(root, "patches", "2.12.0-nutrition-sheet-normalization.gs"),
+  "utf8",
+);
 
 for (const [name, source] of Object.entries({
   code, nutrition281, nutrition282, sessions283, nutrition284, nutrition290,
-  nutrition2100,
+  nutrition2100, nutrition2111, nutrition2120,
 })) {
   assert.doesNotThrow(() => new vm.Script(source, { filename: name }));
 }
 
 const functionNames = [
   code, nutrition281, nutrition282, sessions283, nutrition284, nutrition290,
-  nutrition2100,
+  nutrition2100, nutrition2111, nutrition2120,
 ]
   .flatMap((source) => [...source.matchAll(/^function\s+([\w$]+)\s*\(/gm)].map((match) => match[1]));
 assert.equal(new Set(functionNames).size, functionNames.length, "Apps Script function names must be unique");
 
-assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.11\.0";/);
+assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.12\.0\.1";/);
 for (const action of [
   "enqueue_nutrition_capture",
   "get_nutrition_capture_status",
@@ -70,6 +78,12 @@ for (const capability of [
   "nutrition_identity_guard_v1",
   "nutrition_trusted_food_catalog_v2",
   "nutrition_portion_conversion_v1",
+  "nutrition_nightly_reliability_v1",
+  "nutrition_retry_trigger_v1",
+  "nutrition_provider_failover_v1",
+  "nutrition_backlog_drain_v1",
+  "nutrition_sheet_normalization_v1",
+  "nutrition_cleanup_preview_v1",
   "device_session_v1",
   "interactive_auth_background_forbidden_v1",
   "calendar_sources_v1",
@@ -171,4 +185,4 @@ assert.equal(revoked.authenticated, false);
 assert.equal(revoked.code, "AEGIS_AUTH_FAILED");
 assert.equal(revoked.diagnostic_code, "AEGIS_DEVICE_SESSION_REVOKED");
 
-console.log("PASS backend 2.11.0 router/auth static and mocked-runtime validation");
+console.log("PASS backend 2.12.0.1 router/auth static and mocked-runtime validation");

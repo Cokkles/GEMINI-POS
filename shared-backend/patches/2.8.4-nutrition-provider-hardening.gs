@@ -469,7 +469,7 @@ function parseGeminiCapacityFailureV284_(httpCode, body, response, lane) {
     code: code,
     retryAfterMs: retryAfterMs,
     message: "Gemini " + laneName + " provider returned HTTP " + httpCode +
-      "; retry scheduled in approximately " +
+      "; retry recommended in approximately " +
       Math.ceil(retryAfterMs / 60000) + " minute(s). Provider detail: " +
       compactGeminiProviderDetailV284_(body)
   };
