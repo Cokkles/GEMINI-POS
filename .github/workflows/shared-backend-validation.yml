@@ -1,0 +1,33 @@
+name: Shared Backend Validation
+
+on:
+  push:
+    branches:
+      - 'agent/backend-*'
+      - agent/android-0.8.0-usability-capture
+    paths:
+      - 'shared-backend/**'
+      - '.github/workflows/shared-backend-validation.yml'
+  pull_request:
+    paths:
+      - 'shared-backend/**'
+      - '.github/workflows/shared-backend-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Run shared backend contract tests
+        run: |
+          for test_file in shared-backend/tests/*.test.cjs; do
+            node "$test_file"
+          done

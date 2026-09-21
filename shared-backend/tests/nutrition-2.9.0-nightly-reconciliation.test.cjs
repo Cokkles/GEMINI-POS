@@ -30,7 +30,7 @@ assert.equal(
   "Apps Script function names must remain unique",
 );
 
-assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.11\.0";/);
+assert.match(code, /const AEGIS_BACKEND_VERSION = "2\.11\.1";/);
 for (const capability of [
   "nutrition_provisional_logging_v1",
   "nutrition_nightly_reconciliation_v1",
@@ -154,5 +154,5 @@ assert.match(prompt, /CAP-FIVE/);
 assert.match(prompt, /Tyson Frozen Grilled Chicken/);
 
 console.log(
-  "PASS backend 2.11.0 retained provisional capture, daily batch, deviation, and source-authority validation",
+  "PASS backend 2.11.1 retained provisional capture, daily batch, deviation, and source-authority validation",
 );

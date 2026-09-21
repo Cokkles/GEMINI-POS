@@ -1,5 +1,25 @@
 # AEGIS shared backend changelog
 
+## 2.11.1 — KINETIC nightly reliability correction
+
+- Corrected the false `retry scheduled` diagnostic: a transient nightly
+  `429`/`503` now creates one deduplicated time-based retry trigger and records
+  its exact next-attempt timestamp.
+- Added a bounded configurable Gemini model pool. Transient capacity failure on
+  the primary nightly model can fall through to a secondary model without
+  changing the reconciliation contract.
+- Added a backlog controller that processes multiple overdue food dates per
+  invocation and prevents a malformed older date from silently starving newer
+  dates. Provider-wide capacity failures stop the current run and use the real
+  retry trigger instead of consuming the Apps Script execution window.
+- Exact trusted-catalog matches with medium/high confidence and source evidence
+  are confirmed locally; every capture is still reconciled, but Gemini is no
+  longer a mandatory gate for already trusted foods.
+- Added a 4 AM watchdog, persistent last-attempt/success/error telemetry, model
+  attempt history, and an AEGIS notification after three consecutive failures.
+- Preserved nutrition A:X, the reconciliation/evidence/audit sheets, Android and
+  Windows routes, Calendar/Task 2.11.0 contracts, and backend 2.8.4.1 rollback.
+
 ## 2.11.0 — Calendar sources and Task reminder-time usability
 
 - Added an opt-in shared-calendar range view with bounded calendar/event counts,
